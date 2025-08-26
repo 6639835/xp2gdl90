@@ -2,14 +2,47 @@
 
 A native X-Plane plugin that broadcasts flight data in GDL-90 format to FDPRO, eliminating the need for external UDP configuration.
 
+![Platform Support](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)
+![X-Plane Compatibility](https://img.shields.io/badge/X--Plane-11%20%7C%2012-green)
+![License](https://img.shields.io/badge/license-MIT-blue)
+![Version](https://img.shields.io/badge/version-1.0.1-brightgreen)
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Features](#features)
+- [Installation](#installation)
+  - [Quick Installation](#quick-installation)
+  - [Building from Source](#building-from-source)
+- [Usage](#usage)
+- [Configuration](#configuration)
+- [GDL-90 Messages](#gdl-90-messages)
+- [Troubleshooting](#troubleshooting)
+- [Development](#development)
+- [Contributing](#contributing)
+- [Security](#security)
+- [License](#license)
+- [Changelog](#changelog)
+
 ## Overview
 
-This C++ plugin replaces the Python UDP-based solution by:
+This C++ plugin replaces Python UDP-based solutions by:
 - Reading flight data directly from X-Plane using the SDK
 - Encoding data in standard GDL-90 format
 - Broadcasting to FDPRO via UDP
 - Supporting both ownship position and traffic targets
 - Requiring no X-Plane Data Output configuration
+
+### Why XP2GDL90?
+
+| Feature | Traditional Solutions | XP2GDL90 |
+|---------|----------------------|----------|
+| X-Plane Setup | Requires Data Output configuration | **No setup required** |
+| Performance | Higher CPU usage, UDP overhead | **Native C++ performance** |
+| Reliability | Network dependent, connection issues | **Direct SDK access** |
+| Dependencies | Python runtime + libraries | **None (compiled binary)** |
+| Platform Support | Cross-platform with runtime | **Native cross-platform** |
+| Maintenance | Script updates, dependency management | **Install and forget** |
 
 ## Features
 
@@ -19,10 +52,30 @@ This C++ plugin replaces the Python UDP-based solution by:
 - **Traffic Support**: Automatic detection of AI aircraft and multiplayer targets
 - **Cross-platform**: Works on Windows, macOS, and Linux
 - **Low overhead**: Native C++ performance
+- **Zero Configuration**: Works out of the box with sensible defaults
+- **Security Focused**: Localhost-only default configuration for safety
 
-## Building the Plugin
+## Installation
 
-### Prerequisites
+### Quick Installation
+
+1. **Download the latest release** from the [Releases](../../releases) page
+2. **Extract the archive** to get the platform-specific plugin file
+3. **Create plugin directory**:
+   ```
+   X-Plane/Resources/plugins/xp2gdl90/
+   ```
+4. **Copy the plugin file**:
+   - **macOS**: Copy `mac.xpl` to the plugin directory
+   - **Linux**: Copy `lin.xpl` to the plugin directory  
+   - **Windows**: Copy `win.xpl` to the plugin directory
+5. **Restart X-Plane**
+
+### Building from Source
+
+For detailed build instructions, see [CONTRIBUTING.md](CONTRIBUTING.md#building-the-plugin).
+
+#### Prerequisites
 
 1. **CMake** (3.10 or later)
    ```bash
@@ -36,47 +89,32 @@ This C++ plugin replaces the Python UDP-based solution by:
    # Download from https://cmake.org/download/
    ```
 
-2. **X-Plane SDK** (should already be in `SDK/` directory)
+2. **X-Plane SDK** (included in `SDK/` directory)
 
-### Build Steps
+#### Build Steps
 
-#### macOS/Linux
 ```bash
+# macOS/Linux
 ./build.sh
-```
 
-#### Windows
-```batch
+# Windows
 build_windows.bat
-```
 
-#### Manual Build
-```bash
-mkdir build
-cd build
+# Cross-platform Python script
+python build_all.py
+
+# Manual build
+mkdir build && cd build
 cmake -DCMAKE_BUILD_TYPE=Release ..
 cmake --build . --config Release
 ```
 
-### Build Output
+#### Build Output
 
 The plugin will be built as:
-- **macOS**: `build/xp2gdl90/mac_x64.xpl`
-- **Linux**: `build/xp2gdl90/lin_x64.xpl` 
-- **Windows**: `build/xp2gdl90/win_x64.xpl`
-
-## Installation
-
-1. **Create plugin directory**:
-   ```
-   X-Plane/Resources/plugins/xp2gdl90/
-   ```
-
-2. **Copy the plugin file**:
-   - Copy the appropriate `.xpl` file to the plugin directory
-   - Ensure the filename matches your platform (mac_x64.xpl, lin_x64.xpl, or win_x64.xpl)
-
-3. **Restart X-Plane**
+- **macOS**: `build/mac.xpl`
+- **Linux**: `build/lin.xpl` 
+- **Windows**: `build/win.xpl`
 
 ## Usage
 
@@ -97,15 +135,35 @@ XP2GDL90: Sent heartbeat (8 bytes)
 XP2GDL90: Sent position report (34 bytes): LAT=37.524000, LON=-122.063000, ALT=100 ft
 ```
 
-### Configuration
+### Real-time Monitoring
 
-The plugin uses these default settings:
-- **Target IP**: 127.0.0.1 (localhost)
+Enable debug output by monitoring X-Plane's Log.txt file:
+```bash
+# macOS/Linux
+tail -f "X-Plane 12/Log.txt" | grep XP2GDL90
+
+# Windows PowerShell
+Get-Content "X-Plane 12\Log.txt" -Wait | Select-String "XP2GDL90"
+```
+
+## Configuration
+
+### Default Settings
+
+The plugin uses these secure default settings:
+- **Target IP**: 127.0.0.1 (localhost only)
 - **Target Port**: 4000 (FDPRO default)
 - **ICAO Address**: 0xABCDEF (ownship)
 - **Traffic Enabled**: Yes (automatic detection)
 
-To modify these settings, edit the constants in `src/xp2gdl90.cpp` and rebuild.
+### Customization
+
+To modify these settings:
+1. Edit the constants in `src/xp2gdl90.cpp`
+2. Rebuild using the build scripts
+3. Reinstall the updated plugin
+
+**Security Note**: The default localhost-only configuration prevents external network access. See [SECURITY.md](SECURITY.md) for security considerations when changing network settings.
 
 ### Traffic Targets
 
@@ -119,17 +177,21 @@ The plugin automatically detects and reports:
 The plugin transmits these standard GDL-90 messages:
 
 ### Heartbeat (ID 0x00)
-- Frequency: 1 Hz
-- Contains UTC timestamp and status information
+- **Frequency**: 1 Hz
+- **Purpose**: UTC timestamp and status information
+- **Size**: 8 bytes
 
 ### Ownship Report (ID 0x0A)  
-- Frequency: 2 Hz
-- Contains your aircraft's position, altitude, speed, track, and vertical speed
+- **Frequency**: 2 Hz
+- **Purpose**: Your aircraft's position, altitude, speed, track, and vertical speed
+- **Size**: 34 bytes
+- **Data**: Latitude, longitude, altitude, ground speed, track, vertical speed
 
 ### Traffic Report (ID 0x14)
-- Frequency: 2 Hz per target
-- Contains position and movement data for each detected aircraft
-- Maximum 63 traffic targets supported
+- **Frequency**: 2 Hz per target
+- **Purpose**: Position and movement data for each detected aircraft
+- **Size**: 34 bytes per target
+- **Capacity**: Maximum 63 traffic targets supported
 
 ## Troubleshooting
 
@@ -137,48 +199,58 @@ The plugin transmits these standard GDL-90 messages:
 1. Check X-Plane Log.txt for error messages
 2. Ensure the correct .xpl file for your platform is installed
 3. Verify X-Plane SDK compatibility
+4. Check file permissions (executable on macOS/Linux)
 
 ### No Data Being Sent
 1. Check that FDPRO is listening on port 4000
 2. Verify firewall settings allow UDP traffic
 3. Ensure aircraft is loaded and in flight (not on ground with engines off)
+4. Monitor X-Plane log for "XP2GDL90" messages
 
 ### Traffic Not Appearing
 1. Enable AI aircraft in X-Plane settings
-2. Join multiplayer session
+2. Join multiplayer session or configure AI traffic
 3. Verify TCAS system is active on your aircraft
+4. Check that other aircraft are within TCAS range
 
 ### Network Issues
 1. Check Windows Firewall / macOS Firewall settings
 2. Verify FDPRO is configured to receive on port 4000
-3. Test with network monitoring tools (Wireshark, etc.)
+3. Test with network monitoring tools (Wireshark, netcat, etc.)
+4. Ensure no other applications are using port 4000
 
-## Debugging
+### Performance Issues
+1. Monitor CPU usage in X-Plane
+2. Check for excessive log output
+3. Verify network latency is reasonable
+4. Consider reducing traffic targets if CPU usage is high
 
-Enable debug output by monitoring X-Plane's Log.txt file:
-```
-tail -f "X-Plane 12/Log.txt" | grep XP2GDL90
-```
+### Common Error Messages
 
-## Comparison with Python Version
+| Error Message | Cause | Solution |
+|---------------|-------|----------|
+| "Failed to create socket" | Network initialization failure | Check firewall, restart X-Plane |
+| "Failed to send message" | Network transmission error | Verify target IP/port, check network |
+| "Invalid dataref" | X-Plane data access issue | Ensure aircraft is loaded, check X-Plane version |
 
-| Feature | Python Version | C++ Plugin |
-|---------|----------------|------------|
-| X-Plane Setup | Requires Data Output configuration | No setup required |
-| Performance | Higher CPU usage, UDP overhead | Native performance |
-| Reliability | Network dependent | Direct SDK access |
-| Dependencies | Python runtime + libraries | None (compiled binary) |
-| Platform Support | Cross-platform with Python | Native cross-platform |
+For additional troubleshooting, see our [Troubleshooting Guide](../../wiki/Troubleshooting) (if available).
 
 ## Development
 
-### Source Structure
+### Project Structure
 ```
-src/
-  xp2gdl90.cpp       # Main plugin implementation
-CMakeLists.txt       # Build configuration
-build.sh            # macOS/Linux build script
-build_windows.bat   # Windows build script
+xp2gdl90/
+├── src/
+│   └── xp2gdl90.cpp       # Main plugin implementation
+├── SDK/                   # X-Plane SDK (included)
+├── build/                 # Build output directory
+├── CMakeLists.txt         # Build configuration
+├── build.sh              # macOS/Linux build script
+├── build_windows.bat     # Windows build script
+├── build_all.py          # Cross-platform build script
+├── CONTRIBUTING.md       # Development guidelines
+├── SECURITY.md           # Security policy
+└── CHANGELOG.md          # Version history
 ```
 
 ### Key Components
@@ -188,13 +260,98 @@ build_windows.bat   # Windows build script
 - **UDP Broadcasting**: Network transmission to FDPRO
 - **Flight Loop**: Timed execution for periodic transmission
 
-### Customization
+### Architecture Overview
 
-To modify the plugin behavior:
-1. Edit configuration constants in `xp2gdl90.cpp`
-2. Rebuild using the build scripts
-3. Reinstall the updated plugin
+```
+X-Plane Simulator
+       ↓ (SDK DataRefs)
+XP2GDL90 Plugin
+       ↓ (UDP Port 4000)
+FDPRO / EFB Application
+```
+
+The plugin integrates directly with X-Plane's flight model through the SDK, eliminating the need for external data output configuration.
+
+## Contributing
+
+We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for:
+
+- Development setup and build instructions
+- Coding standards and best practices
+- Pull request process and guidelines
+- Testing procedures and requirements
+- Community guidelines and expectations
+
+### Quick Contribution Steps
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes following our coding standards
+4. Test on your target platform(s)
+5. Submit a pull request with detailed description
+
+For bug reports and feature requests, please use our [issue templates](../../issues/new/choose).
+
+### Development Resources
+
+- [X-Plane SDK Documentation](https://developer.x-plane.com/sdk/)
+- [GDL-90 Specification](https://www.faa.gov/air_traffic/technology/adsb/archival/)
+- [CMake Documentation](https://cmake.org/documentation/)
+
+## Security
+
+Security is a top priority for XP2GDL90. Please see our [Security Policy](SECURITY.md) for:
+
+- Supported versions and security update policy
+- Security considerations for aviation data broadcasting
+- Vulnerability reporting procedures
+- Network security best practices
+- Data privacy information
+
+### Security Highlights
+
+- **Localhost Default**: Prevents external network access by default
+- **No Data Collection**: Plugin doesn't collect personal or telemetry data
+- **Memory Safety**: Comprehensive bounds checking and safe string handling
+- **Input Validation**: All network and dataref input validation
+- **Responsible Disclosure**: Professional vulnerability reporting process
+
+**Important**: If you discover a security vulnerability, please follow our responsible disclosure process outlined in [SECURITY.md](SECURITY.md) rather than creating a public issue.
 
 ## License
 
-This project follows the same license terms as the original Python implementation.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+### Third-Party Components
+
+- **X-Plane SDK**: Laminar Research (included under X-Plane SDK license)
+- **CMake**: Kitware, Inc. (used for build system)
+
+## Changelog
+
+For a detailed history of changes, see [CHANGELOG.md](CHANGELOG.md).
+
+### Recent Updates
+
+- **v1.0.1** (2025-08-26): Enhanced documentation, security policy, contributing guidelines
+- **v1.0.0** (2025-08-26): Initial release with full GDL-90 implementation
+
+## Support and Community
+
+- **Issues**: Report bugs and request features via [GitHub Issues](../../issues)
+- **Discussions**: Join community discussions via [GitHub Discussions](../../discussions) (if available)
+- **Documentation**: Complete documentation in this repository
+- **Wiki**: Additional guides and examples in the [project wiki](../../wiki) (if available)
+
+## Acknowledgments
+
+- **Laminar Research**: For the X-Plane SDK and flight simulator platform
+- **FDPRO Team**: For GDL-90 compatibility and testing feedback
+- **Aviation Community**: For feedback, testing, and feature suggestions
+- **Contributors**: All developers who have contributed to this project
+
+---
+
+**Made with ❤️ for the flight simulation community**
+
+For questions, support, or feedback, please use the [GitHub Issues](../../issues) page or start a [Discussion](../../discussions).
