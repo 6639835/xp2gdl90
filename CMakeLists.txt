@@ -58,6 +58,25 @@ set_target_properties(xp2gdl90 PROPERTIES
     SUFFIX ""
 )
 
+# Set output directories for all configurations
+set_target_properties(xp2gdl90 PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/xp2gdl90"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/xp2gdl90"
+    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/xp2gdl90"
+)
+
+# For multi-config generators (Visual Studio), set per-config output directories
+if(WIN32)
+    foreach(OUTPUTCONFIG ${CMAKE_CONFIGURATION_TYPES})
+        string(TOUPPER ${OUTPUTCONFIG} OUTPUTCONFIG)
+        set_target_properties(xp2gdl90 PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG} "${CMAKE_BINARY_DIR}/xp2gdl90"
+            LIBRARY_OUTPUT_DIRECTORY_${OUTPUTCONFIG} "${CMAKE_BINARY_DIR}/xp2gdl90"
+            ARCHIVE_OUTPUT_DIRECTORY_${OUTPUTCONFIG} "${CMAKE_BINARY_DIR}/xp2gdl90"
+        )
+    endforeach()
+endif()
+
 # Platform-specific linking
 if(WIN32)
     # Link against X-Plane libraries and Windows socket library
@@ -139,13 +158,6 @@ target_compile_definitions(xp2gdl90 PRIVATE
 # Create output directory structure
 set(PLUGIN_OUTPUT_DIR "${CMAKE_BINARY_DIR}/xp2gdl90")
 file(MAKE_DIRECTORY "${PLUGIN_OUTPUT_DIR}")
-
-# Copy plugin to output directory after build
-add_custom_command(TARGET xp2gdl90 POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${PLUGIN_OUTPUT_DIR}"
-    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:xp2gdl90> "${PLUGIN_OUTPUT_DIR}/"
-    COMMENT "Copying plugin to output directory"
-)
 
 # Installation rules
 install(TARGETS xp2gdl90 
