@@ -626,7 +626,7 @@ void create_config_window() {
     XPAddWidgetCallback(config_window, config_widget_callback);
     
     // Create enable/disable button
-    enable_button = XPCreateWidget(left + 20, top - 40, left + 150, top - 65, 1, "Enable Broadcast", 0, config_window, xpWidgetClass_Button);
+    enable_button = XPCreateWidget(left + 20, top - 40, left + 200, top - 65, 1, "Enable Broadcast", 0, config_window, xpWidgetClass_Button);
     XPSetWidgetProperty(enable_button, xpProperty_ButtonType, xpRadioButton);
     XPSetWidgetProperty(enable_button, xpProperty_ButtonBehavior, xpButtonBehaviorCheckBox);
     XPSetWidgetProperty(enable_button, xpProperty_ButtonState, broadcast_enabled ? 1 : 0);
