@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or Discussion
+    url: https://github.com/6639835/xplane-plugin-example/discussions
+    about: Ask questions or start discussions about the plugin
+  - name: X-Plane Developer Documentation
+    url: https://developer.x-plane.com/
+    about: Official X-Plane SDK documentation and resources

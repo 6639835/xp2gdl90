@@ -1,0 +1,6 @@
+EXPORTS
+XPluginStart
+XPluginStop
+XPluginEnable
+XPluginDisable
+XPluginReceiveMessage

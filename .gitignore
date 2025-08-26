@@ -1,0 +1,81 @@
+# Build directories
+/build/
+build/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+
+# Compiled files
+*.o
+*.obj
+*.xpl
+*.so
+!SDK/Libraries/Lin/*.so
+*.dll
+*.dylib
+
+# macOS system files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Icon?
+ehthumbs.db
+Thumbs.db
+
+# IDE related files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Backup files
+*.bak
+*.backup
+*.orig
+
+# Compiler and toolchain related
+*.user
+*.vcxproj.user
+*.suo
+*.sdf
+*.opensdf
+*.pdb
+*.idb
+
+# Xcode related
+*.xcodeproj/
+*.xcworkspace/
+DerivedData/
+
+# Visual Studio related
+.vs/
+x64/
+Release/
+Debug/
+
+# Python related files
+/__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+pip-log.txt
+pip-delete-this-directory.txt

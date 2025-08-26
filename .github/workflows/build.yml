@@ -1,0 +1,381 @@
+name: Build and Release XP2GDL90 Plugin
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  # Check if VERSION file changed and we need to create a release
+  check-version:
+    name: Check Version Change
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    outputs:
+      should_release: ${{ steps.version_check.outputs.should_release }}
+      version: ${{ steps.version_check.outputs.version }}
+      tag: ${{ steps.version_check.outputs.tag }}
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Check if VERSION file changed
+      id: version_check
+      run: |
+        # Check if VERSION file was modified in the last commit
+        if git diff --name-only HEAD~1 HEAD | grep -q "^VERSION$"; then
+          echo "VERSION file was modified in this commit"
+          
+          if [ ! -f VERSION ]; then
+            echo "VERSION file not found!"
+            exit 1
+          fi
+          
+          VERSION=$(cat VERSION | tr -d '\n' | tr -d '\r')
+          echo "Found version: $VERSION"
+          
+          # Validate version format (basic semver check)
+          if [[ ! $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$ ]]; then
+            echo "Invalid version format: $VERSION"
+            echo "Expected format: X.Y.Z or X.Y.Z-suffix (e.g., 1.0.0 or 1.0.0-beta.1)"
+            exit 1
+          fi
+          
+          TAG="v$VERSION"
+          
+          # Check if tag already exists
+          if git tag -l | grep -q "^$TAG$"; then
+            echo "Tag $TAG already exists, skipping release creation"
+            echo "should_release=false" >> $GITHUB_OUTPUT
+          else
+            echo "Tag $TAG does not exist, will create release"
+            echo "should_release=true" >> $GITHUB_OUTPUT
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "tag=$TAG" >> $GITHUB_OUTPUT
+          fi
+        else
+          echo "VERSION file was not modified, no release needed"
+          echo "should_release=false" >> $GITHUB_OUTPUT
+        fi
+
+  build:
+    name: Build Plugin
+    runs-on: ${{ matrix.os }}
+    if: always() && (github.event_name == 'pull_request' || github.event_name == 'push')
+    
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+        include:
+          - os: windows-latest
+            platform: windows
+            artifact_name: xp2gdl90/win_x64.xpl
+          - os: macos-latest
+            platform: mac
+            artifact_name: xp2gdl90/mac_x64.xpl
+          - os: ubuntu-latest
+            platform: linux
+            artifact_name: xp2gdl90/lin_x64.xpl
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+    
+    - name: Install dependencies (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System'
+      shell: pwsh
+    
+    - name: Verify CMake installation (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        # Restart PowerShell session to ensure environment variables take effect
+        $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "User")
+        
+        Write-Host "=== CMake Version ==="
+        cmake --version
+      shell: pwsh
+    
+    - name: Install dependencies (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        brew install cmake
+    
+    - name: Install dependencies (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake build-essential
+    
+    - name: Build plugin (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        # Ensure environment variables are set correctly
+        $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "User")
+        python build_all.py --platform ${{ matrix.platform }}
+      shell: pwsh
+    
+    - name: Build plugin (Unix)
+      if: runner.os != 'Windows'
+      run: |
+        python build_all.py --platform ${{ matrix.platform }}
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: xp2gdl90-${{ matrix.platform }}
+        path: build/${{ matrix.artifact_name }}
+        retention-days: 30
+
+  package:
+    name: Create Release Package
+    needs: build
+    runs-on: ubuntu-latest
+    if: always() && needs.build.result == 'success' && (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')))
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts/
+    
+    - name: Create release package
+      run: |
+        mkdir -p release/xp2gdl90
+        cp artifacts/xp2gdl90-windows/xp2gdl90/win_x64.xpl release/xp2gdl90/
+        cp artifacts/xp2gdl90-mac/xp2gdl90/mac_x64.xpl release/xp2gdl90/
+        cp artifacts/xp2gdl90-linux/xp2gdl90/lin_x64.xpl release/xp2gdl90/
+        
+        # Get version from VERSION file or tag
+        if [ -f VERSION ]; then
+          VERSION=$(cat VERSION)
+        else
+          VERSION="dev"
+        fi
+        
+        # Create installation instructions file
+        cat > release/xp2gdl90/README.txt << EOF
+        XP2GDL90 Plugin v${VERSION}
+        ===========================
+        
+        Choose the correct plugin file for your platform:
+        - Windows: win_x64.xpl
+        - macOS: mac_x64.xpl  
+        - Linux: lin_x64.xpl
+        
+        Installation:
+        1. Copy the appropriate .xpl file to your X-Plane installation
+        2. Place it in: Resources/plugins/xp2gdl90/
+        3. Restart X-Plane
+        
+        Usage:
+        - This plugin reads flight data directly from X-Plane using the SDK
+        - Encodes data in GDL-90 format for aviation applications
+        - Broadcasts to FDPRO via UDP on port 4000 (127.0.0.1)
+        - Supports ownship position reports and traffic targets
+        - No X-Plane Data Output configuration required
+        - Automatic 1Hz heartbeat, 2Hz position reports, 2Hz traffic reports
+        
+        Features:
+        - Direct SDK integration (no UDP setup needed)
+        - Real-time flight data transmission
+        - Traffic target detection and reporting
+        - Cross-platform native performance
+        
+        Check X-Plane's Log.txt for plugin status messages.
+        
+        Build: $(date '+%Y-%m-%d %H:%M:%S') UTC
+        Commit: ${{ github.sha }}
+        EOF
+        
+        cd release
+        tar -czf xp2gdl90.tar.gz xp2gdl90/
+    
+    - name: Upload release package
+      uses: actions/upload-artifact@v4
+      with:
+        name: xp2gdl90-all-platforms
+        path: release/xp2gdl90.tar.gz
+        retention-days: 90
+
+  auto-tag-and-release:
+    name: Auto Tag and Release
+    needs: [check-version, package]
+    runs-on: ubuntu-latest
+    if: always() && needs.check-version.outputs.should_release == 'true' && needs.package.result == 'success'
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Configure git
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+    
+    - name: Create and push tag
+      run: |
+        TAG="${{ needs.check-version.outputs.tag }}"
+        VERSION="${{ needs.check-version.outputs.version }}"
+        
+        # Get the commit message that changed VERSION
+        COMMIT_MSG=$(git log -1 --pretty=format:"%s")
+        
+        # Create annotated tag
+        git tag -a $TAG -m "Release $VERSION
+
+        Auto-generated release from VERSION file update.
+        Original commit: $COMMIT_MSG
+        Released: $(date -u '+%Y-%m-%d %H:%M:%S') UTC"
+        
+        # Push the tag
+        git push origin $TAG
+        
+        echo "✅ Created and pushed tag: $TAG"
+    
+    - name: Download release package
+      uses: actions/download-artifact@v4
+      with:
+        name: xp2gdl90-all-platforms
+        path: ./
+    
+    - name: Download individual platform artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts/
+    
+    - name: Generate changelog
+      id: changelog
+      run: |
+        VERSION="${{ needs.check-version.outputs.version }}"
+        
+        # Try to get previous tag for changelog
+        PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
+        
+        if [ -n "$PREVIOUS_TAG" ]; then
+          echo "## What's Changed" > CHANGELOG.md
+          git log --pretty=format:"- %s" $PREVIOUS_TAG..HEAD >> CHANGELOG.md
+        else
+          echo "## What's New" > CHANGELOG.md
+          echo "- Initial release of XP2GDL90 Plugin" >> CHANGELOG.md
+          echo "- Direct SDK integration for reading X-Plane flight data" >> CHANGELOG.md
+          echo "- Real-time GDL-90 data broadcasting to FDPRO" >> CHANGELOG.md
+          echo "- Support for ownship position and traffic targets" >> CHANGELOG.md
+          echo "- Cross-platform support (Windows, macOS, Linux)" >> CHANGELOG.md
+          echo "- No X-Plane Data Output configuration required" >> CHANGELOG.md
+        fi
+    
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ needs.check-version.outputs.tag }}
+        name: XP2GDL90 Plugin v${{ needs.check-version.outputs.version }}
+        body_path: CHANGELOG.md
+        draft: false
+        prerelease: ${{ contains(needs.check-version.outputs.version, 'rc') || contains(needs.check-version.outputs.version, 'beta') || contains(needs.check-version.outputs.version, 'alpha') }}
+        files: |
+          xp2gdl90.tar.gz
+          artifacts/xp2gdl90-windows/xp2gdl90/win_x64.xpl
+          artifacts/xp2gdl90-mac/xp2gdl90/mac_x64.xpl
+          artifacts/xp2gdl90-linux/xp2gdl90/lin_x64.xpl
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Release summary
+      run: |
+        cat >> $GITHUB_STEP_SUMMARY << EOF
+        # 🚀 Release Created Successfully!
+        
+        **Version:** ${{ needs.check-version.outputs.version }}
+        **Tag:** ${{ needs.check-version.outputs.tag }}
+        **Release URL:** https://github.com/${{ github.repository }}/releases/tag/${{ needs.check-version.outputs.tag }}
+        
+        ## Files attached:
+        - xp2gdl90.tar.gz (All platforms package)
+        - win_x64.xpl (Windows x64)
+        - mac_x64.xpl (macOS Universal)
+        - lin_x64.xpl (Linux x64)
+        
+        ## 🎉 Users can now download the release!
+        EOF
+
+  # Fallback release job for manual tag pushes
+  manual-release:
+    name: Manual Tag Release
+    needs: package
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/') && needs.package.result == 'success'
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Download release package
+      uses: actions/download-artifact@v4
+      with:
+        name: xp2gdl90-all-platforms
+        path: ./
+    
+    - name: Download individual platform artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts/
+    
+    - name: Get version and changelog info
+      id: version
+      run: |
+        # Extract version from tag (remove 'v' prefix if present)
+        VERSION=${GITHUB_REF#refs/tags/}
+        VERSION=${VERSION#v}
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        
+        # Try to get previous tag for changelog
+        PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
+        if [ -n "$PREVIOUS_TAG" ]; then
+          echo "previous_tag=$PREVIOUS_TAG" >> $GITHUB_OUTPUT
+        fi
+        
+        # Generate basic changelog from commits
+        if [ -n "$PREVIOUS_TAG" ]; then
+          echo "## What's Changed" > CHANGELOG.md
+          git log --pretty=format:"- %s" $PREVIOUS_TAG..HEAD >> CHANGELOG.md
+        else
+          echo "## What's New" > CHANGELOG.md
+          echo "- Initial release" >> CHANGELOG.md
+        fi
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ github.ref_name }}
+        name: XP2GDL90 Plugin v${{ steps.version.outputs.version }}
+        body_path: CHANGELOG.md
+        draft: false
+        prerelease: ${{ contains(github.ref_name, 'rc') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') }}
+        files: |
+          xp2gdl90.tar.gz
+          artifacts/xp2gdl90-windows/xp2gdl90/win_x64.xpl
+          artifacts/xp2gdl90-mac/xp2gdl90/mac_x64.xpl
+          artifacts/xp2gdl90-linux/xp2gdl90/lin_x64.xpl
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
