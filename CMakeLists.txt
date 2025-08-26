@@ -67,9 +67,9 @@ if(WIN32)
         ws2_32
     )
     
-    # Set Windows-specific properties
+    # Use the exports definition file for proper Windows linking
     set_target_properties(xp2gdl90 PROPERTIES
-        LINK_FLAGS "/EXPORT:XPluginStart /EXPORT:XPluginStop /EXPORT:XPluginEnable /EXPORT:XPluginDisable /EXPORT:XPluginReceiveMessage"
+        LINK_FLAGS "/DEF:${CMAKE_CURRENT_SOURCE_DIR}/win_exports.def"
     )
     
 elseif(APPLE)
