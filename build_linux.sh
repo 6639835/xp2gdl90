@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# OpenAL Shared Example Plugin Build Script (Linux)
+# XP2GDL90 Plugin Build Script (Linux)
 # Usage: ./build_linux.sh [clean]
 
 set -e  # Exit on error
@@ -8,7 +8,7 @@ set -e  # Exit on error
 PROJECT_DIR=$(cd "$(dirname "$0")" && pwd)
 BUILD_DIR="$PROJECT_DIR/build"
 
-echo "=== OpenAL Shared Example Plugin Build Script (Linux) ==="
+echo "=== XP2GDL90 Plugin Build Script (Linux) ==="
 echo "Project Directory: $PROJECT_DIR"
 echo "Build Directory: $BUILD_DIR"
 
@@ -63,7 +63,7 @@ echo ""
 echo "=== Build Complete ==="
 
 # Check output file
-XPL_FILE="$BUILD_DIR/lin.xpl"
+XPL_FILE="$BUILD_DIR/xp2gdl90/lin_x64.xpl"
 if [ -f "$XPL_FILE" ]; then
     echo "[SUCCESS] Generated: $XPL_FILE"
     
@@ -87,9 +87,9 @@ if [ -f "$XPL_FILE" ]; then
     ldd "$XPL_FILE" 2>/dev/null || echo "Unable to display library dependencies"
     
     echo ""
-    echo "[INSTALLATION] Copy lin.xpl to:"
-    echo "  X-Plane/Resources/plugins/OpenALSharedExample/lin.xpl"
-    echo "  Also copy sound.wav file to the same directory"
+    echo "[INSTALLATION] Copy lin_x64.xpl to:"
+    echo "  X-Plane/Resources/plugins/xp2gdl90/lin_x64.xpl"
+    echo "  No additional files needed - plugin is self-contained"
 else
     echo "[ERROR] Output file not found: $XPL_FILE"
     exit 1

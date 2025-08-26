@@ -1,5 +1,5 @@
 @echo off
-REM OpenAL Shared Example Plugin Build Script (Windows)
+REM XP2GDL90 Plugin Build Script (Windows)
 REM Usage: build_windows.bat [clean]
 
 setlocal enabledelayedexpansion
@@ -7,7 +7,7 @@ setlocal enabledelayedexpansion
 set PROJECT_DIR=%~dp0
 set BUILD_DIR=%PROJECT_DIR%build
 
-echo === OpenAL Shared Example Plugin Build Script (Windows) ===
+echo === XP2GDL90 Plugin Build Script (Windows) ===
 echo Project Directory: %PROJECT_DIR%
 echo Build Directory: %BUILD_DIR%
 
@@ -57,23 +57,18 @@ if errorlevel 1 (
 echo.
 echo === Build Complete ===
 
-REM Check output file (Visual Studio puts it in Release subdirectory)
-set XPL_FILE_RELEASE=%BUILD_DIR%\Release\win.xpl
-set XPL_FILE_ROOT=%BUILD_DIR%\win.xpl
+REM Check output file
+set XPL_FILE=%BUILD_DIR%\xp2gdl90\win_x64.xpl
 
-if exist "%XPL_FILE_RELEASE%" (
-    echo [SUCCESS] Generated: %XPL_FILE_RELEASE%
-    
-    REM Copy to root build directory for consistency
-    copy "%XPL_FILE_RELEASE%" "%XPL_FILE_ROOT%" >nul
-    echo [INFO] Copied to: %XPL_FILE_ROOT%
+if exist "%XPL_FILE%" (
+    echo [SUCCESS] Generated: %XPL_FILE%
     
     echo.
     echo File information:
-    dir "%XPL_FILE_ROOT%"
+    dir "%XPL_FILE%"
     
     REM Get file size and check if it's reasonable
-    for %%A in ("%XPL_FILE_ROOT%") do (
+    for %%A in ("%XPL_FILE%") do (
         set FILE_SIZE=%%~zA
         set /a FILE_SIZE_KB=!FILE_SIZE!/1024
         echo File size: !FILE_SIZE_KB! KB
@@ -86,40 +81,12 @@ if exist "%XPL_FILE_RELEASE%" (
     )
     
     echo.
-    echo [INSTALLATION] Copy win.xpl to:
-    echo   X-Plane\Resources\plugins\OpenALSharedExample\win.xpl
-    echo   Also copy sound.wav file to the same directory
+    echo [INSTALLATION] Copy win_x64.xpl to:
+    echo   X-Plane\Resources\plugins\xp2gdl90\win_x64.xpl
+    echo   No additional files needed - plugin is self-contained
 ) else (
-    if exist "%XPL_FILE_ROOT%" (
-        echo [SUCCESS] Generated: %XPL_FILE_ROOT%
-        
-        echo.
-        echo File information:
-        dir "%XPL_FILE_ROOT%"
-        
-        REM Get file size and check if it's reasonable
-        for %%A in ("%XPL_FILE_ROOT%") do (
-            set FILE_SIZE=%%~zA
-            set /a FILE_SIZE_KB=!FILE_SIZE!/1024
-            echo File size: !FILE_SIZE_KB! KB
-            
-            if !FILE_SIZE! LSS 10240 (
-                echo.
-                echo [WARNING] Plugin file is unusually small ^(!FILE_SIZE! bytes^)
-                echo This might indicate a build issue.
-            )
-        )
-        
-        echo.
-        echo [INSTALLATION] Copy win.xpl to:
-        echo   X-Plane\Resources\plugins\OpenALSharedExample\win.xpl
-        echo   Also copy sound.wav file to the same directory
-    ) else (
-        echo [ERROR] Output file not found in either location:
-        echo   - %XPL_FILE_RELEASE%
-        echo   - %XPL_FILE_ROOT%
-        exit /b 1
-    )
+    echo [ERROR] Output file not found: %XPL_FILE%
+    exit /b 1
 )
 
 endlocal
