@@ -1,8 +1,4 @@
-#include "XPLMPlugin.h"
-#include "XPLMDataAccess.h"
-#include "XPLMProcessing.h"
-#include "XPLMUtilities.h"
-
+// Standard C/C++ headers first
 #include <cstring>
 #include <cstdio>
 #include <cmath>
@@ -11,7 +7,20 @@
 #include <ctime>
 #include <algorithm>
 
+// X-Plane SDK headers
+#include "XPLMPlugin.h"
+#include "XPLMDataAccess.h"
+#include "XPLMProcessing.h"
+#include "XPLMUtilities.h"
+
+// Platform-specific networking headers
 #ifdef _WIN32
+    #ifndef WIN32_LEAN_AND_MEAN
+        #define WIN32_LEAN_AND_MEAN
+    #endif
+    #ifndef NOMINMAX
+        #define NOMINMAX
+    #endif
     #include <winsock2.h>
     #include <ws2tcpip.h>
     #pragma comment(lib, "ws2_32.lib")
@@ -493,6 +502,12 @@ void update_traffic_targets() {
 
 // Flight loop callback
 float flight_loop_callback(float elapsedMe, float elapsedSim, int counter, void* refcon) {
+    // Suppress unused parameter warnings
+    (void)elapsedMe;
+    (void)elapsedSim;
+    (void)counter;
+    (void)refcon;
+    
     static double last_heartbeat = 0;
     static double last_position = 0;
     static double last_traffic = 0;
@@ -663,5 +678,10 @@ PLUGIN_API void XPluginDisable(void) {
 }
 
 PLUGIN_API void XPluginReceiveMessage(XPLMPluginID inFromWho, int inMessage, void* inParam) {
+    // Suppress unused parameter warnings
+    (void)inFromWho;
+    (void)inMessage;
+    (void)inParam;
+    
     // Handle plugin messages if needed
 }
