@@ -63,7 +63,7 @@ echo ""
 echo "=== Build Complete ==="
 
 # Check output file
-XPL_FILE="$BUILD_DIR/xp2gdl90/lin_x64.xpl"
+XPL_FILE="$BUILD_DIR/lin.xpl"
 if [ -f "$XPL_FILE" ]; then
     echo "[SUCCESS] Generated: $XPL_FILE"
     
@@ -87,8 +87,8 @@ if [ -f "$XPL_FILE" ]; then
     ldd "$XPL_FILE" 2>/dev/null || echo "Unable to display library dependencies"
     
     echo ""
-    echo "[INSTALLATION] Copy lin_x64.xpl to:"
-    echo "  X-Plane/Resources/plugins/xp2gdl90/lin_x64.xpl"
+    echo "[INSTALLATION] Copy lin.xpl to:"
+    echo "  X-Plane/Resources/plugins/xp2gdl90/lin.xpl"
     echo "  No additional files needed - plugin is self-contained"
 else
     echo "[ERROR] Output file not found: $XPL_FILE"

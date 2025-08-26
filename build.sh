@@ -52,11 +52,11 @@ echo "=== Build Complete ==="
 
 # Check output file based on platform
 if [[ "$OSTYPE" == "darwin"* ]]; then
-    XPL_FILE="$BUILD_DIR/xp2gdl90/mac_x64.xpl"
+    XPL_FILE="$BUILD_DIR/mac.xpl"
 elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    XPL_FILE="$BUILD_DIR/xp2gdl90/lin_x64.xpl"
+    XPL_FILE="$BUILD_DIR/lin.xpl"
 else
-    XPL_FILE="$BUILD_DIR/xp2gdl90/win_x64.xpl"
+    XPL_FILE="$BUILD_DIR/win.xpl"
 fi
 
 if [ -f "$XPL_FILE" ]; then

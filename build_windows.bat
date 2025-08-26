@@ -58,7 +58,7 @@ echo.
 echo === Build Complete ===
 
 REM Check output file
-set XPL_FILE=%BUILD_DIR%\xp2gdl90\win_x64.xpl
+set XPL_FILE=%BUILD_DIR%\win.xpl
 
 if exist "%XPL_FILE%" (
     echo [SUCCESS] Generated: %XPL_FILE%
@@ -81,8 +81,8 @@ if exist "%XPL_FILE%" (
     )
     
     echo.
-    echo [INSTALLATION] Copy win_x64.xpl to:
-    echo   X-Plane\Resources\plugins\xp2gdl90\win_x64.xpl
+    echo [INSTALLATION] Copy win.xpl to:
+    echo   X-Plane\Resources\plugins\xp2gdl90\win.xpl
     echo   No additional files needed - plugin is self-contained
 ) else (
     echo [ERROR] Output file not found: %XPL_FILE%

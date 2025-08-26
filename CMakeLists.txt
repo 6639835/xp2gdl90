@@ -10,30 +10,29 @@ set(XPLANE_SDK_PATH "${CMAKE_CURRENT_SOURCE_DIR}/SDK")
 
 # Platform-specific settings
 if(WIN32)
-    set(PLUGIN_OUTPUT_FILENAME "win.xpl")
-    add_definitions(-DIBM=1)
+    # Windows configuration
+    set(CMAKE_SHARED_LIBRARY_PREFIX "")
+    set(CMAKE_SHARED_LIBRARY_SUFFIX ".xpl")
+    add_definitions(-DAPL=0 -DIBM=1 -DLIN=0)
     add_definitions(-D_WIN32_WINNT=0x0601)
     add_definitions(-DWIN32_LEAN_AND_MEAN)
     add_definitions(-DNOMINMAX)
-    if(CMAKE_CL_64)
-        set(PLUGIN_OUTPUT_FILENAME "win_x64.xpl")
-        set(XPLANE_PLATFORM_SUFFIX "_64")
-    endif()
+    set(XPLANE_PLATFORM_SUFFIX "_64")
 elseif(APPLE)
-    set(PLUGIN_OUTPUT_FILENAME "mac.xpl")
-    add_definitions(-DAPL=1)
+    # macOS configuration
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15")
     set(CMAKE_OSX_ARCHITECTURES "x86_64;arm64")
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.14")
-    if(CMAKE_OSX_ARCHITECTURES MATCHES "x86_64;arm64")
-        set(PLUGIN_OUTPUT_FILENAME "mac_x64.xpl")
-    endif()
+    set(CMAKE_SHARED_LIBRARY_PREFIX "")
+    set(CMAKE_SHARED_LIBRARY_SUFFIX ".xpl")
+    add_definitions(-DAPL=1 -DIBM=0 -DLIN=0)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC -fvisibility=hidden")
 elseif(UNIX)
-    set(PLUGIN_OUTPUT_FILENAME "lin.xpl")
-    add_definitions(-DLIN=1)
-    if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-        set(PLUGIN_OUTPUT_FILENAME "lin_x64.xpl")
-        set(XPLANE_PLATFORM_SUFFIX "_64")
-    endif()
+    # Linux configuration
+    set(CMAKE_SHARED_LIBRARY_PREFIX "")
+    set(CMAKE_SHARED_LIBRARY_SUFFIX ".xpl")
+    add_definitions(-DAPL=0 -DIBM=0 -DLIN=1)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC -fvisibility=hidden")
+    set(XPLANE_PLATFORM_SUFFIX "_64")
 endif()
 
 # Include directories
@@ -51,30 +50,28 @@ set(SOURCES
 # Create the plugin library
 add_library(xp2gdl90 SHARED ${SOURCES})
 
-# Set the output name and properties
-set_target_properties(xp2gdl90 PROPERTIES
-    OUTPUT_NAME ${PLUGIN_OUTPUT_FILENAME}
-    PREFIX ""
-    SUFFIX ""
-)
-
-# Set output directories for all configurations
-set_target_properties(xp2gdl90 PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/xp2gdl90"
-    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/xp2gdl90"
-    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/xp2gdl90"
-)
-
-# For multi-config generators (Visual Studio), set per-config output directories
+# Set platform-specific output names and properties
 if(WIN32)
-    foreach(OUTPUTCONFIG ${CMAKE_CONFIGURATION_TYPES})
-        string(TOUPPER ${OUTPUTCONFIG} OUTPUTCONFIG)
-        set_target_properties(xp2gdl90 PROPERTIES
-            RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG} "${CMAKE_BINARY_DIR}/xp2gdl90"
-            LIBRARY_OUTPUT_DIRECTORY_${OUTPUTCONFIG} "${CMAKE_BINARY_DIR}/xp2gdl90"
-            ARCHIVE_OUTPUT_DIRECTORY_${OUTPUTCONFIG} "${CMAKE_BINARY_DIR}/xp2gdl90"
-        )
-    endforeach()
+    set_target_properties(xp2gdl90 PROPERTIES
+        OUTPUT_NAME "win"
+        SUFFIX ".xpl"
+        PREFIX ""
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_CURRENT_BINARY_DIR}"
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_CURRENT_BINARY_DIR}"
+    )
+elseif(APPLE)
+    set_target_properties(xp2gdl90 PROPERTIES
+        OUTPUT_NAME "mac"
+        SUFFIX ".xpl"
+        PREFIX ""
+    )
+elseif(UNIX)
+    set_target_properties(xp2gdl90 PROPERTIES
+        OUTPUT_NAME "lin"
+        SUFFIX ".xpl"
+        PREFIX ""
+    )
 endif()
 
 # Platform-specific linking
@@ -86,36 +83,40 @@ if(WIN32)
         ws2_32
     )
     
-    # Use the exports definition file for proper Windows linking
+    # Use Windows symbol export file
     set_target_properties(xp2gdl90 PROPERTIES
         LINK_FLAGS "/DEF:${CMAKE_CURRENT_SOURCE_DIR}/win_exports.def"
     )
     
 elseif(APPLE)
-    # Link against X-Plane frameworks
-    find_library(XPLM_LIBRARY XPLM "${XPLANE_SDK_PATH}/Libraries/Mac")
-    find_library(XPWIDGETS_LIBRARY XPWidgets "${XPLANE_SDK_PATH}/Libraries/Mac")
-    
+    # Link X-Plane frameworks
     target_link_libraries(xp2gdl90
-        ${XPLM_LIBRARY}
-        ${XPWIDGETS_LIBRARY}
+        "${XPLANE_SDK_PATH}/Libraries/Mac/XPLM.framework"
+        "${XPLANE_SDK_PATH}/Libraries/Mac/XPWidgets.framework"
     )
     
-    # Set macOS-specific properties
+    # Set framework search paths
     set_target_properties(xp2gdl90 PROPERTIES
-        MACOSX_RPATH FALSE
+        FRAMEWORK_SEARCH_PATHS "${XPLANE_SDK_PATH}/Libraries/Mac"
+        LINK_FLAGS "-F${XPLANE_SDK_PATH}/Libraries/Mac"
+    )
+    
+    # Ensure necessary symbols are exported
+    set_target_properties(xp2gdl90 PROPERTIES
+        LINK_FLAGS "${CMAKE_SHARED_LIBRARY_CREATE_CXX_FLAGS} -Wl,-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/mac_exports.txt"
     )
     
 elseif(UNIX)
-    # Link against X-Plane libraries
+    # Link against X-Plane libraries  
     target_link_libraries(xp2gdl90
         "${XPLANE_SDK_PATH}/Libraries/Lin/XPLM${XPLANE_PLATFORM_SUFFIX}.so"
         "${XPLANE_SDK_PATH}/Libraries/Lin/XPWidgets${XPLANE_PLATFORM_SUFFIX}.so"
+        dl  # Dynamic link library
     )
     
-    # Set Linux-specific properties
+    # Use Linux symbol export file
     set_target_properties(xp2gdl90 PROPERTIES
-        LINK_FLAGS "-shared -rdynamic -nodefaultlibs -undefined_warning"
+        LINK_FLAGS "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/linux_exports.txt"
     )
 endif()
 
@@ -149,19 +150,10 @@ endif()
 
 # Add preprocessor definitions
 target_compile_definitions(xp2gdl90 PRIVATE
-    XPLM301=1
-    XPLM300=1
-    XPLM210=1
     XPLM200=1
-)
-
-# Create output directory structure
-set(PLUGIN_OUTPUT_DIR "${CMAKE_BINARY_DIR}/xp2gdl90")
-file(MAKE_DIRECTORY "${PLUGIN_OUTPUT_DIR}")
-
-# Installation rules
-install(TARGETS xp2gdl90 
-    DESTINATION xp2gdl90
+    XPLM300=1
+    XPLM400=1
+    XPLM410=1
 )
 
 

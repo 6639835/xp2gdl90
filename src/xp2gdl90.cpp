@@ -49,7 +49,6 @@ const int MAX_TRAFFIC_TARGETS = 63;  // Maximum traffic targets
 
 // Default configuration values
 const char* DEFAULT_FDPRO_IP = "127.0.0.1";  // Default FDPRO target IP
-const int DEFAULT_FDPRO_PORT = 4000;         // Default FDPRO listening port
 
 // GDL-90 CRC-16-CCITT lookup table
 static const uint16_t GDL90_CRC16_TABLE[256] = {
@@ -130,7 +129,6 @@ static struct sockaddr_in fdpro_addr;
 static FlightData current_flight_data;
 static std::vector<TrafficTarget> traffic_targets;
 static bool enable_traffic = true;  // Enable traffic by default
-static XPLMFlightLoopID flight_loop_id = nullptr;
 
 // Dataref handles
 static XPLMDataRef lat_dataref = nullptr;
@@ -569,7 +567,9 @@ void apply_config_changes() {
 
 // Widget callback function
 int config_widget_callback(XPWidgetMessage inMessage, XPWidgetID inWidget, intptr_t inParam1, intptr_t inParam2) {
-    (void)inParam2; // Suppress unused parameter warning
+    // Suppress unused parameter warnings
+    (void)inWidget;
+    (void)inParam2;
     
     if (inMessage == xpMessage_CloseButtonPushed) {
         if (config_window != nullptr) {
@@ -826,10 +826,8 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
 PLUGIN_API void XPluginStop(void) {
     XPLMDebugString("XP2GDL90: Plugin stopping...\n");
     
-    if (flight_loop_id) {
-        XPLMDestroyFlightLoop(flight_loop_id);
-        flight_loop_id = nullptr;
-    }
+    // Unregister flight loop callback (legacy API)
+    XPLMUnregisterFlightLoopCallback(flight_loop_callback, nullptr);
     
     // Clean up UI
     destroy_config_window();
@@ -848,17 +846,8 @@ PLUGIN_API int XPluginEnable(void) {
     // Create configuration window
     create_config_window();
     
-    // Create and schedule flight loop
-    XPLMCreateFlightLoop_t flight_loop_params;
-    flight_loop_params.structSize = sizeof(XPLMCreateFlightLoop_t);
-    flight_loop_params.phase = xplm_FlightLoop_Phase_AfterFlightModel;
-    flight_loop_params.callbackFunc = flight_loop_callback;
-    flight_loop_params.refcon = nullptr;
-    
-    flight_loop_id = XPLMCreateFlightLoop(&flight_loop_params);
-    if (flight_loop_id) {
-        XPLMScheduleFlightLoop(flight_loop_id, 1.0f, 1);  // Start in 1 second, repeat
-    }
+    // Register flight loop callback (legacy API)
+    XPLMRegisterFlightLoopCallback(flight_loop_callback, 1.0f, nullptr);
     
     return 1;
 }
@@ -866,10 +855,8 @@ PLUGIN_API int XPluginEnable(void) {
 PLUGIN_API void XPluginDisable(void) {
     XPLMDebugString("XP2GDL90: Plugin disabled - stopping GDL-90 broadcast\n");
     
-    if (flight_loop_id) {
-        XPLMDestroyFlightLoop(flight_loop_id);
-        flight_loop_id = nullptr;
-    }
+    // Unregister flight loop callback (legacy API)
+    XPLMUnregisterFlightLoopCallback(flight_loop_callback, nullptr);
     
     // Hide configuration window
     if (config_window) {

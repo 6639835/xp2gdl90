@@ -143,13 +143,13 @@ Examples:
     
     if target_platform == 'windows':
         success = build_windows(clean)
-        expected_output = "xp2gdl90/win_x64.xpl"
+        expected_output = "win.xpl"
     elif target_platform == 'mac':
         success = build_mac(clean)
-        expected_output = "xp2gdl90/mac_x64.xpl"
+        expected_output = "mac.xpl"
     elif target_platform == 'linux':
         success = build_linux(clean)
-        expected_output = "xp2gdl90/lin_x64.xpl"
+        expected_output = "lin.xpl"
     else:
         print(f"Error: Unsupported platform {target_platform}")
         return 1
@@ -163,9 +163,8 @@ Examples:
             print(f"Output file: {output_file}")
             print(f"File size: {file_size / 1024:.1f} KB")
             print(f"Build date: {output_file.stat().st_mtime}")
-            plugin_filename = expected_output.split('/')[-1]  # Get just the filename
-            print(f"\n[INSTALLATION] Copy {plugin_filename} to:")
-            print(f"  X-Plane/Resources/plugins/xp2gdl90/{plugin_filename}")
+            print(f"\n[INSTALLATION] Copy {expected_output} to:")
+            print(f"  X-Plane/Resources/plugins/xp2gdl90/{expected_output}")
             print(f"  No additional files needed - plugin is self-contained")
             
             # Basic sanity check - plugin should be at least 10KB
