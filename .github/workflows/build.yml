@@ -77,13 +77,13 @@ jobs:
         include:
           - os: windows-latest
             platform: windows
-            artifact_name: xp2gdl90/win_x64.xpl
+            artifact_name: win.xpl
           - os: macos-latest
             platform: mac
-            artifact_name: xp2gdl90/mac_x64.xpl
+            artifact_name: mac.xpl
           - os: ubuntu-latest
             platform: linux
-            artifact_name: xp2gdl90/lin_x64.xpl
+            artifact_name: lin.xpl
     
     steps:
     - uses: actions/checkout@v4
@@ -157,9 +157,9 @@ jobs:
     - name: Create release package
       run: |
         mkdir -p release/xp2gdl90
-        cp artifacts/xp2gdl90-windows/xp2gdl90/win_x64.xpl release/xp2gdl90/
-        cp artifacts/xp2gdl90-mac/xp2gdl90/mac_x64.xpl release/xp2gdl90/
-        cp artifacts/xp2gdl90-linux/xp2gdl90/lin_x64.xpl release/xp2gdl90/
+        cp artifacts/xp2gdl90-windows/win.xpl release/xp2gdl90/
+        cp artifacts/xp2gdl90-mac/mac.xpl release/xp2gdl90/
+        cp artifacts/xp2gdl90-linux/lin.xpl release/xp2gdl90/
         
         # Get version from VERSION file or tag
         if [ -f VERSION ]; then
@@ -174,9 +174,9 @@ jobs:
         ===========================
         
         Choose the correct plugin file for your platform:
-        - Windows: win_x64.xpl
-        - macOS: mac_x64.xpl  
-        - Linux: lin_x64.xpl
+        - Windows: win.xpl
+        - macOS: mac.xpl  
+        - Linux: lin.xpl
         
         Installation:
         1. Copy the appropriate .xpl file to your X-Plane installation
@@ -292,9 +292,9 @@ jobs:
         prerelease: ${{ contains(needs.check-version.outputs.version, 'rc') || contains(needs.check-version.outputs.version, 'beta') || contains(needs.check-version.outputs.version, 'alpha') }}
         files: |
           xp2gdl90.tar.gz
-          artifacts/xp2gdl90-windows/xp2gdl90/win_x64.xpl
-          artifacts/xp2gdl90-mac/xp2gdl90/mac_x64.xpl
-          artifacts/xp2gdl90-linux/xp2gdl90/lin_x64.xpl
+          artifacts/xp2gdl90-windows/win.xpl
+          artifacts/xp2gdl90-mac/mac.xpl
+          artifacts/xp2gdl90-linux/lin.xpl
         generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -310,9 +310,9 @@ jobs:
         
         ## Files attached:
         - xp2gdl90.tar.gz (All platforms package)
-        - win_x64.xpl (Windows x64)
-        - mac_x64.xpl (macOS Universal)
-        - lin_x64.xpl (Linux x64)
+        - win.xpl (Windows x64)
+        - mac.xpl (macOS Universal)
+        - lin.xpl (Linux x64)
         
         ## 🎉 Users can now download the release!
         EOF
@@ -373,9 +373,9 @@ jobs:
         prerelease: ${{ contains(github.ref_name, 'rc') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') }}
         files: |
           xp2gdl90.tar.gz
-          artifacts/xp2gdl90-windows/xp2gdl90/win_x64.xpl
-          artifacts/xp2gdl90-mac/xp2gdl90/mac_x64.xpl
-          artifacts/xp2gdl90-linux/xp2gdl90/lin_x64.xpl
+          artifacts/xp2gdl90-windows/win.xpl
+          artifacts/xp2gdl90-mac/mac.xpl
+          artifacts/xp2gdl90-linux/lin.xpl
         generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
