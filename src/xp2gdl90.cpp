@@ -118,6 +118,7 @@ static XPLMMenuID config_menu_id = nullptr;
 static int config_menu_item = -1;
 static XPWidgetID config_window = nullptr;
 static XPWidgetID enable_button = nullptr;
+static XPWidgetID traffic_button = nullptr;
 static XPWidgetID ip_field = nullptr;
 static XPWidgetID port_field = nullptr;
 static XPWidgetID apply_button = nullptr;
@@ -151,9 +152,11 @@ static XPLMDataRef traffic_psi_dataref = nullptr;
 
 uint16_t gdl90_crc_compute(const uint8_t* data, size_t length) {
     uint16_t crc = 0;
+    uint16_t mask16bit = 0xFFFF;
+    
     for (size_t i = 0; i < length; i++) {
-        uint8_t tmp = (crc >> 8) ^ data[i];
-        crc = (crc << 8) ^ GDL90_CRC16_TABLE[tmp];
+        uint16_t m = (crc << 8) & mask16bit;
+        crc = GDL90_CRC16_TABLE[(crc >> 8)] ^ m ^ data[i];
     }
     return crc;
 }
@@ -552,6 +555,9 @@ void apply_config_changes() {
     // Update broadcast state
     broadcast_enabled = XPGetWidgetProperty(enable_button, xpProperty_ButtonState, nullptr);
     
+    // Update traffic state
+    enable_traffic = XPGetWidgetProperty(traffic_button, xpProperty_ButtonState, nullptr);
+    
     // Reinitialize network with new settings
     if (udp_socket != INVALID_SOCKET) {
         closesocket(udp_socket);
@@ -560,8 +566,8 @@ void apply_config_changes() {
     init_network();
     
     char msg[256];
-    snprintf(msg, sizeof(msg), "XP2GDL90: Configuration updated - IP: %s, Port: %d, Enabled: %s\n", 
-             fdpro_ip, fdpro_port, broadcast_enabled ? "Yes" : "No");
+    snprintf(msg, sizeof(msg), "XP2GDL90: Configuration updated - IP: %s, Port: %d, Broadcast: %s, Traffic: %s\n", 
+             fdpro_ip, fdpro_port, broadcast_enabled ? "Yes" : "No", enable_traffic ? "Yes" : "No");
     XPLMDebugString(msg);
 }
 
@@ -593,6 +599,10 @@ int config_widget_callback(XPWidgetMessage inMessage, XPWidgetID inWidget, intpt
             // Toggle button state is handled automatically
             return 1;
         }
+        if (inParam1 == (intptr_t)traffic_button) {
+            // Toggle button state is handled automatically
+            return 1;
+        }
     }
     
     return 0;
@@ -617,7 +627,7 @@ void config_menu_handler(void* menuRef, void* itemRef) {
 void create_config_window() {
     if (config_window != nullptr) return; // Already created
     
-    int left = 200, top = 600, right = 600, bottom = 350;
+    int left = 200, top = 600, right = 600, bottom = 300;
     
     // Create main window
     config_window = XPCreateWidget(left, top, right, bottom, 1, "XP2GDL90 Configuration", 1, nullptr, xpWidgetClass_MainWindow);
@@ -625,21 +635,27 @@ void create_config_window() {
     XPSetWidgetProperty(config_window, xpProperty_MainWindowHasCloseBoxes, 1);
     XPAddWidgetCallback(config_window, config_widget_callback);
     
-    // Create enable/disable button
+    // Create enable/disable broadcast button
     enable_button = XPCreateWidget(left + 20, top - 40, left + 200, top - 65, 1, "Enable Broadcast", 0, config_window, xpWidgetClass_Button);
     XPSetWidgetProperty(enable_button, xpProperty_ButtonType, xpRadioButton);
     XPSetWidgetProperty(enable_button, xpProperty_ButtonBehavior, xpButtonBehaviorCheckBox);
     XPSetWidgetProperty(enable_button, xpProperty_ButtonState, broadcast_enabled ? 1 : 0);
     
+    // Create enable/disable traffic button
+    traffic_button = XPCreateWidget(left + 20, top - 75, left + 200, top - 100, 1, "Enable Traffic Reports", 0, config_window, xpWidgetClass_Button);
+    XPSetWidgetProperty(traffic_button, xpProperty_ButtonType, xpRadioButton);
+    XPSetWidgetProperty(traffic_button, xpProperty_ButtonBehavior, xpButtonBehaviorCheckBox);
+    XPSetWidgetProperty(traffic_button, xpProperty_ButtonState, enable_traffic ? 1 : 0);
+    
     // Create IP address label and field
-    XPCreateWidget(left + 20, top - 80, left + 100, top - 105, 1, "IP Address:", 0, config_window, xpWidgetClass_Caption);
-    ip_field = XPCreateWidget(left + 110, top - 80, left + 250, top - 105, 1, fdpro_ip, 0, config_window, xpWidgetClass_TextField);
+    XPCreateWidget(left + 20, top - 115, left + 100, top - 140, 1, "IP Address:", 0, config_window, xpWidgetClass_Caption);
+    ip_field = XPCreateWidget(left + 110, top - 115, left + 250, top - 140, 1, fdpro_ip, 0, config_window, xpWidgetClass_TextField);
     XPSetWidgetProperty(ip_field, xpProperty_TextFieldType, xpTextEntryField);
     XPSetWidgetProperty(ip_field, xpProperty_MaxCharacters, MAX_IP_LENGTH - 1);
     
     // Create port label and field
-    XPCreateWidget(left + 20, top - 120, left + 100, top - 145, 1, "Port:", 0, config_window, xpWidgetClass_Caption);
-    port_field = XPCreateWidget(left + 110, top - 120, left + 200, top - 145, 1, "", 0, config_window, xpWidgetClass_TextField);
+    XPCreateWidget(left + 20, top - 155, left + 100, top - 180, 1, "Port:", 0, config_window, xpWidgetClass_Caption);
+    port_field = XPCreateWidget(left + 110, top - 155, left + 200, top - 180, 1, "", 0, config_window, xpWidgetClass_TextField);
     XPSetWidgetProperty(port_field, xpProperty_TextFieldType, xpTextEntryField);
     XPSetWidgetProperty(port_field, xpProperty_MaxCharacters, MAX_PORT_LENGTH - 1);
     
@@ -649,12 +665,12 @@ void create_config_window() {
     XPSetWidgetDescriptor(port_field, port_str);
     
     // Create Apply button
-    apply_button = XPCreateWidget(left + 20, top - 170, left + 100, top - 195, 1, "Apply", 0, config_window, xpWidgetClass_Button);
+    apply_button = XPCreateWidget(left + 20, top - 205, left + 100, top - 230, 1, "Apply", 0, config_window, xpWidgetClass_Button);
     XPSetWidgetProperty(apply_button, xpProperty_ButtonType, xpPushButton);
     XPSetWidgetProperty(apply_button, xpProperty_ButtonBehavior, xpButtonBehaviorPushButton);
     
     // Create Close button
-    close_button = XPCreateWidget(left + 120, top - 170, left + 200, top - 195, 1, "Close", 0, config_window, xpWidgetClass_Button);
+    close_button = XPCreateWidget(left + 120, top - 205, left + 200, top - 230, 1, "Close", 0, config_window, xpWidgetClass_Button);
     XPSetWidgetProperty(close_button, xpProperty_ButtonType, xpPushButton);
     XPSetWidgetProperty(close_button, xpProperty_ButtonBehavior, xpButtonBehaviorPushButton);
     
@@ -668,6 +684,7 @@ void destroy_config_window() {
         XPDestroyWidget(config_window, 1);
         config_window = nullptr;
         enable_button = nullptr;
+        traffic_button = nullptr;
         ip_field = nullptr;
         port_field = nullptr;
         apply_button = nullptr;
