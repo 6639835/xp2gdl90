@@ -37,7 +37,7 @@ public:
     
     // X-Plane integration
     void HandleDraw();
-    int HandleMouseClick(XPLMWindowID window, int x, int y, int button, void* refcon);
+    int HandleMouseClick(XPLMWindowID window, int x, int y, XPLMMouseStatus mouseStatus, void* refcon);
     void HandleKeyPress(XPLMWindowID window, char key, XPLMKeyFlags flags, char virtualKey, void* refcon, int losingFocus);
     int HandleCursor(XPLMWindowID window, int x, int y, void* refcon);
     int HandleMouseWheel(XPLMWindowID window, int x, int y, int wheel, int clicks, void* refcon);

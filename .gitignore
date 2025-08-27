@@ -1,6 +1,7 @@
 # Build directories
 /build/
 build/
+/demo/
 
 # CMake generated files
 CMakeCache.txt
