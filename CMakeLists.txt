@@ -40,11 +40,36 @@ include_directories(
     "${XPLANE_SDK_PATH}/CHeaders/XPLM"
     "${XPLANE_SDK_PATH}/CHeaders/Widgets"
     "${XPLANE_SDK_PATH}/CHeaders/Wrappers"
+    "src/imgui"
+    "src/ui"
 )
 
-# Source files
-set(SOURCES
+# ImGui source files
+set(IMGUI_SOURCES
+    src/imgui/imgui.cpp
+    src/imgui/imgui_demo.cpp
+    src/imgui/imgui_draw.cpp
+    src/imgui/imgui_tables.cpp
+    src/imgui/imgui_widgets.cpp
+    src/imgui/imgui_impl_opengl2.cpp
+    src/imgui/imgui_impl_xplane.cpp
+)
+
+# UI source files
+set(UI_SOURCES
+    src/ui/ImGuiManager.cpp
+)
+
+# Main plugin source files
+set(PLUGIN_SOURCES
     src/xp2gdl90.cpp
+)
+
+# All source files
+set(SOURCES
+    ${PLUGIN_SOURCES}
+    ${IMGUI_SOURCES}
+    ${UI_SOURCES}
 )
 
 # Create the plugin library
@@ -76,11 +101,12 @@ endif()
 
 # Platform-specific linking
 if(WIN32)
-    # Link against X-Plane libraries and Windows socket library
+    # Link against X-Plane libraries, Windows socket library, and OpenGL for ImGui
     target_link_libraries(xp2gdl90
         "${XPLANE_SDK_PATH}/Libraries/Win/XPLM${XPLANE_PLATFORM_SUFFIX}.lib"
         "${XPLANE_SDK_PATH}/Libraries/Win/XPWidgets${XPLANE_PLATFORM_SUFFIX}.lib"
         ws2_32
+        opengl32
     )
     
     # Use Windows symbol export file
@@ -89,10 +115,11 @@ if(WIN32)
     )
     
 elseif(APPLE)
-    # Link X-Plane frameworks
+    # Link X-Plane frameworks and OpenGL for ImGui
     target_link_libraries(xp2gdl90
         "${XPLANE_SDK_PATH}/Libraries/Mac/XPLM.framework"
         "${XPLANE_SDK_PATH}/Libraries/Mac/XPWidgets.framework"
+        "-framework OpenGL"
     )
     
     # Set framework search paths

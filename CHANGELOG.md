@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2025-08-27
+
+### Added
+- **Modern ImGui UI System**: Complete replacement of legacy XPWidgets with Dear ImGui for modern, responsive user interface
+- **Real-time Configuration Window**: Live editing of FDPRO IP address, port settings, broadcast options, and traffic reporting
+- **Status Monitor Window**: Real-time display of flight data, connection status, traffic count, and message statistics
+- **Interactive Traffic Display**: Live table showing detected AI aircraft and multiplayer targets with position data
+- **Menu Integration**: Native X-Plane menu system integration with "XP2GDL90" submenu for easy UI access
+- **Cross-Platform UI Support**: ImGui implementation works consistently across Windows, macOS, and Linux
+
+### Technical Improvements
+- **OpenGL2 Backend**: Custom X-Plane ImGui backend for seamless rendering integration
+- **Delayed Initialization**: Smart UI initialization system to avoid OpenGL context conflicts during plugin startup
+- **Window Management**: Sophisticated window lifecycle management with proper show/hide states
+- **Input Handling**: Complete mouse, keyboard, and scroll wheel event handling for ImGui widgets
+- **Memory Optimization**: Efficient singleton pattern for UI manager with minimal resource usage
+- **Debug Logging**: Comprehensive debug output for UI initialization and interaction tracking
+
+### User Experience
+- **Modern Visual Design**: Professional styling with rounded corners, modern colors, and improved typography
+- **Responsive Layout**: Adaptive window sizing and positioning with user preferences persistence
+- **Real-time Updates**: Live data refresh every 100ms for smooth status monitoring
+- **Intuitive Controls**: Standard ImGui widgets (text inputs, checkboxes, buttons) for familiar user interaction
+- **Connection Feedback**: Visual status indicators showing connection state and broadcasting activity
+
+### Fixed
+- **SDK Compatibility**: Resolved X-Plane SDK header dependency issues and type definitions
+- **Compilation Errors**: Fixed multiple C++ compilation issues across different platform configurations
+- **OpenGL Integration**: Resolved rendering context conflicts and initialization timing issues
+- **Window Visibility**: Fixed invisible window issues preventing UI interaction
+- **Memory Management**: Proper resource cleanup and leak prevention in UI lifecycle
+- **Event Handling**: Correct X-Plane window event callback signatures and parameter handling
+
+### Removed
+- **Legacy XPWidgets**: Completely removed outdated XPWidgets UI system and dependencies
+- **Static Configuration**: Eliminated need for manual configuration file editing
+- **Platform-Specific UI**: Unified UI experience across all supported platforms
+
+### Changed
+- **Configuration Method**: Transitioned from code-based configuration to real-time UI editing
+- **User Interaction**: Modernized from basic widgets to professional ImGui interface
+- **Menu Structure**: Reorganized plugin menu with clear "Configuration Window" and "Status Monitor" options
+- **Rendering Pipeline**: Updated to use modern OpenGL2 backend through ImGui integration
+
+### Performance Enhancements
+- **Conditional Rendering**: UI only renders when windows are visible, reducing unnecessary GPU usage
+- **Optimized Updates**: Smart update frequency control to balance responsiveness with performance
+- **Minimal Window Footprint**: Tiny off-screen rendering window to minimize visual impact
+- **Efficient State Management**: Streamlined UI state synchronization with plugin core
+
 ## [1.0.1] - 2025-08-26
 
 ### Added
@@ -115,6 +165,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Performance Testing**: CPU and memory usage validation
 - **Integration Testing**: FDPRO and EFB application compatibility verification
 
-[Unreleased]: https://github.com/username/xp2gdl90/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/username/xp2gdl90/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/username/xp2gdl90/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/username/xp2gdl90/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/username/xp2gdl90/releases/tag/v1.0.0

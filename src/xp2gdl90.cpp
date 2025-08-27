@@ -3,21 +3,26 @@
 #include <cstdio>
 #include <cmath>
 #include <cstdlib>
+#include <cstdint>
 #include <vector>
 #include <string>
 #include <ctime>
 #include <algorithm>
 
-// X-Plane SDK headers
+// X-Plane SDK headers - XPLMDefs.h must be included first
+#include "XPLMDefs.h"
 #include "XPLMPlugin.h"
 #include "XPLMDataAccess.h"
 #include "XPLMProcessing.h"
 #include "XPLMUtilities.h"
 #include "XPLMMenus.h"
 
-// Widget headers
+// Widget headers (legacy - will be replaced by ImGui)
 #include "XPWidgets.h"
 #include "XPStandardWidgets.h"
+
+// Modern UI with ImGui
+#include "ui/ImGuiManager.h"
 
 // Platform-specific networking headers
 #ifdef _WIN32
@@ -113,16 +118,9 @@ static char fdpro_ip[MAX_IP_LENGTH] = "127.0.0.1";  // Configurable FDPRO target
 static int fdpro_port = 4000;                       // Configurable FDPRO listening port
 static bool broadcast_enabled = true;               // Enable/disable broadcast
 
-// UI widget handles
+// UI - Modern ImGui interface
 static XPLMMenuID config_menu_id = nullptr;
 static int config_menu_item = -1;
-static XPWidgetID config_window = nullptr;
-static XPWidgetID enable_button = nullptr;
-static XPWidgetID traffic_button = nullptr;
-static XPWidgetID ip_field = nullptr;
-static XPWidgetID port_field = nullptr;
-static XPWidgetID apply_button = nullptr;
-static XPWidgetID close_button = nullptr;
 
 // Global variables
 static SOCKET udp_socket = INVALID_SOCKET;
@@ -526,37 +524,24 @@ void update_traffic_targets() {
     }
 }
 
-// UI Functions
+// Modern UI Functions
 
-// Apply configuration changes
-void apply_config_changes() {
-    // Get IP address from text field
-    char ip_buffer[MAX_IP_LENGTH];
-    XPGetWidgetDescriptor(ip_field, ip_buffer, sizeof(ip_buffer));
-    
-    // Get port from text field
-    char port_buffer[MAX_PORT_LENGTH];
-    XPGetWidgetDescriptor(port_field, port_buffer, sizeof(port_buffer));
-    
+// Configuration callback for ImGui
+void imgui_config_callback(const char* ip, int port, bool broadcast, bool traffic) {
     // Validate and apply IP
-    if (strlen(ip_buffer) > 0) {
-        strncpy(fdpro_ip, ip_buffer, sizeof(fdpro_ip) - 1);
+    if (ip && strlen(ip) > 0) {
+        strncpy(fdpro_ip, ip, sizeof(fdpro_ip) - 1);
         fdpro_ip[sizeof(fdpro_ip) - 1] = '\0';
     }
     
     // Validate and apply port
-    if (strlen(port_buffer) > 0) {
-        int new_port = atoi(port_buffer);
-        if (new_port > 0 && new_port < 65536) {
-            fdpro_port = new_port;
-        }
+    if (port > 0 && port < 65536) {
+        fdpro_port = port;
     }
     
-    // Update broadcast state
-    broadcast_enabled = XPGetWidgetProperty(enable_button, xpProperty_ButtonState, nullptr);
-    
-    // Update traffic state
-    enable_traffic = XPGetWidgetProperty(traffic_button, xpProperty_ButtonState, nullptr);
+    // Update states
+    broadcast_enabled = broadcast;
+    enable_traffic = traffic;
     
     // Reinitialize network with new settings
     if (udp_socket != INVALID_SOCKET) {
@@ -565,131 +550,70 @@ void apply_config_changes() {
     }
     init_network();
     
+    // Update ImGui with connection status
+    ImGuiManager::Instance().UpdateConnectionStatus(true, fdpro_ip, fdpro_port);
+    
     char msg[256];
     snprintf(msg, sizeof(msg), "XP2GDL90: Configuration updated - IP: %s, Port: %d, Broadcast: %s, Traffic: %s\n", 
              fdpro_ip, fdpro_port, broadcast_enabled ? "Yes" : "No", enable_traffic ? "Yes" : "No");
     XPLMDebugString(msg);
 }
 
-// Widget callback function
-int config_widget_callback(XPWidgetMessage inMessage, XPWidgetID inWidget, intptr_t inParam1, intptr_t inParam2) {
-    // Suppress unused parameter warnings
-    (void)inWidget;
-    (void)inParam2;
-    
-    if (inMessage == xpMessage_CloseButtonPushed) {
-        if (config_window != nullptr) {
-            XPHideWidget(config_window);
-        }
-        return 1;
-    }
-    
-    if (inMessage == xpMsg_PushButtonPressed) {
-        if (inParam1 == (intptr_t)apply_button) {
-            apply_config_changes();
-            return 1;
-        }
-        if (inParam1 == (intptr_t)close_button) {
-            if (config_window != nullptr) {
-                XPHideWidget(config_window);
-            }
-            return 1;
-        }
-        if (inParam1 == (intptr_t)enable_button) {
-            // Toggle button state is handled automatically
-            return 1;
-        }
-        if (inParam1 == (intptr_t)traffic_button) {
-            // Toggle button state is handled automatically
-            return 1;
-        }
-    }
-    
-    return 0;
-}
-
-// Menu handler function
+// Modern menu handler function
 void config_menu_handler(void* menuRef, void* itemRef) {
     (void)menuRef; // Suppress unused parameter warning
-    (void)itemRef; // Suppress unused parameter warning
     
-    if (config_window != nullptr) {
-        if (XPIsWidgetVisible(config_window)) {
-            XPHideWidget(config_window);
+    XPLMDebugString("XP2GDL90: Menu handler called\n");
+    
+    // Check if ImGui is available before using it
+    ImGuiManager& ui = ImGuiManager::Instance();
+    
+    // Handle different menu items
+    intptr_t item = (intptr_t)itemRef;
+    
+    char debug_msg[100];
+    snprintf(debug_msg, sizeof(debug_msg), "XP2GDL90: Menu item %ld selected\n", item);
+    XPLMDebugString(debug_msg);
+    
+    if (item == 0) {
+        // Configuration Window
+        XPLMDebugString("XP2GDL90: Toggling configuration window\n");
+        if (ui.IsConfigWindowVisible()) {
+            ui.HideConfigWindow();
         } else {
-            XPShowWidget(config_window);
-            XPBringRootWidgetToFront(config_window);
+            ui.ShowConfigWindow();
+        }
+    } else if (item == 1) {
+        // Status Monitor
+        XPLMDebugString("XP2GDL90: Toggling status window\n");
+        if (ui.IsStatusWindowVisible()) {
+            ui.HideStatusWindow();
+        } else {
+            ui.ShowStatusWindow();
         }
     }
 }
 
-// Create configuration window
-void create_config_window() {
-    if (config_window != nullptr) return; // Already created
-    
-    int left = 200, top = 600, right = 600, bottom = 300;
-    
-    // Create main window
-    config_window = XPCreateWidget(left, top, right, bottom, 1, "XP2GDL90 Configuration", 1, nullptr, xpWidgetClass_MainWindow);
-    XPSetWidgetProperty(config_window, xpProperty_MainWindowType, xpMainWindowStyle_MainWindow);
-    XPSetWidgetProperty(config_window, xpProperty_MainWindowHasCloseBoxes, 1);
-    XPAddWidgetCallback(config_window, config_widget_callback);
-    
-    // Create enable/disable broadcast button
-    enable_button = XPCreateWidget(left + 20, top - 40, left + 200, top - 65, 1, "Enable Broadcast", 0, config_window, xpWidgetClass_Button);
-    XPSetWidgetProperty(enable_button, xpProperty_ButtonType, xpRadioButton);
-    XPSetWidgetProperty(enable_button, xpProperty_ButtonBehavior, xpButtonBehaviorCheckBox);
-    XPSetWidgetProperty(enable_button, xpProperty_ButtonState, broadcast_enabled ? 1 : 0);
-    
-    // Create enable/disable traffic button
-    traffic_button = XPCreateWidget(left + 20, top - 75, left + 200, top - 100, 1, "Enable Traffic Reports", 0, config_window, xpWidgetClass_Button);
-    XPSetWidgetProperty(traffic_button, xpProperty_ButtonType, xpRadioButton);
-    XPSetWidgetProperty(traffic_button, xpProperty_ButtonBehavior, xpButtonBehaviorCheckBox);
-    XPSetWidgetProperty(traffic_button, xpProperty_ButtonState, enable_traffic ? 1 : 0);
-    
-    // Create IP address label and field
-    XPCreateWidget(left + 20, top - 115, left + 100, top - 140, 1, "IP Address:", 0, config_window, xpWidgetClass_Caption);
-    ip_field = XPCreateWidget(left + 110, top - 115, left + 250, top - 140, 1, fdpro_ip, 0, config_window, xpWidgetClass_TextField);
-    XPSetWidgetProperty(ip_field, xpProperty_TextFieldType, xpTextEntryField);
-    XPSetWidgetProperty(ip_field, xpProperty_MaxCharacters, MAX_IP_LENGTH - 1);
-    
-    // Create port label and field
-    XPCreateWidget(left + 20, top - 155, left + 100, top - 180, 1, "Port:", 0, config_window, xpWidgetClass_Caption);
-    port_field = XPCreateWidget(left + 110, top - 155, left + 200, top - 180, 1, "", 0, config_window, xpWidgetClass_TextField);
-    XPSetWidgetProperty(port_field, xpProperty_TextFieldType, xpTextEntryField);
-    XPSetWidgetProperty(port_field, xpProperty_MaxCharacters, MAX_PORT_LENGTH - 1);
-    
-    // Set initial port value
-    char port_str[MAX_PORT_LENGTH];
-    snprintf(port_str, sizeof(port_str), "%d", fdpro_port);
-    XPSetWidgetDescriptor(port_field, port_str);
-    
-    // Create Apply button
-    apply_button = XPCreateWidget(left + 20, top - 205, left + 100, top - 230, 1, "Apply", 0, config_window, xpWidgetClass_Button);
-    XPSetWidgetProperty(apply_button, xpProperty_ButtonType, xpPushButton);
-    XPSetWidgetProperty(apply_button, xpProperty_ButtonBehavior, xpButtonBehaviorPushButton);
-    
-    // Create Close button
-    close_button = XPCreateWidget(left + 120, top - 205, left + 200, top - 230, 1, "Close", 0, config_window, xpWidgetClass_Button);
-    XPSetWidgetProperty(close_button, xpProperty_ButtonType, xpPushButton);
-    XPSetWidgetProperty(close_button, xpProperty_ButtonBehavior, xpButtonBehaviorPushButton);
-    
-    // Initially hide the window
-    XPHideWidget(config_window);
+// Initialize modern ImGui UI
+void init_modern_ui() {
+    ImGuiManager& ui = ImGuiManager::Instance();
+    if (ui.Initialize()) {
+        // Set up configuration callback
+        ui.SetConfigCallback(imgui_config_callback);
+        
+        // Update initial connection status
+        ui.UpdateConnectionStatus(broadcast_enabled, fdpro_ip, fdpro_port);
+        
+        XPLMDebugString("XP2GDL90: Modern ImGui UI initialized\n");
+    } else {
+        XPLMDebugString("XP2GDL90: Failed to initialize modern UI\n");
+    }
 }
 
-// Destroy configuration window
-void destroy_config_window() {
-    if (config_window != nullptr) {
-        XPDestroyWidget(config_window, 1);
-        config_window = nullptr;
-        enable_button = nullptr;
-        traffic_button = nullptr;
-        ip_field = nullptr;
-        port_field = nullptr;
-        apply_button = nullptr;
-        close_button = nullptr;
-    }
+// Shutdown modern ImGui UI
+void shutdown_modern_ui() {
+    ImGuiManager::Instance().Shutdown();
+    XPLMDebugString("XP2GDL90: Modern UI shutdown\n");
 }
 
 // Flight loop callback
@@ -703,6 +627,8 @@ float flight_loop_callback(float elapsedMe, float elapsedSim, int counter, void*
     static double last_heartbeat = 0;
     static double last_position = 0;
     static double last_traffic = 0;
+    static double last_ui_update = 0;
+    static int total_messages_sent = 0;
     
     double current_time = XPLMGetElapsedTime();
     
@@ -719,6 +645,7 @@ float flight_loop_callback(float elapsedMe, float elapsedSim, int counter, void*
         auto heartbeat_msg = create_heartbeat();
         send_gdl90_message(heartbeat_msg);
         last_heartbeat = current_time;
+        total_messages_sent++;
         
         char debug_msg[100];
         snprintf(debug_msg, sizeof(debug_msg), "XP2GDL90: Sent heartbeat (%zu bytes)\n", heartbeat_msg.size());
@@ -730,6 +657,7 @@ float flight_loop_callback(float elapsedMe, float elapsedSim, int counter, void*
         auto position_msg = create_position_report(current_flight_data);
         send_gdl90_message(position_msg);
         last_position = current_time;
+        total_messages_sent++;
         
         char debug_msg[200];
         snprintf(debug_msg, sizeof(debug_msg), 
@@ -739,23 +667,58 @@ float flight_loop_callback(float elapsedMe, float elapsedSim, int counter, void*
     }
     
     // Send traffic reports every 0.5 seconds if enabled
+    int active_traffic_count = 0;
     if (enable_traffic && current_time - last_traffic >= 0.5) {
-        int active_count = 0;
         for (const auto& target : traffic_targets) {
             if (target.active) {
                 auto traffic_msg = create_traffic_report(target);
                 send_gdl90_message(traffic_msg);
-                active_count++;
+                active_traffic_count++;
+                total_messages_sent++;
             }
         }
         
-        if (active_count > 0) {
+        if (active_traffic_count > 0) {
             char debug_msg[100];
-            snprintf(debug_msg, sizeof(debug_msg), "XP2GDL90: Sent %d traffic reports\n", active_count);
+            snprintf(debug_msg, sizeof(debug_msg), "XP2GDL90: Sent %d traffic reports\n", active_traffic_count);
             XPLMDebugString(debug_msg);
         }
         
         last_traffic = current_time;
+    } else {
+        // Count active traffic even when not sending
+        for (const auto& target : traffic_targets) {
+            if (target.active) {
+                active_traffic_count++;
+            }
+        }
+    }
+    
+    // Try to initialize ImGui after X-Plane has been running for a few seconds
+    static bool imgui_initialized = false;
+    
+    if (!imgui_initialized && current_time > 5.0) { // Wait 5 seconds after plugin start
+        XPLMDebugString("XP2GDL90: Attempting delayed ImGui initialization...\n");
+        
+        ImGuiManager& ui = ImGuiManager::Instance();
+        if (ui.Initialize()) {
+            imgui_initialized = true;
+            ui.SetConfigCallback(imgui_config_callback);
+            ui.UpdateConnectionStatus(broadcast_enabled, fdpro_ip, fdpro_port);
+            XPLMDebugString("XP2GDL90: ImGui initialized successfully after delay\n");
+        } else {
+            // Keep trying until it succeeds
+            XPLMDebugString("XP2GDL90: ImGui initialization failed, will retry next frame\n");
+        }
+    }
+    
+    // Update ImGui UI every 0.1 seconds (only if successfully initialized)
+    if (imgui_initialized && current_time - last_ui_update >= 0.1) {
+        ImGuiManager& ui = ImGuiManager::Instance();
+        ui.UpdateFlightData(current_flight_data);
+        ui.UpdateTrafficTargets(traffic_targets);
+        ui.UpdateStatistics(total_messages_sent, active_traffic_count);
+        last_ui_update = current_time;
     }
     
     return 0.1f;  // Call again in 0.1 seconds
@@ -826,13 +789,14 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
         XPLMDebugString("XP2GDL90: Traffic targets initialized\n");
     }
     
-    // Create configuration menu
+    // Create modern configuration menu
     XPLMMenuID plugins_menu = XPLMFindPluginsMenu();
     if (plugins_menu) {
-        config_menu_item = XPLMAppendMenuItem(plugins_menu, "XP2GDL90 Config", nullptr, 0);
-        config_menu_id = XPLMCreateMenu("XP2GDL90 Configuration", plugins_menu, config_menu_item, config_menu_handler, nullptr);
+        config_menu_item = XPLMAppendMenuItem(plugins_menu, "XP2GDL90", nullptr, 0);
+        config_menu_id = XPLMCreateMenu("XP2GDL90 - GDL-90 Broadcaster", plugins_menu, config_menu_item, config_menu_handler, nullptr);
         if (config_menu_id) {
-            XPLMAppendMenuItem(config_menu_id, "Open Configuration Window", nullptr, 0);
+            XPLMAppendMenuItem(config_menu_id, "Configuration Window", nullptr, 0);
+            XPLMAppendMenuItem(config_menu_id, "Status Monitor", nullptr, 1);
         }
     }
     
@@ -846,8 +810,10 @@ PLUGIN_API void XPluginStop(void) {
     // Unregister flight loop callback (legacy API)
     XPLMUnregisterFlightLoopCallback(flight_loop_callback, nullptr);
     
-    // Clean up UI
-    destroy_config_window();
+    // Clean up modern UI
+    shutdown_modern_ui();
+    
+    // Clean up menu
     if (config_menu_id) {
         XPLMDestroyMenu(config_menu_id);
         config_menu_id = nullptr;
@@ -860,8 +826,8 @@ PLUGIN_API void XPluginStop(void) {
 PLUGIN_API int XPluginEnable(void) {
     XPLMDebugString("XP2GDL90: Plugin enabled - starting GDL-90 broadcast\n");
     
-    // Create configuration window
-    create_config_window();
+    // Initialize modern UI - will be initialized later in flight loop for safety
+    XPLMDebugString("XP2GDL90: ImGui will be initialized in flight loop\n");
     
     // Register flight loop callback (legacy API)
     XPLMRegisterFlightLoopCallback(flight_loop_callback, 1.0f, nullptr);
@@ -875,10 +841,10 @@ PLUGIN_API void XPluginDisable(void) {
     // Unregister flight loop callback (legacy API)
     XPLMUnregisterFlightLoopCallback(flight_loop_callback, nullptr);
     
-    // Hide configuration window
-    if (config_window) {
-        XPHideWidget(config_window);
-    }
+    // Hide modern UI windows
+    ImGuiManager& ui = ImGuiManager::Instance();
+    ui.HideConfigWindow();
+    ui.HideStatusWindow();
 }
 
 PLUGIN_API void XPluginReceiveMessage(XPLMPluginID inFromWho, int inMessage, void* inParam) {
