@@ -21,8 +21,10 @@
 #include "XPWidgets.h"
 #include "XPStandardWidgets.h"
 
-// Modern UI with ImGui
+// Modern UI with ImGui (conditional compilation)
+#if HAVE_IMGUI
 #include "ui/ImGuiManager.h"
+#endif
 
 // Platform-specific networking headers
 #ifdef _WIN32
@@ -550,8 +552,10 @@ void imgui_config_callback(const char* ip, int port, bool broadcast, bool traffi
     }
     init_network();
     
-    // Update ImGui with connection status
+    // Update ImGui with connection status (if available)
+#if HAVE_IMGUI
     ImGuiManager::Instance().UpdateConnectionStatus(true, fdpro_ip, fdpro_port);
+#endif
     
     char msg[256];
     snprintf(msg, sizeof(msg), "XP2GDL90: Configuration updated - IP: %s, Port: %d, Broadcast: %s, Traffic: %s\n", 
@@ -565,15 +569,16 @@ void config_menu_handler(void* menuRef, void* itemRef) {
     
     XPLMDebugString("XP2GDL90: Menu handler called\n");
     
-    // Check if ImGui is available before using it
-    ImGuiManager& ui = ImGuiManager::Instance();
-    
     // Handle different menu items
     intptr_t item = (intptr_t)itemRef;
     
     char debug_msg[100];
     snprintf(debug_msg, sizeof(debug_msg), "XP2GDL90: Menu item %ld selected\n", item);
     XPLMDebugString(debug_msg);
+    
+#if HAVE_IMGUI
+    // Check if ImGui is available before using it
+    ImGuiManager& ui = ImGuiManager::Instance();
     
     if (item == 0) {
         // Configuration Window
@@ -592,10 +597,17 @@ void config_menu_handler(void* menuRef, void* itemRef) {
             ui.ShowStatusWindow();
         }
     }
+#else
+    // ImGui not available - show message
+    if (item == 0 || item == 1) {
+        XPLMDebugString("XP2GDL90: UI not available - built without OpenGL support\n");
+    }
+#endif
 }
 
-// Initialize modern ImGui UI
+// Initialize modern ImGui UI (if available)
 void init_modern_ui() {
+#if HAVE_IMGUI
     ImGuiManager& ui = ImGuiManager::Instance();
     if (ui.Initialize()) {
         // Set up configuration callback
@@ -608,12 +620,19 @@ void init_modern_ui() {
     } else {
         XPLMDebugString("XP2GDL90: Failed to initialize modern UI\n");
     }
+#else
+    XPLMDebugString("XP2GDL90: UI not available - built without OpenGL support\n");
+#endif
 }
 
-// Shutdown modern ImGui UI
+// Shutdown modern ImGui UI (if available)
 void shutdown_modern_ui() {
+#if HAVE_IMGUI
     ImGuiManager::Instance().Shutdown();
     XPLMDebugString("XP2GDL90: Modern UI shutdown\n");
+#else
+    XPLMDebugString("XP2GDL90: UI shutdown - no UI was available\n");
+#endif
 }
 
 // Flight loop callback
@@ -694,7 +713,8 @@ float flight_loop_callback(float elapsedMe, float elapsedSim, int counter, void*
         }
     }
     
-    // Try to initialize ImGui after X-Plane has been running for a few seconds
+    // Try to initialize ImGui after X-Plane has been running for a few seconds (if available)
+#if HAVE_IMGUI
     static bool imgui_initialized = false;
     
     if (!imgui_initialized && current_time > 5.0) { // Wait 5 seconds after plugin start
@@ -720,6 +740,7 @@ float flight_loop_callback(float elapsedMe, float elapsedSim, int counter, void*
         ui.UpdateStatistics(total_messages_sent, active_traffic_count);
         last_ui_update = current_time;
     }
+#endif
     
     return 0.1f;  // Call again in 0.1 seconds
 }
@@ -841,10 +862,12 @@ PLUGIN_API void XPluginDisable(void) {
     // Unregister flight loop callback (legacy API)
     XPLMUnregisterFlightLoopCallback(flight_loop_callback, nullptr);
     
-    // Hide modern UI windows
+    // Hide modern UI windows (if available)
+#if HAVE_IMGUI
     ImGuiManager& ui = ImGuiManager::Instance();
     ui.HideConfigWindow();
     ui.HideStatusWindow();
+#endif
 }
 
 PLUGIN_API void XPluginReceiveMessage(XPLMPluginID inFromWho, int inMessage, void* inParam) {

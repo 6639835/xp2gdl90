@@ -44,6 +44,17 @@ if ! command -v g++ &> /dev/null && ! command -v clang++ &> /dev/null; then
     exit 1
 fi
 
+# Check for OpenGL development headers (required for ImGui UI)
+if ! find /usr/include -name "gl.h" 2>/dev/null | head -1 | grep -q .; then
+    echo "Warning: OpenGL development headers not found."
+    echo "The plugin will build with core functionality only (no UI)."
+    echo "To enable the modern UI, install OpenGL development packages:"
+    echo "Ubuntu/Debian: sudo apt-get install libgl1-mesa-dev libglu1-mesa-dev"
+    echo "CentOS/RHEL: sudo yum install mesa-libGL-devel mesa-libGLU-devel"
+    echo "Fedora: sudo dnf install mesa-libGL-devel mesa-libGLU-devel"
+    echo ""
+fi
+
 # Check if X-Plane SDK exists
 if [ ! -d "$PROJECT_DIR/SDK" ]; then
     echo "Error: X-Plane SDK not found. Please ensure SDK directory exists."

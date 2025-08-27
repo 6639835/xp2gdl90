@@ -35,29 +35,21 @@ elseif(UNIX)
     set(XPLANE_PLATFORM_SUFFIX "_64")
 endif()
 
+# Check for OpenGL availability (required for ImGui UI)
+find_package(OpenGL QUIET)
+if(OpenGL_FOUND OR OPENGL_FOUND)
+    set(HAVE_OPENGL TRUE)
+    message(STATUS "OpenGL found - ImGui UI will be enabled")
+else()
+    set(HAVE_OPENGL FALSE)
+    message(WARNING "OpenGL not found - ImGui UI will be disabled, building core functionality only")
+endif()
+
 # Include directories
 include_directories(
     "${XPLANE_SDK_PATH}/CHeaders/XPLM"
     "${XPLANE_SDK_PATH}/CHeaders/Widgets"
     "${XPLANE_SDK_PATH}/CHeaders/Wrappers"
-    "src/imgui"
-    "src/ui"
-)
-
-# ImGui source files
-set(IMGUI_SOURCES
-    src/imgui/imgui.cpp
-    src/imgui/imgui_demo.cpp
-    src/imgui/imgui_draw.cpp
-    src/imgui/imgui_tables.cpp
-    src/imgui/imgui_widgets.cpp
-    src/imgui/imgui_impl_opengl2.cpp
-    src/imgui/imgui_impl_xplane.cpp
-)
-
-# UI source files
-set(UI_SOURCES
-    src/ui/ImGuiManager.cpp
 )
 
 # Main plugin source files
@@ -65,12 +57,41 @@ set(PLUGIN_SOURCES
     src/xp2gdl90.cpp
 )
 
-# All source files
-set(SOURCES
-    ${PLUGIN_SOURCES}
-    ${IMGUI_SOURCES}
-    ${UI_SOURCES}
-)
+# Conditionally add ImGui sources if OpenGL is available
+set(SOURCES ${PLUGIN_SOURCES})
+
+if(HAVE_OPENGL)
+    # Add ImGui include directories
+    include_directories(
+        "src/imgui"
+        "src/ui"
+    )
+    
+    # ImGui source files
+    set(IMGUI_SOURCES
+        src/imgui/imgui.cpp
+        src/imgui/imgui_demo.cpp
+        src/imgui/imgui_draw.cpp
+        src/imgui/imgui_tables.cpp
+        src/imgui/imgui_widgets.cpp
+        src/imgui/imgui_impl_opengl2.cpp
+        src/imgui/imgui_impl_xplane.cpp
+    )
+    
+    # UI source files
+    set(UI_SOURCES
+        src/ui/ImGuiManager.cpp
+    )
+    
+    # Add ImGui sources to build
+    list(APPEND SOURCES ${IMGUI_SOURCES} ${UI_SOURCES})
+    
+    # Define preprocessor macro to enable ImGui in the code
+    add_definitions(-DHAVE_IMGUI=1)
+else()
+    # Define preprocessor macro to disable ImGui in the code
+    add_definitions(-DHAVE_IMGUI=0)
+endif()
 
 # Create the plugin library
 add_library(xp2gdl90 SHARED ${SOURCES})
