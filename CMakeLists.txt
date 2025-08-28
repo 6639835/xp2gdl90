@@ -188,6 +188,7 @@ if(MSVC)
         /wd4710  # Function not inlined
         /wd4711  # Function selected for automatic inline expansion
         /wd4820  # Padding added after data member
+        /wd5045  # Disable Spectre mitigation warnings
     )
 else()
     # GCC/Clang specific flags
