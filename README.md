@@ -372,8 +372,10 @@ Security is a top priority for XP2GDL90. Please see our [Security Policy](SECURI
 
 - **Localhost Default**: Prevents external network access by default
 - **No Data Collection**: Plugin doesn't collect personal or telemetry data
-- **Memory Safety**: Comprehensive bounds checking and safe string handling
+- **Memory Safety**: Comprehensive bounds checking and safe string handling (v1.0.4+ includes thread-safe time functions)
 - **Input Validation**: All network and dataref input validation
+- **Buffer Overflow Prevention**: Safe string operations with proper bounds checking (v1.0.4+)
+- **Thread Safety**: Secure time functions preventing data races (v1.0.4+)
 - **Responsible Disclosure**: Professional vulnerability reporting process
 
 **Important**: If you discover a security vulnerability, please follow our responsible disclosure process outlined in [SECURITY.md](SECURITY.md) rather than creating a public issue.
@@ -393,7 +395,7 @@ For a detailed history of changes, see [CHANGELOG.md](CHANGELOG.md).
 
 ### Recent Updates
 
-- **v1.0.4** (2025-08-28): Revolutionary development workflow overhaul with enterprise-grade automation, comprehensive testing, CI/CD pipeline, and professional development tools
+- **v1.0.4** (2025-08-28): **Critical Security Fixes** + Revolutionary development workflow overhaul with enterprise-grade automation, comprehensive testing, CI/CD pipeline, and professional development tools
 - **v1.0.3** (2025-08-28): Complete UI architecture overhaul with ImGui integration and enhanced cross-platform compatibility  
 - **v1.0.2** (2025-08-27): Modern ImGui UI system with real-time configuration and status monitoring
 - **v1.0.1** (2025-08-26): Enhanced documentation, security policy, contributing guidelines

@@ -221,10 +221,15 @@ std::vector<uint8_t> create_heartbeat() {
     std::vector<uint8_t> msg;
     msg.push_back(0x00);  // Message ID
     
-    // Get current time in UTC
+    // Get current time in UTC (thread-safe)
     time_t now = time(nullptr);
-    struct tm* utc_tm = gmtime(&now);
-    uint32_t timestamp = utc_tm->tm_hour * 3600 + utc_tm->tm_min * 60 + utc_tm->tm_sec;
+    struct tm utc_tm;
+#ifdef _WIN32
+    gmtime_s(&utc_tm, &now);
+#else
+    gmtime_r(&now, &utc_tm);
+#endif
+    uint32_t timestamp = utc_tm.tm_hour * 3600 + utc_tm.tm_min * 60 + utc_tm.tm_sec;
     
     uint8_t st1 = 0x81;  // Status byte 1
     uint8_t st2 = 0x01;  // Status byte 2
@@ -740,11 +745,22 @@ float flight_loop_callback(float elapsedMe, float elapsedSim, int counter, void*
     return 0.1f;  // Call again in 0.1 seconds
 }
 
+// Safe string copy helper for cross-platform compatibility
+#ifdef _WIN32
+    #define SAFE_STRCPY(dest, src, size) strncpy_s(dest, size, src, _TRUNCATE)
+#else
+    #define SAFE_STRCPY(dest, src, size) do { \
+        strncpy(dest, src, (size) - 1); \
+        dest[(size) - 1] = '\0'; \
+    } while(0)
+#endif
+
 // Plugin lifecycle functions
 PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
-    strcpy(outName, "XP2GDL90");
-    strcpy(outSig, "com.xplane.xp2gdl90");
-    strcpy(outDesc, "X-Plane to GDL-90 data broadcaster for FDPRO");
+    // X-Plane plugin parameters are 255 characters each
+    SAFE_STRCPY(outName, "XP2GDL90", 255);
+    SAFE_STRCPY(outSig, "com.xplane.xp2gdl90", 255);
+    SAFE_STRCPY(outDesc, "X-Plane to GDL-90 data broadcaster for FDPRO", 255);
     
     XPLMDebugString("XP2GDL90: Plugin starting...\n");
     

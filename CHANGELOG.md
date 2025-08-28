@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.4] - 2025-08-28
 
+### 🔒 **Critical Security Fixes**
+- **Thread-Safe Time Functions**: Fixed potentially dangerous `gmtime()` calls with thread-safe alternatives
+  - Replaced `gmtime()` with `gmtime_r()` on Unix/Linux and `gmtime_s()` on Windows
+  - Prevents data races and undefined behavior in multi-threaded environments
+  - Affects: `src/xp2gdl90.cpp` and `Demo/plugin/include/utilities.h`
+- **Buffer Overflow Prevention**: Replaced unsafe `strcpy()` with secure string copying
+  - Implemented cross-platform `SAFE_STRCPY` macro using `strncpy_s()` and `strncpy()`
+  - Prevents buffer overflows in X-Plane plugin initialization parameters
+  - All string operations now safely handle 255-character X-Plane plugin buffers
+
 ### 🚀 **Revolutionary Development Workflow Overhaul**
 
 This release represents a complete transformation of the XP2GDL90 development workflow, implementing enterprise-grade development practices and automation systems.
