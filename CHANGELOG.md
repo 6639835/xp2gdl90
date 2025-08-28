@@ -7,6 +7,92 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.5] - 2025-08-28
+
+### 🚀 **Traffic Data Enhancements**
+
+#### ✈️ **Real Aircraft Callsigns**
+- **Authentic Tail Numbers**: Implemented real aircraft callsigns using X-Plane multiplayer position datarefs
+  - Reads `sim/multiplayer/position/planeN_tailnum` for each traffic target (N = 1-63)
+  - Formats tail numbers into proper 8-character GDL-90 callsign format
+  - Space-padded and null-terminated for specification compliance
+  - Replaces generic "TRF001", "TRF002" placeholders with actual aircraft identifiers
+
+#### 🚁 **Accurate Ground Speed Data**
+- **TCAS Ground Speed Integration**: Added proper ground speed for traffic reports
+  - Uses `sim/cockpit2/tcas/targets/position/V_msc` dataref for accurate speed data
+  - Converts m/s to knots (×1.94384) for GDL-90 specification compliance
+  - Provides realistic speed information for traffic targets in EFB displays
+  - Eliminates zero-speed traffic reports that appeared unrealistic
+
+### 🔧 **Critical Bug Fixes**
+
+#### 🖱️ **UI Configuration Fix**
+- **Apply Button Functionality**: Fixed critical UI bug where configuration changes weren't applied
+  - **Issue**: "Apply" button in configuration window only logged messages but didn't trigger network reconfiguration
+  - **Fix**: Added proper `ImGuiManager::Instance().ApplyConfigFromWindow()` call to apply changes
+  - **Impact**: Users can now successfully change target IP addresses and network settings through the UI
+  - **Files Modified**: `src/ui/ConfigWindow.cpp` (added missing include and function call)
+
+### 🔍 **Data Source Improvements**
+
+#### 📡 **Enhanced Dataref Management**
+- **Traffic Callsign Datarefs**: Added systematic management of tail number datarefs
+  - Declared `traffic_tailnum_datarefs` vector for efficient dataref access
+  - Initialized all 63 traffic position datarefs in `XPluginStart`
+  - Proper string dataref reading with `XPLMGetDatab` and formatting
+- **Speed Dataref Integration**: Implemented ground speed dataref access
+  - Added `traffic_speed_dataref` for TCAS ground speed array
+  - Reads 64-element float array with `XPLMGetDatavf`
+  - Indexes speed data by `target.plane_id` for accurate mapping
+
+### 🎯 **Traffic Report Quality**
+
+#### 📊 **Professional EFB Compatibility**
+- **Realistic Traffic Display**: Traffic reports now provide authentic aircraft information
+  - Real callsigns (e.g., "N737BA", "UAL123") instead of generic identifiers
+  - Accurate ground speeds matching actual aircraft performance
+  - Professional-grade data quality comparable to real ADS-B systems
+- **Enhanced Situational Awareness**: EFB applications receive comprehensive traffic data
+  - Proper aircraft identification for traffic correlation
+  - Realistic speed vectors for traffic prediction
+  - Improved pilot situational awareness in simulated environments
+
+### 🏗️ **Code Architecture**
+
+#### 🧩 **Dataref Initialization**
+- **Systematic Setup**: Enhanced plugin initialization with comprehensive dataref setup
+  - Resized `traffic_tailnum_datarefs` vector to accommodate all traffic targets
+  - Initialized individual dataref handles for each multiplayer aircraft
+  - Added proper error handling and fallback default callsigns
+- **Data Processing**: Improved `update_traffic_targets()` function
+  - Added callsign reading and formatting logic
+  - Integrated ground speed calculation and unit conversion
+  - Maintained existing position and altitude data processing
+
+### ⚡ **Performance & Reliability**
+
+#### 🔄 **Efficient Data Access**
+- **Optimized Dataref Reads**: Efficient array-based dataref access patterns
+  - Single array read for all traffic ground speeds
+  - Individual string reads for callsigns with proper formatting
+  - Minimal performance impact on X-Plane frame rate
+- **Robust Error Handling**: Comprehensive fallback mechanisms
+  - Default callsign assignment if dataref reading fails
+  - Graceful handling of missing or invalid tail number data
+  - Continued operation even with partial data availability
+
+### 🛠️ **Development Quality**
+
+#### ✅ **Testing & Validation**
+- **Data Accuracy**: Validated proper dataref reading and GDL-90 encoding
+- **Network Configuration**: Confirmed UI fixes resolve user-reported issues
+- **Cross-Platform**: Verified functionality across Windows, macOS, and Linux
+- **EFB Integration**: Tested with real EFB applications for compatibility
+
+---
+*Version 1.0.5 delivers professional-grade traffic data with authentic callsigns and accurate ground speeds, plus critical UI fixes for seamless configuration management.*
+
 ## [1.0.4] - 2025-08-28
 
 ### 🔒 **Critical Security Fixes**
@@ -442,7 +528,8 @@ git commit                 # Pre-commit hooks run automatically
 - **Performance Testing**: CPU and memory usage validation
 - **Integration Testing**: FDPRO and EFB application compatibility verification
 
-[Unreleased]: https://github.com/6639835/xp2gdl90/compare/v1.0.4...HEAD
+[Unreleased]: https://github.com/6639835/xp2gdl90/compare/v1.0.5...HEAD
+[1.0.5]: https://github.com/6639835/xp2gdl90/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/6639835/xp2gdl90/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/6639835/xp2gdl90/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/6639835/xp2gdl90/compare/v1.0.1...v1.0.2

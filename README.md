@@ -5,7 +5,7 @@ A native X-Plane plugin that broadcasts flight data in GDL-90 format to FDPRO, e
 ![Platform Support](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)
 ![X-Plane Compatibility](https://img.shields.io/badge/X--Plane-11%20%7C%2012-green)
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Version](https://img.shields.io/badge/version-1.0.4-brightgreen)
+![Version](https://img.shields.io/badge/version-1.0.5-brightgreen)
 
 ## Table of Contents
 
@@ -55,7 +55,7 @@ This C++ plugin replaces Python UDP-based solutions by:
 - **Zero Configuration**: Works out of the box with sensible defaults
 - **Security Focused**: Localhost-only default configuration for safety
 
-## 🚀 **Enhanced Development Workflow (v1.0.4)**
+## 🚀 **Enhanced Development Workflow (v1.0.4+)**
 
 XP2GDL90 now features a **world-class development workflow** with enterprise-grade automation and tooling:
 
@@ -395,6 +395,7 @@ For a detailed history of changes, see [CHANGELOG.md](CHANGELOG.md).
 
 ### Recent Updates
 
+- **v1.0.5** (2025-01-23): **Traffic Data Enhancements** + Real aircraft callsigns, accurate ground speeds, and critical UI configuration fixes
 - **v1.0.4** (2025-08-28): **Critical Security Fixes** + Revolutionary development workflow overhaul with enterprise-grade automation, comprehensive testing, CI/CD pipeline, and professional development tools
 - **v1.0.3** (2025-08-28): Complete UI architecture overhaul with ImGui integration and enhanced cross-platform compatibility  
 - **v1.0.2** (2025-08-27): Modern ImGui UI system with real-time configuration and status monitoring
