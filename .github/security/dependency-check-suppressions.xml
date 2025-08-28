@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
+    <!-- 
+    Dependency Check Suppressions for XP2GDL90
+    
+    This file contains suppression rules for known false positives
+    in the dependency vulnerability scanning process.
+    -->
+    
+    <!-- X-Plane SDK suppressions -->
+    <suppress>
+        <notes>X-Plane SDK is a static library provided by Laminar Research</notes>
+        <filePath regex="true">.*[/\\]SDK[/\\].*</filePath>
+    </suppress>
+    
+    <!-- ImGui suppressions - if known safe versions are used -->
+    <suppress>
+        <notes>ImGui library - manually verified safe version</notes>
+        <packageUrl regex="true">.*imgui.*</packageUrl>
+        <cve>CVE-2020-XXXXX</cve> <!-- Example suppression -->
+    </suppress>
+    
+    <!-- Test file suppressions -->
+    <suppress>
+        <notes>Test files are not included in production builds</notes>
+        <filePath regex="true">.*[/\\]tests[/\\].*</filePath>
+    </suppress>
+    
+    <!-- Build artifact suppressions -->
+    <suppress>
+        <notes>Build artifacts are not shipped with the product</notes>
+        <filePath regex="true">.*[/\\]build[/\\].*</filePath>
+    </suppress>
+    
+    <!-- Documentation suppressions -->
+    <suppress>
+        <notes>Documentation files are not executable code</notes>
+        <filePath regex="true">.*\.md$</filePath>
+    </suppress>
+    
+</suppressions>

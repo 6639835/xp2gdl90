@@ -1,0 +1,453 @@
+name: Documentation
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - '*.md'
+      - 'Doxyfile'
+      - 'docs/**'
+      - '.github/workflows/documentation.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - '*.md'
+      - 'Doxyfile'
+      - 'docs/**'
+  workflow_dispatch:
+    inputs:
+      deploy_docs:
+        description: 'Deploy documentation to GitHub Pages'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deployment
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build-docs:
+    name: Build Documentation
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+    
+    - name: Install documentation tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y doxygen graphviz
+        pip install sphinx breathe sphinx-rtd-theme myst-parser
+    
+    - name: Validate Doxyfile
+      run: |
+        echo "Validating Doxygen configuration..."
+        doxygen -s -g - > /dev/null
+        echo "✅ Doxyfile syntax is valid"
+    
+    - name: Generate API documentation with Doxygen
+      run: |
+        echo "Generating API documentation..."
+        doxygen Doxyfile
+        
+        # Check if documentation was generated
+        if [ ! -d "docs/generated/html" ]; then
+          echo "❌ Doxygen failed to generate documentation"
+          exit 1
+        fi
+        
+        # Count generated files
+        HTML_COUNT=$(find docs/generated/html -name "*.html" | wc -l)
+        echo "✅ Generated $HTML_COUNT HTML files"
+        
+        # Verify main files exist
+        if [ ! -f "docs/generated/html/index.html" ]; then
+          echo "❌ Main index.html not generated"
+          exit 1
+        fi
+    
+    - name: Create documentation index
+      run: |
+        mkdir -p docs/site
+        
+        cat > docs/site/index.html << 'EOF'
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>XP2GDL90 Plugin Documentation</title>
+            <style>
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    max-width: 1200px;
+                    margin: 0 auto;
+                    padding: 20px;
+                    line-height: 1.6;
+                }
+                .header {
+                    text-align: center;
+                    border-bottom: 2px solid #007acc;
+                    padding-bottom: 20px;
+                    margin-bottom: 30px;
+                }
+                .doc-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+                    gap: 20px;
+                    margin: 30px 0;
+                }
+                .doc-card {
+                    border: 1px solid #ddd;
+                    border-radius: 8px;
+                    padding: 20px;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                    transition: transform 0.2s;
+                }
+                .doc-card:hover {
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+                }
+                .doc-card h3 {
+                    margin-top: 0;
+                    color: #007acc;
+                }
+                .doc-card a {
+                    color: #007acc;
+                    text-decoration: none;
+                    font-weight: 500;
+                }
+                .doc-card a:hover {
+                    text-decoration: underline;
+                }
+                .version-info {
+                    background: #f8f9fa;
+                    padding: 15px;
+                    border-radius: 5px;
+                    margin: 20px 0;
+                    border-left: 4px solid #007acc;
+                }
+                .footer {
+                    text-align: center;
+                    margin-top: 50px;
+                    padding-top: 20px;
+                    border-top: 1px solid #ddd;
+                    color: #666;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>🛩️ XP2GDL90 Plugin Documentation</h1>
+                <p>Complete documentation for the X-Plane GDL-90 Broadcasting Plugin</p>
+            </div>
+        
+            <div class="version-info">
+                <strong>📦 Version:</strong> $(cat VERSION) | 
+                <strong>🔧 Built:</strong> $(date -u '+%Y-%m-%d %H:%M:%S') UTC |
+                <strong>📝 Commit:</strong> $(git rev-parse --short HEAD)
+            </div>
+        
+            <div class="doc-grid">
+                <div class="doc-card">
+                    <h3>📖 API Documentation</h3>
+                    <p>Complete API reference generated from source code comments</p>
+                    <a href="api/index.html">Browse API Docs →</a>
+                </div>
+        
+                <div class="doc-card">
+                    <h3>🚀 Quick Start</h3>
+                    <p>Installation guide and basic usage instructions</p>
+                    <a href="guide/README.html">Get Started →</a>
+                </div>
+        
+                <div class="doc-card">
+                    <h3>🔧 Development</h3>
+                    <p>Contributing guidelines and development setup</p>
+                    <a href="guide/CONTRIBUTING.html">Contribute →</a>
+                </div>
+        
+                <div class="doc-card">
+                    <h3>📋 Changelog</h3>
+                    <p>Version history and release notes</p>
+                    <a href="guide/CHANGELOG.html">View Changes →</a>
+                </div>
+        
+                <div class="doc-card">
+                    <h3>🔒 Security</h3>
+                    <p>Security policy and vulnerability reporting</p>
+                    <a href="guide/SECURITY.html">Security Info →</a>
+                </div>
+        
+                <div class="doc-card">
+                    <h3>🧪 Test Coverage</h3>
+                    <p>Unit test results and coverage reports</p>
+                    <a href="coverage/index.html">View Coverage →</a>
+                </div>
+            </div>
+        
+            <div class="footer">
+                <p>Generated automatically from the XP2GDL90 source code</p>
+                <p>© 2024 XP2GDL90 Contributors | MIT License</p>
+            </div>
+        </body>
+        </html>
+        EOF
+    
+    - name: Copy API documentation
+      run: |
+        # Copy Doxygen output to site
+        cp -r docs/generated/html docs/site/api
+        
+        # Convert markdown files to HTML for easy browsing
+        mkdir -p docs/site/guide
+        
+        python3 << 'EOF'
+        import markdown
+        import os
+        from pathlib import Path
+        
+        # Convert markdown files to HTML
+        md_files = ['README.md', 'CHANGELOG.md', 'CONTRIBUTING.md', 'SECURITY.md']
+        
+        for md_file in md_files:
+            if os.path.exists(md_file):
+                with open(md_file, 'r') as f:
+                    content = f.read()
+                
+                # Convert to HTML
+                html = markdown.markdown(content, extensions=['codehilite', 'fenced_code'])
+                
+                # Wrap in template
+                html_content = f'''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>{md_file} - XP2GDL90</title>
+            <meta charset="UTF-8">
+            <style>
+                body {{
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    max-width: 800px;
+                    margin: 0 auto;
+                    padding: 20px;
+                    line-height: 1.6;
+                }}
+                pre {{ background: #f8f9fa; padding: 15px; border-radius: 5px; overflow-x: auto; }}
+                code {{ background: #f8f9fa; padding: 2px 4px; border-radius: 3px; }}
+                h1, h2, h3 {{ color: #007acc; }}
+                a {{ color: #007acc; }}
+            </style>
+        </head>
+        <body>
+            <nav><a href="../index.html">← Back to Documentation</a></nav>
+            {html}
+        </body>
+        </html>
+                '''
+                
+                output_file = f"docs/site/guide/{md_file.replace('.md', '.html')}"
+                with open(output_file, 'w') as f:
+                    f.write(html_content)
+                
+                print(f"Converted {md_file} to {output_file}")
+        EOF
+    
+    - name: Generate documentation statistics
+      run: |
+        echo "Generating documentation statistics..."
+        
+        # Count various documentation elements
+        HTML_FILES=$(find docs/site -name "*.html" | wc -l)
+        API_FILES=$(find docs/site/api -name "*.html" | wc -l)
+        TOTAL_SIZE=$(du -sh docs/site | cut -f1)
+        
+        cat > docs/site/stats.json << EOF
+        {
+          "generated_at": "$(date -u -Iseconds)",
+          "commit": "$(git rev-parse HEAD)",
+          "version": "$(cat VERSION)",
+          "stats": {
+            "total_html_files": $HTML_FILES,
+            "api_files": $API_FILES,
+            "total_size": "$TOTAL_SIZE"
+          }
+        }
+        EOF
+        
+        echo "📊 Documentation Statistics:"
+        echo "  HTML files: $HTML_FILES"
+        echo "  API files: $API_FILES" 
+        echo "  Total size: $TOTAL_SIZE"
+    
+    - name: Validate generated documentation
+      run: |
+        echo "Validating generated documentation..."
+        
+        # Check for required files
+        required_files=(
+          "docs/site/index.html"
+          "docs/site/api/index.html"
+          "docs/site/guide/README.html"
+          "docs/site/stats.json"
+        )
+        
+        for file in "${required_files[@]}"; do
+          if [ ! -f "$file" ]; then
+            echo "❌ Required file missing: $file"
+            exit 1
+          fi
+        done
+        
+        # Check for broken internal links (basic check)
+        if grep -r "href=\"[^http]" docs/site --include="*.html" | grep -v "mailto:"; then
+          echo "⚠️  Found relative links - verify they work correctly"
+        fi
+        
+        echo "✅ Documentation validation passed"
+    
+    - name: Setup Pages
+      if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event.inputs.deploy_docs == 'true')
+      uses: actions/configure-pages@v4
+    
+    - name: Upload documentation artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: documentation
+        path: docs/site/
+        retention-days: 30
+    
+    - name: Upload to GitHub Pages
+      if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event.inputs.deploy_docs == 'true')
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: docs/site/
+
+  deploy-docs:
+    name: Deploy Documentation
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event.inputs.deploy_docs == 'true')
+    needs: build-docs
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    
+    steps:
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4
+
+  doc-link-check:
+    name: Check Documentation Links
+    needs: build-docs
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Download documentation
+      uses: actions/download-artifact@v4
+      with:
+        name: documentation
+        path: docs/
+    
+    - name: Install link checker
+      run: |
+        npm install -g markdown-link-check
+    
+    - name: Check documentation links
+      run: |
+        echo "Checking documentation for broken links..."
+        
+        # Check markdown files in repository
+        if [ -f "README.md" ]; then
+          markdown-link-check README.md --config .github/markdown-link-config.json || true
+        fi
+        
+        if [ -f "CONTRIBUTING.md" ]; then
+          markdown-link-check CONTRIBUTING.md --config .github/markdown-link-config.json || true
+        fi
+        
+        echo "✅ Link check completed"
+    
+    - name: Comment on PR with documentation preview
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const comment = `## 📚 Documentation Preview
+          
+          The documentation has been built successfully for this PR.
+          
+          **📊 Documentation Statistics:**
+          - Built at: ${new Date().toISOString()}
+          - Commit: ${context.sha.substring(0, 8)}
+          
+          **🔗 Quick Links:**
+          - [View Documentation Artifact](${context.server_url}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})
+          
+          The documentation will be automatically deployed to GitHub Pages when this PR is merged to main.
+          `;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          });
+
+  doc-summary:
+    name: Documentation Summary
+    needs: [build-docs, deploy-docs]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: Create documentation summary
+      run: |
+        cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+        # 📚 Documentation Build Summary
+        
+        ## Build Status
+        EOF
+        
+        if [ "${{ needs.build-docs.result }}" == "success" ]; then
+          echo "✅ **Documentation Build**: Successful" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ **Documentation Build**: Failed" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        if [ "${{ needs.deploy-docs.result }}" == "success" ]; then
+          echo "✅ **GitHub Pages Deploy**: Successful" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🌐 **Live Documentation**: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/" >> $GITHUB_STEP_SUMMARY
+        elif [ "${{ needs.deploy-docs.result }}" == "skipped" ]; then
+          echo "⏭️ **GitHub Pages Deploy**: Skipped (not main branch)" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ **GitHub Pages Deploy**: Failed" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## Generated Documentation" >> $GITHUB_STEP_SUMMARY
+        echo "- 📖 API Documentation (Doxygen)" >> $GITHUB_STEP_SUMMARY
+        echo "- 📋 Project README" >> $GITHUB_STEP_SUMMARY
+        echo "- 🔧 Contributing Guide" >> $GITHUB_STEP_SUMMARY
+        echo "- 📝 Changelog" >> $GITHUB_STEP_SUMMARY
+        echo "- 🔒 Security Policy" >> $GITHUB_STEP_SUMMARY

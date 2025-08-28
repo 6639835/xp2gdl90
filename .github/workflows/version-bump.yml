@@ -1,0 +1,325 @@
+name: Version Bump
+
+# Manually triggered workflow for version bumping
+on:
+  workflow_dispatch:
+    inputs:
+      version_type:
+        description: 'Type of version bump'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+        - major
+        - minor
+        - patch
+        - prerelease
+      prerelease_type:
+        description: 'Prerelease type (only for prerelease bumps)'
+        required: false
+        default: 'alpha'
+        type: choice
+        options:
+        - alpha
+        - beta
+        - rc
+      create_release:
+        description: 'Create GitHub release'
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+
+jobs:
+  bump-version:
+    name: Bump Version
+    runs-on: ubuntu-latest
+    
+    outputs:
+      new_version: ${{ steps.bump.outputs.new_version }}
+      version_changed: ${{ steps.bump.outputs.version_changed }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+    
+    - name: Configure git
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+    
+    - name: Get current version
+      id: current_version
+      run: |
+        if [ -f VERSION ]; then
+          VERSION=$(cat VERSION)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Current version: $VERSION"
+        else
+          echo "VERSION file not found!"
+          exit 1
+        fi
+    
+    - name: Validate version bump type
+      run: |
+        echo "Version bump type: ${{ github.event.inputs.version_type }}"
+        if [ "${{ github.event.inputs.version_type }}" == "prerelease" ]; then
+          echo "Prerelease type: ${{ github.event.inputs.prerelease_type }}"
+        fi
+    
+    - name: Bump version
+      id: bump
+      run: |
+        echo "Bumping version..."
+        
+        # Build arguments for version bump script
+        ARGS="--type ${{ github.event.inputs.version_type }}"
+        
+        if [ "${{ github.event.inputs.version_type }}" == "prerelease" ]; then
+          ARGS="$ARGS --prerelease-type ${{ github.event.inputs.prerelease_type }}"
+        fi
+        
+        # Run version bump script
+        python scripts/bump_version.py $ARGS --commit --tag
+        
+        # Get new version
+        NEW_VERSION=$(cat VERSION)
+        echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+        echo "version_changed=true" >> $GITHUB_OUTPUT
+        echo "New version: $NEW_VERSION"
+        
+        # Export for next steps
+        echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
+    
+    - name: Push changes
+      run: |
+        echo "Pushing version bump changes..."
+        git push origin main
+        git push origin --tags
+        echo "✅ Version bump pushed successfully"
+    
+    - name: Generate changelog
+      id: changelog
+      if: github.event.inputs.create_release == 'true'
+      run: |
+        echo "Generating changelog for release..."
+        
+        # Get previous version tag
+        PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
+        
+        if [ -n "$PREVIOUS_TAG" ]; then
+          echo "## What's Changed" > RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          
+          # Get commits since previous tag
+          git log ${PREVIOUS_TAG}..HEAD --pretty=format:"- %s" --no-merges >> RELEASE_NOTES.md
+        else
+          echo "## What's New" > RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          echo "- Initial release of XP2GDL90 Plugin" >> RELEASE_NOTES.md
+          echo "- Direct SDK integration for reading X-Plane flight data" >> RELEASE_NOTES.md
+          echo "- Real-time GDL-90 data broadcasting to FDPRO" >> RELEASE_NOTES.md
+          echo "- Support for ownship position and traffic targets" >> RELEASE_NOTES.md
+          echo "- Cross-platform support (Windows, macOS, Linux)" >> RELEASE_NOTES.md
+        fi
+        
+        echo "Generated changelog:"
+        cat RELEASE_NOTES.md
+
+  build-release:
+    name: Build Release Artifacts
+    needs: bump-version
+    if: needs.bump-version.outputs.version_changed == 'true'
+    uses: ./.github/workflows/build.yml
+    
+  create-release:
+    name: Create GitHub Release
+    needs: [bump-version, build-release]
+    runs-on: ubuntu-latest
+    if: github.event.inputs.create_release == 'true' && needs.bump-version.outputs.version_changed == 'true'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        ref: main
+        fetch-depth: 0
+    
+    - name: Download all build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts/
+    
+    - name: Prepare release assets
+      run: |
+        NEW_VERSION="${{ needs.bump-version.outputs.new_version }}"
+        echo "Preparing release assets for version $NEW_VERSION"
+        
+        mkdir -p release-assets
+        
+        # Copy individual platform binaries if they exist
+        if [ -f "artifacts/xp2gdl90-windows/win.xpl" ]; then
+          cp "artifacts/xp2gdl90-windows/win.xpl" release-assets/
+        fi
+        
+        if [ -f "artifacts/xp2gdl90-mac/mac.xpl" ]; then
+          cp "artifacts/xp2gdl90-mac/mac.xpl" release-assets/
+        fi
+        
+        if [ -f "artifacts/xp2gdl90-linux/lin.xpl" ]; then
+          cp "artifacts/xp2gdl90-linux/lin.xpl" release-assets/
+        fi
+        
+        # Copy all-platforms package if it exists
+        if [ -f "artifacts/xp2gdl90-all-platforms/xp2gdl90.tar.gz" ]; then
+          cp "artifacts/xp2gdl90-all-platforms/xp2gdl90.tar.gz" release-assets/
+        fi
+        
+        echo "Release assets prepared:"
+        ls -la release-assets/
+    
+    - name: Generate detailed changelog
+      run: |
+        NEW_VERSION="${{ needs.bump-version.outputs.new_version }}"
+        
+        # Get previous version tag
+        PREVIOUS_TAG=$(git describe --tags --abbrev=0 v$NEW_VERSION~1 2>/dev/null || echo "")
+        
+        echo "# XP2GDL90 Plugin v$NEW_VERSION" > RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        
+        if [ -n "$PREVIOUS_TAG" ]; then
+          echo "## What's Changed Since $PREVIOUS_TAG" >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          
+          # Categorize commits
+          echo "### 🚀 Features" >> RELEASE_NOTES.md
+          git log ${PREVIOUS_TAG}..v$NEW_VERSION --pretty=format:"- %s" --no-merges --grep="^feat" >> RELEASE_NOTES.md || true
+          echo "" >> RELEASE_NOTES.md
+          
+          echo "### 🐛 Bug Fixes" >> RELEASE_NOTES.md  
+          git log ${PREVIOUS_TAG}..v$NEW_VERSION --pretty=format:"- %s" --no-merges --grep="^fix" >> RELEASE_NOTES.md || true
+          echo "" >> RELEASE_NOTES.md
+          
+          echo "### 📚 Documentation" >> RELEASE_NOTES.md
+          git log ${PREVIOUS_TAG}..v$NEW_VERSION --pretty=format:"- %s" --no-merges --grep="^docs" >> RELEASE_NOTES.md || true
+          echo "" >> RELEASE_NOTES.md
+          
+          echo "### 🔧 Maintenance" >> RELEASE_NOTES.md
+          git log ${PREVIOUS_TAG}..v$NEW_VERSION --pretty=format:"- %s" --no-merges --grep="^chore\|^refactor\|^style" >> RELEASE_NOTES.md || true
+          echo "" >> RELEASE_NOTES.md
+          
+          echo "### Other Changes" >> RELEASE_NOTES.md
+          git log ${PREVIOUS_TAG}..v$NEW_VERSION --pretty=format:"- %s" --no-merges --invert-grep --grep="^feat\|^fix\|^docs\|^chore\|^refactor\|^style" >> RELEASE_NOTES.md || true
+        else
+          echo "## What's New" >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          echo "Initial release of the XP2GDL90 plugin with the following features:" >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          echo "- 🛩️ **Direct X-Plane SDK Integration** - No Data Output configuration needed" >> RELEASE_NOTES.md
+          echo "- 📡 **Real-time GDL-90 Broadcasting** - Standard aviation format for EFBs" >> RELEASE_NOTES.md
+          echo "- 🎯 **Traffic Target Support** - Automatic AI aircraft and multiplayer detection" >> RELEASE_NOTES.md
+          echo "- 🌍 **Cross-platform Support** - Windows, macOS, and Linux compatibility" >> RELEASE_NOTES.md
+          echo "- ⚡ **High Performance** - Native C++ implementation with minimal overhead" >> RELEASE_NOTES.md
+          echo "- 🔒 **Secure by Default** - Localhost-only broadcasting for safety" >> RELEASE_NOTES.md
+        fi
+        
+        echo "" >> RELEASE_NOTES.md
+        echo "## 📦 Installation" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        echo "1. Download the appropriate plugin file for your platform:" >> RELEASE_NOTES.md
+        echo "   - **Windows**: \`win.xpl\`" >> RELEASE_NOTES.md
+        echo "   - **macOS**: \`mac.xpl\`" >> RELEASE_NOTES.md
+        echo "   - **Linux**: \`lin.xpl\`" >> RELEASE_NOTES.md
+        echo "   - **All platforms**: \`xp2gdl90.tar.gz\` (contains all versions)" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        echo "2. Create directory: \`X-Plane/Resources/plugins/xp2gdl90/\`" >> RELEASE_NOTES.md
+        echo "3. Copy the plugin file to the directory" >> RELEASE_NOTES.md
+        echo "4. Restart X-Plane" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        echo "## 🔗 Compatibility" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        echo "- **X-Plane**: 11.55+ and 12.x" >> RELEASE_NOTES.md
+        echo "- **Operating Systems**: Windows 10+, macOS 10.15+, Linux (Ubuntu 18.04+)" >> RELEASE_NOTES.md
+        echo "- **Target Applications**: FDPRO and other GDL-90 compatible EFBs" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        echo "---" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREVIOUS_TAG}...v$NEW_VERSION" >> RELEASE_NOTES.md
+    
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: v${{ needs.bump-version.outputs.new_version }}
+        name: XP2GDL90 Plugin v${{ needs.bump-version.outputs.new_version }}
+        body_path: RELEASE_NOTES.md
+        draft: false
+        prerelease: ${{ contains(needs.bump-version.outputs.new_version, 'alpha') || contains(needs.bump-version.outputs.new_version, 'beta') || contains(needs.bump-version.outputs.new_version, 'rc') }}
+        files: |
+          release-assets/*
+        generate_release_notes: true
+        make_latest: ${{ !contains(needs.bump-version.outputs.new_version, 'alpha') && !contains(needs.bump-version.outputs.new_version, 'beta') && !contains(needs.bump-version.outputs.new_version, 'rc') }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Release summary
+      run: |
+        NEW_VERSION="${{ needs.bump-version.outputs.new_version }}"
+        cat >> $GITHUB_STEP_SUMMARY << EOF
+        # 🚀 Release v$NEW_VERSION Created Successfully!
+        
+        **Release URL**: https://github.com/${{ github.repository }}/releases/tag/v$NEW_VERSION
+        
+        ## 📦 Assets Published
+        $(ls -la release-assets/ | tail -n +2 | awk '{printf "- %s (%s bytes)\n", $9, $5}')
+        
+        ## 📋 Next Steps
+        - [ ] Test the release on different platforms
+        - [ ] Update documentation if needed
+        - [ ] Announce the release to users
+        - [ ] Monitor for any issues
+        
+        ## 🎉 Release Complete!
+        The new version is now available for download.
+        EOF
+
+  notify-on-failure:
+    name: Notify on Failure
+    needs: [bump-version, build-release, create-release]
+    runs-on: ubuntu-latest
+    if: failure()
+    
+    steps:
+    - name: Create failure summary
+      run: |
+        cat >> $GITHUB_STEP_SUMMARY << EOF
+        # ❌ Version Bump Failed
+        
+        The version bump process encountered an error. Please check the logs for details.
+        
+        ## Failed Jobs
+        $(if [ "${{ needs.bump-version.result }}" == "failure" ]; then echo "- Version Bump"; fi)
+        $(if [ "${{ needs.build-release.result }}" == "failure" ]; then echo "- Build Release"; fi)
+        $(if [ "${{ needs.create-release.result }}" == "failure" ]; then echo "- Create Release"; fi)
+        
+        ## What to Check
+        1. Review the failed job logs above
+        2. Ensure VERSION file exists and is valid
+        3. Check that all required files are present
+        4. Verify git repository permissions
+        5. Confirm build dependencies are available
+        
+        You may need to manually fix issues and re-run the workflow.
+        EOF

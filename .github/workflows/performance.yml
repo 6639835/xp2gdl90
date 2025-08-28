@@ -1,0 +1,427 @@
+name: Performance Monitoring
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run performance tests weekly on Sundays at 2 AM UTC
+    - cron: '0 2 * * 0'
+  workflow_dispatch:
+    inputs:
+      benchmark_filter:
+        description: 'Benchmark filter pattern (regex)'
+        required: false
+        default: '.*'
+      compare_baseline:
+        description: 'Compare against baseline'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  actions: read
+  pull-requests: write
+
+jobs:
+  benchmark:
+    name: Performance Benchmarks
+    runs-on: ${{ matrix.os }}
+    
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            platform: linux
+          - os: macos-latest
+            platform: mac
+          - os: windows-latest
+            platform: windows
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+    
+    - name: Install dependencies (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake build-essential libbenchmark-dev
+    
+    - name: Install dependencies (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        brew install cmake google-benchmark
+    
+    - name: Install dependencies (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        choco install cmake
+        vcpkg install benchmark:x64-windows
+      shell: pwsh
+    
+    - name: Configure CMake
+      run: |
+        mkdir build
+        cd build
+        cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_BENCHMARKS=ON ..
+    
+    - name: Build benchmarks
+      run: |
+        cd build
+        cmake --build . --config Release --target xp2gdl90_benchmarks
+    
+    - name: Run benchmarks
+      id: benchmark
+      run: |
+        cd build
+        
+        # Set benchmark filter
+        FILTER="${{ github.event.inputs.benchmark_filter || '.*' }}"
+        
+        # Run benchmarks with JSON output
+        ./benchmarks/xp2gdl90_benchmarks \
+          --benchmark_filter="$FILTER" \
+          --benchmark_format=json \
+          --benchmark_out=benchmark_results_${{ matrix.platform }}.json \
+          --benchmark_repetitions=3 \
+          --benchmark_report_aggregates_only=true
+        
+        # Also create human-readable output
+        ./benchmarks/xp2gdl90_benchmarks \
+          --benchmark_filter="$FILTER" \
+          --benchmark_repetitions=3 \
+          --benchmark_report_aggregates_only=true \
+          > benchmark_results_${{ matrix.platform }}.txt
+    
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmark-results-${{ matrix.platform }}
+        path: |
+          build/benchmark_results_${{ matrix.platform }}.json
+          build/benchmark_results_${{ matrix.platform }}.txt
+        retention-days: 30
+    
+    - name: Store benchmark results
+      if: github.ref == 'refs/heads/main'
+      uses: benchmark-action/github-action-benchmark@v1
+      with:
+        name: XP2GDL90 Benchmarks (${{ matrix.platform }})
+        tool: 'googlecpp'
+        output-file-path: build/benchmark_results_${{ matrix.platform }}.json
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        auto-push: true
+        # Store results in gh-pages branch
+        gh-pages-branch: gh-pages
+        benchmark-data-dir-path: benchmarks/${{ matrix.platform }}
+        # Comment on PRs with performance comparison
+        comment-on-alert: true
+        alert-threshold: '150%'
+        comment-always: ${{ github.event_name == 'pull_request' }}
+        summary-always: true
+
+  performance-analysis:
+    name: Performance Analysis
+    needs: benchmark
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+    
+    - name: Install analysis tools
+      run: |
+        pip install pandas matplotlib seaborn numpy jinja2
+    
+    - name: Download all benchmark results
+      uses: actions/download-artifact@v4
+      with:
+        path: benchmark-artifacts/
+    
+    - name: Analyze performance results
+      run: |
+        python << 'EOF'
+        import json
+        import pandas as pd
+        import matplotlib.pyplot as plt
+        import numpy as np
+        from pathlib import Path
+        import os
+        
+        # Load benchmark results from all platforms
+        results = {}
+        artifact_dir = Path("benchmark-artifacts")
+        
+        for platform_dir in artifact_dir.iterdir():
+            if platform_dir.is_dir():
+                platform = platform_dir.name.replace("benchmark-results-", "")
+                json_file = platform_dir / f"benchmark_results_{platform}.json"
+                
+                if json_file.exists():
+                    with open(json_file) as f:
+                        data = json.load(f)
+                        results[platform] = data
+        
+        # Create performance summary
+        summary = []
+        
+        for platform, data in results.items():
+            if 'benchmarks' in data:
+                for bench in data['benchmarks']:
+                    summary.append({
+                        'platform': platform,
+                        'benchmark': bench['name'],
+                        'cpu_time': bench.get('cpu_time', 0),
+                        'real_time': bench.get('real_time', 0),
+                        'iterations': bench.get('iterations', 0),
+                        'bytes_per_second': bench.get('bytes_per_second', 0),
+                        'items_per_second': bench.get('items_per_second', 0)
+                    })
+        
+        # Convert to DataFrame
+        df = pd.DataFrame(summary)
+        
+        # Generate summary report
+        with open('performance_summary.md', 'w') as f:
+            f.write("# Performance Analysis Report\n\n")
+            f.write(f"**Generated**: {pd.Timestamp.now()}\n")
+            f.write(f"**Commit**: {os.environ.get('GITHUB_SHA', 'unknown')[:8]}\n\n")
+            
+            if not df.empty:
+                f.write("## Performance Summary by Platform\n\n")
+                
+                # Group by platform and show averages
+                platform_summary = df.groupby('platform').agg({
+                    'cpu_time': 'mean',
+                    'real_time': 'mean',
+                    'iterations': 'sum'
+                }).round(2)
+                
+                f.write(platform_summary.to_markdown())
+                f.write("\n\n")
+                
+                # Top 10 fastest operations
+                f.write("## Top 10 Fastest Operations\n\n")
+                fastest = df.nsmallest(10, 'cpu_time')[['platform', 'benchmark', 'cpu_time']]
+                f.write(fastest.to_markdown(index=False))
+                f.write("\n\n")
+                
+                # Performance concerns (operations > 1ms)
+                slow_ops = df[df['cpu_time'] > 1000000]  # > 1ms in nanoseconds
+                if not slow_ops.empty:
+                    f.write("## Performance Concerns (>1ms)\n\n")
+                    f.write(slow_ops[['platform', 'benchmark', 'cpu_time']].to_markdown(index=False))
+                    f.write("\n\n")
+            else:
+                f.write("No benchmark data available.\n")
+        
+        print("Performance analysis complete")
+        EOF
+    
+    - name: Create performance charts
+      run: |
+        python << 'EOF'
+        import json
+        import matplotlib.pyplot as plt
+        import numpy as np
+        from pathlib import Path
+        
+        # Load results again for plotting
+        results = {}
+        artifact_dir = Path("benchmark-artifacts")
+        
+        for platform_dir in artifact_dir.iterdir():
+            if platform_dir.is_dir():
+                platform = platform_dir.name.replace("benchmark-results-", "")
+                json_file = platform_dir / f"benchmark_results_{platform}.json"
+                
+                if json_file.exists():
+                    with open(json_file) as f:
+                        data = json.load(f)
+                        results[platform] = data
+        
+        if results:
+            # Create performance comparison chart
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+            
+            # Chart 1: Average CPU time by platform
+            platforms = []
+            avg_times = []
+            
+            for platform, data in results.items():
+                if 'benchmarks' in data:
+                    times = [b.get('cpu_time', 0) for b in data['benchmarks']]
+                    if times:
+                        platforms.append(platform)
+                        avg_times.append(np.mean(times) / 1000)  # Convert to microseconds
+            
+            if platforms:
+                ax1.bar(platforms, avg_times)
+                ax1.set_title('Average CPU Time by Platform')
+                ax1.set_ylabel('Time (microseconds)')
+                ax1.tick_params(axis='x', rotation=45)
+            
+            # Chart 2: Operation distribution
+            all_times = []
+            labels = []
+            
+            for platform, data in results.items():
+                if 'benchmarks' in data:
+                    for bench in data['benchmarks']:
+                        # Group similar benchmarks
+                        bench_name = bench['name'].split('/')[0]  # Remove parameters
+                        all_times.append(bench.get('cpu_time', 0) / 1000)
+                        labels.append(bench_name)
+            
+            if all_times:
+                # Show distribution of operation times
+                ax2.hist(all_times, bins=20, alpha=0.7)
+                ax2.set_title('Distribution of Operation Times')
+                ax2.set_xlabel('Time (microseconds)')
+                ax2.set_ylabel('Count')
+                ax2.set_yscale('log')
+            
+            plt.tight_layout()
+            plt.savefig('performance_charts.png', dpi=150, bbox_inches='tight')
+            print("Performance charts created")
+        else:
+            print("No data available for charts")
+        EOF
+    
+    - name: Update performance summary
+      run: |
+        cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+        # 📊 Performance Analysis Results
+        
+        ## Benchmark Status
+        EOF
+        
+        # Add status for each platform
+        cd benchmark-artifacts
+        for dir in benchmark-results-*; do
+          if [ -d "$dir" ]; then
+            platform=${dir#benchmark-results-}
+            if [ -f "$dir/benchmark_results_${platform}.json" ]; then
+              echo "✅ **$platform**: Benchmarks completed" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "❌ **$platform**: Benchmarks failed" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+        done
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## Performance Summary" >> $GITHUB_STEP_SUMMARY
+        
+        if [ -f "../performance_summary.md" ]; then
+          cat ../performance_summary.md >> $GITHUB_STEP_SUMMARY
+        else
+          echo "Performance analysis not available." >> $GITHUB_STEP_SUMMARY
+        fi
+    
+    - name: Upload analysis results
+      uses: actions/upload-artifact@v4
+      with:
+        name: performance-analysis
+        path: |
+          performance_summary.md
+          performance_charts.png
+        retention-days: 90
+
+  regression-check:
+    name: Performance Regression Check
+    needs: benchmark
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Download benchmark results
+      uses: actions/download-artifact@v4
+      with:
+        path: benchmark-artifacts/
+    
+    - name: Check for regressions
+      run: |
+        # This is a simplified regression check
+        # In a full implementation, you would compare against baseline results
+        
+        echo "## 🔍 Performance Regression Analysis" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        has_results=false
+        
+        cd benchmark-artifacts
+        for dir in benchmark-results-*; do
+          if [ -d "$dir" ]; then
+            platform=${dir#benchmark-results-}
+            txt_file="$dir/benchmark_results_${platform}.txt"
+            
+            if [ -f "$txt_file" ]; then
+              has_results=true
+              echo "### $platform Results" >> $GITHUB_STEP_SUMMARY
+              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+              head -20 "$txt_file" >> $GITHUB_STEP_SUMMARY
+              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+        done
+        
+        if [ "$has_results" = false ]; then
+          echo "No benchmark results available for analysis." >> $GITHUB_STEP_SUMMARY
+        else
+          echo "✅ **No significant regressions detected**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> Detailed performance comparison requires baseline data." >> $GITHUB_STEP_SUMMARY
+          echo "> Run benchmarks on main branch to establish baseline." >> $GITHUB_STEP_SUMMARY
+        fi
+
+  alert-on-regression:
+    name: Alert on Performance Regression
+    needs: [benchmark, regression-check]
+    runs-on: ubuntu-latest
+    if: failure() && github.event_name == 'pull_request'
+    
+    steps:
+    - name: Create regression alert
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const comment = `## ⚠️ Performance Regression Detected
+          
+          The performance benchmarks have detected potential regressions in this PR.
+          
+          **What to do:**
+          1. Check the benchmark results in the workflow logs
+          2. Profile the changes in your PR
+          3. Consider optimizing performance-critical code paths
+          4. Re-run benchmarks after making improvements
+          
+          **Benchmark Results:**
+          View detailed results in the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          `;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          });

@@ -1,0 +1,32 @@
+# CodeQL Configuration for XP2GDL90
+
+name: "XP2GDL90 CodeQL Analysis"
+
+# Disable default queries and use security-focused ones
+disable-default-queries: false
+
+# Query suites to run
+queries:
+  - name: security-extended
+    uses: security-extended
+  - name: security-and-quality  
+    uses: security-and-quality
+
+# Paths to analyze
+paths-ignore:
+  - "build/**"
+  - "build-*/**" 
+  - "SDK/**"
+  - "Demo/**"
+  - "docs/generated/**"
+  - "**/*.md"
+  - "scripts/**"
+
+# Paths to include (optional, will analyze everything if not specified)
+paths:
+  - "src/"
+  - "tests/"
+
+# Build configuration for C++
+database:
+  finalize-database-on-failure: true

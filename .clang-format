@@ -1,0 +1,194 @@
+# XP2GDL90 Clang-Format Configuration
+# 
+# Ensures consistent C++ code formatting across the project
+# Based on Google style with project-specific modifications
+
+---
+Language: Cpp
+BasedOnStyle: Google
+
+# Basic formatting
+AccessModifierOffset: -2
+AlignAfterOpenBracket: Align
+AlignArrayOfStructures: Left
+AlignConsecutiveAssignments: None
+AlignConsecutiveBitFields: None
+AlignConsecutiveDeclarations: None
+AlignConsecutiveMacros: None
+AlignEscapedNewlines: Left
+AlignOperands: Align
+AlignTrailingComments: true
+
+# Line breaking
+AllowAllArgumentsOnNextLine: true
+AllowAllParametersOfDeclarationOnNextLine: true
+AllowShortBlocksOnASingleLine: Empty
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortEnumsOnASingleLine: true
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLambdasOnASingleLine: All
+AllowShortLoopsOnASingleLine: false
+
+# Braces
+BreakBeforeBraces: Attach
+BraceWrapping:
+  AfterClass: false
+  AfterControlStatement: Never
+  AfterEnum: false
+  AfterFunction: false
+  AfterNamespace: false
+  AfterStruct: false
+  AfterUnion: false
+  AfterExternBlock: false
+  BeforeCatch: false
+  BeforeElse: false
+  BeforeLambdaBody: false
+  BeforeWhile: false
+  IndentBraces: false
+  SplitEmptyFunction: true
+  SplitEmptyRecord: true
+  SplitEmptyNamespace: true
+
+# Line length and breaking
+ColumnLimit: 100
+BreakBeforeBinaryOperators: NonAssignment
+BreakBeforeTernaryOperators: true
+BreakConstructorInitializers: BeforeColon
+BreakInheritanceList: BeforeColon
+BreakStringLiterals: true
+
+# Indentation
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ContinuationIndentWidth: 4
+IndentCaseLabels: true
+IndentGotoLabels: true
+IndentPPDirectives: None
+IndentExternBlock: AfterExternBlock
+IndentRequires: false
+IndentWrappedFunctionNames: false
+
+# Spacing
+SpaceAfterCStyleCast: false
+SpaceAfterLogicalNot: false
+SpaceAfterTemplateKeyword: true
+SpaceAroundPointerQualifiers: Default
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeCaseColon: false
+SpaceBeforeCpp11BracedList: false
+SpaceBeforeCtorInitializerColon: true
+SpaceBeforeInheritanceColon: true
+SpaceBeforeParens: ControlStatements
+SpaceBeforeRangeBasedForLoopColon: true
+SpaceBeforeSquareBrackets: false
+SpaceInEmptyBlock: false
+SpaceInEmptyParentheses: false
+SpacesBeforeTrailingComments: 2
+SpacesInAngles: Never
+SpacesInCStyleCastParentheses: false
+SpacesInConditionalStatement: false
+SpacesInContainerLiterals: true
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+
+# Pointer and reference alignment
+DerivePointerAlignment: false
+PointerAlignment: Left
+ReferenceAlignment: Pointer
+
+# Includes
+IncludeBlocks: Preserve
+SortIncludes: CaseSensitive
+IncludeCategories:
+  # C system headers
+  - Regex: '^<[a-z_]+\.h>'
+    Priority: 1
+    SortPriority: 0
+    CaseSensitive: false
+  # C++ standard library
+  - Regex: '^<[a-z_]+>'
+    Priority: 2
+    SortPriority: 0
+    CaseSensitive: false
+  # Other system headers
+  - Regex: '^<.*\.h>'
+    Priority: 3
+    SortPriority: 0
+    CaseSensitive: false
+  # X-Plane SDK headers
+  - Regex: '^"XPLM.*\.h"'
+    Priority: 4
+    SortPriority: 0
+    CaseSensitive: false
+  # ImGui headers
+  - Regex: '^"imgui.*\.h"'
+    Priority: 5
+    SortPriority: 0
+    CaseSensitive: false
+  # Project headers
+  - Regex: '^".*\.h"'
+    Priority: 6
+    SortPriority: 0
+    CaseSensitive: false
+
+# Comments
+ReflowComments: true
+CommentPragmas: '^ (TODO|FIXME|NOTE|HACK|XXX):'
+
+# Function formatting
+AlwaysBreakAfterReturnType: None
+AlwaysBreakBeforeMultilineStrings: true
+BinPackArguments: true
+BinPackParameters: true
+ExperimentalAutoDetectBinPacking: false
+
+# Namespace
+CompactNamespaces: false
+NamespaceIndentation: None
+
+# Penalties for line breaking (lower = more likely to break)
+PenaltyBreakAssignment: 2
+PenaltyBreakBeforeFirstCallParameter: 19
+PenaltyBreakComment: 300
+PenaltyBreakFirstLessLess: 120
+PenaltyBreakString: 1000
+PenaltyBreakTemplateDeclaration: 10
+PenaltyExcessCharacter: 1000000
+PenaltyReturnTypeOnItsOwnLine: 200
+PenaltyIndentedWhitespace: 0
+
+# Macros
+AttributeMacros: []
+ForEachMacros: []
+IfMacros: []
+MacroBlockBegin: ''
+MacroBlockEnd: ''
+StatementAttributeLikeMacros: []
+StatementMacros: []
+TypenameMacros: []
+
+# Other options
+Cpp11BracedListStyle: true
+DeriveLineEnding: true
+DisableFormat: false
+EmptyLineAfterAccessModifier: Never
+EmptyLineBeforeAccessModifier: LogicalBlock
+FixNamespaceComments: true
+InsertTrailingCommas: None
+KeepEmptyLinesAtTheStartOfBlocks: false
+LambdaBodyIndentation: Signature
+MaxEmptyLinesToKeep: 1
+PackConstructorInitializers: NextLine
+QualifierAlignment: Leave
+RemoveBracesLLVM: false
+SeparateDefinitionBlocks: Leave
+ShortNamespaceLines: 1
+SortUsingDeclarations: true
+SpaceBeforeJsonColon: false
+
+# Line ending
+UseCRLF: false
+
+---

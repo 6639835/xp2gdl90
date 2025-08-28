@@ -1,0 +1,519 @@
+name: Security Scanning
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run security scans daily at 3 AM UTC
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      scan_type:
+        description: 'Type of security scan to run'
+        type: choice
+        default: 'all'
+        options:
+        - all
+        - codeql
+        - dependency-check
+        - secrets
+        - static-analysis
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+  pull-requests: write
+
+jobs:
+  codeql-analysis:
+    name: CodeQL Analysis
+    if: github.event.inputs.scan_type == 'codeql' || github.event.inputs.scan_type == 'all' || github.event.inputs.scan_type == ''
+    runs-on: ubuntu-latest
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'cpp', 'python' ]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3
+      with:
+        languages: ${{ matrix.language }}
+        queries: security-extended,security-and-quality
+        config-file: ./.github/codeql/codeql-config.yml
+    
+    - name: Setup build environment
+      if: matrix.language == 'cpp'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake build-essential
+    
+    - name: Build project (C++)
+      if: matrix.language == 'cpp'
+      run: |
+        mkdir build
+        cd build
+        cmake -DCMAKE_BUILD_TYPE=Release ..
+        make -j$(nproc)
+    
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+      with:
+        category: "/language:${{matrix.language}}"
+
+  dependency-scan:
+    name: Dependency Vulnerability Scan
+    if: github.event.inputs.scan_type == 'dependency-check' || github.event.inputs.scan_type == 'all' || github.event.inputs.scan_type == ''
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+    
+    - name: Install dependency-check
+      run: |
+        wget -qO- https://github.com/jeremylong/DependencyCheck/releases/download/v8.4.0/dependency-check-8.4.0-release.zip > dc.zip
+        unzip dc.zip
+        chmod +x dependency-check/bin/dependency-check.sh
+    
+    - name: Run dependency check
+      run: |
+        ./dependency-check/bin/dependency-check.sh \
+          --project "XP2GDL90" \
+          --scan . \
+          --exclude "**/build/**" \
+          --exclude "**/SDK/**" \
+          --exclude "**/.git/**" \
+          --format ALL \
+          --out dependency-check-report \
+          --suppression .github/security/dependency-check-suppressions.xml \
+          --nvdApiKey ${{ secrets.NVD_API_KEY }} || true
+    
+    - name: Upload dependency check results
+      uses: actions/upload-artifact@v4
+      with:
+        name: dependency-check-report
+        path: dependency-check-report/
+        retention-days: 30
+    
+    - name: Parse dependency results
+      run: |
+        if [ -f "dependency-check-report/dependency-check-report.json" ]; then
+          python3 << 'EOF'
+        import json
+        import sys
+        
+        # Load dependency check results
+        with open('dependency-check-report/dependency-check-report.json') as f:
+            data = json.load(f)
+        
+        dependencies = data.get('dependencies', [])
+        high_vulns = []
+        medium_vulns = []
+        total_vulns = 0
+        
+        for dep in dependencies:
+            vulnerabilities = dep.get('vulnerabilities', [])
+            for vuln in vulnerabilities:
+                severity = vuln.get('severity', 'UNKNOWN')
+                total_vulns += 1
+                
+                if severity in ['HIGH', 'CRITICAL']:
+                    high_vulns.append({
+                        'file': dep.get('fileName', 'unknown'),
+                        'cve': vuln.get('name', 'unknown'),
+                        'severity': severity,
+                        'description': vuln.get('description', 'No description')
+                    })
+                elif severity == 'MEDIUM':
+                    medium_vulns.append({
+                        'file': dep.get('fileName', 'unknown'),
+                        'cve': vuln.get('name', 'unknown'),
+                        'severity': severity
+                    })
+        
+        print(f"Total vulnerabilities found: {total_vulns}")
+        print(f"High/Critical vulnerabilities: {len(high_vulns)}")
+        print(f"Medium vulnerabilities: {len(medium_vulns)}")
+        
+        # Exit with error code if high/critical vulnerabilities found
+        if len(high_vulns) > 0:
+            print("❌ High or critical vulnerabilities detected!")
+            for vuln in high_vulns[:5]:  # Show first 5
+                print(f"  - {vuln['cve']} ({vuln['severity']}) in {vuln['file']}")
+            sys.exit(1)
+        else:
+            print("✅ No high or critical vulnerabilities found")
+        EOF
+        fi
+
+  secret-scan:
+    name: Secret Detection
+    if: github.event.inputs.scan_type == 'secrets' || github.event.inputs.scan_type == 'all' || github.event.inputs.scan_type == ''
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Install TruffleHog
+      run: |
+        wget -qO trufflehog.tar.gz https://github.com/trufflesecurity/trufflehog/releases/download/v3.63.2/trufflehog_3.63.2_linux_amd64.tar.gz
+        tar -xzf trufflehog.tar.gz
+        chmod +x trufflehog
+    
+    - name: Run TruffleHog secret scan
+      run: |
+        echo "Running secret detection scan..."
+        ./trufflehog filesystem . \
+          --exclude-paths .github/security/trufflehog-excludes.txt \
+          --format json \
+          --output trufflehog-results.json \
+          --no-verification \
+          --fail || true
+    
+    - name: Process secret scan results
+      run: |
+        if [ -f "trufflehog-results.json" ]; then
+          python3 << 'EOF'
+        import json
+        import sys
+        
+        # Load TruffleHog results
+        secrets_found = []
+        
+        try:
+            with open('trufflehog-results.json') as f:
+                for line in f:
+                    try:
+                        result = json.loads(line.strip())
+                        if result.get('Verified') or result.get('DetectorName'):
+                            secrets_found.append({
+                                'detector': result.get('DetectorName', 'unknown'),
+                                'file': result.get('SourceMetadata', {}).get('Data', {}).get('Filesystem', {}).get('file', 'unknown'),
+                                'line': result.get('SourceMetadata', {}).get('Data', {}).get('Filesystem', {}).get('line', 0),
+                                'verified': result.get('Verified', False)
+                            })
+                    except json.JSONDecodeError:
+                        continue
+        except FileNotFoundError:
+            print("No secrets scan results found")
+            sys.exit(0)
+        
+        verified_secrets = [s for s in secrets_found if s['verified']]
+        unverified_secrets = [s for s in secrets_found if not s['verified']]
+        
+        print(f"🔍 Secret Detection Results:")
+        print(f"  Verified secrets: {len(verified_secrets)}")
+        print(f"  Potential secrets: {len(unverified_secrets)}")
+        
+        if verified_secrets:
+            print("❌ Verified secrets found:")
+            for secret in verified_secrets:
+                print(f"  - {secret['detector']} in {secret['file']}:{secret['line']}")
+            sys.exit(1)
+        elif unverified_secrets:
+            print("⚠️  Potential secrets found (manual review needed):")
+            for secret in unverified_secrets[:10]:  # Show first 10
+                print(f"  - {secret['detector']} in {secret['file']}:{secret['line']}")
+        else:
+            print("✅ No secrets detected")
+        EOF
+        fi
+    
+    - name: Upload secret scan results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: secret-scan-results
+        path: trufflehog-results.json
+        retention-days: 30
+
+  static-analysis:
+    name: Static Code Analysis
+    if: github.event.inputs.scan_type == 'static-analysis' || github.event.inputs.scan_type == 'all' || github.event.inputs.scan_type == ''
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Install static analysis tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          clang \
+          clang-tidy \
+          cppcheck \
+          flawfinder \
+          cmake \
+          build-essential
+    
+    - name: Run Cppcheck
+      run: |
+        echo "Running Cppcheck static analysis..."
+        cppcheck \
+          --enable=all \
+          --suppress=missingIncludeSystem \
+          --suppress=unusedFunction \
+          --suppress=unmatchedSuppression \
+          --xml \
+          --output-file=cppcheck-results.xml \
+          src/ tests/ 2>&1 || true
+        
+        # Convert XML to human-readable format
+        python3 << 'EOF'
+        import xml.etree.ElementTree as ET
+        import sys
+        
+        try:
+            tree = ET.parse('cppcheck-results.xml')
+            root = tree.getroot()
+            
+            errors = root.findall('.//error')
+            
+            high_severity = []
+            medium_severity = []
+            low_severity = []
+            
+            for error in errors:
+                severity = error.get('severity', 'style')
+                msg = error.get('msg', '')
+                file_info = error.find('location')
+                location = 'unknown'
+                
+                if file_info is not None:
+                    location = f"{file_info.get('file', 'unknown')}:{file_info.get('line', '0')}"
+                
+                issue = {'location': location, 'message': msg, 'severity': severity}
+                
+                if severity in ['error', 'warning']:
+                    high_severity.append(issue)
+                elif severity in ['style', 'performance']:
+                    medium_severity.append(issue)
+                else:
+                    low_severity.append(issue)
+            
+            print(f"🔍 Cppcheck Results:")
+            print(f"  High severity: {len(high_severity)}")
+            print(f"  Medium severity: {len(medium_severity)}")
+            print(f"  Low severity: {len(low_severity)}")
+            
+            if high_severity:
+                print("\n❌ High severity issues:")
+                for issue in high_severity[:10]:  # Show first 10
+                    print(f"  - {issue['location']}: {issue['message']}")
+                    
+            if len(high_severity) > 5:
+                print(f"🚨 {len(high_severity)} high severity issues found!")
+                sys.exit(1)
+                
+        except FileNotFoundError:
+            print("No cppcheck results found")
+        except ET.ParseError:
+            print("Failed to parse cppcheck results")
+        EOF
+    
+    - name: Run Flawfinder
+      run: |
+        echo "Running Flawfinder security analysis..."
+        flawfinder \
+          --quiet \
+          --html \
+          --output flawfinder-results.html \
+          --minlevel 2 \
+          src/ tests/ || true
+        
+        # Generate summary
+        flawfinder \
+          --quiet \
+          --minlevel 2 \
+          src/ tests/ > flawfinder-summary.txt 2>&1 || true
+        
+        echo "Flawfinder summary:"
+        if [ -f flawfinder-summary.txt ]; then
+          tail -n 10 flawfinder-summary.txt
+        fi
+    
+    - name: Upload static analysis results
+      uses: actions/upload-artifact@v4
+      with:
+        name: static-analysis-results
+        path: |
+          cppcheck-results.xml
+          flawfinder-results.html
+          flawfinder-summary.txt
+        retention-days: 30
+
+  security-summary:
+    name: Security Scan Summary
+    needs: [codeql-analysis, dependency-scan, secret-scan, static-analysis]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: Download scan results
+      uses: actions/download-artifact@v4
+      with:
+        path: scan-results/
+    
+    - name: Generate security summary
+      run: |
+        cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+        # 🔒 Security Scan Summary
+        
+        ## Scan Results
+        EOF
+        
+        # Check each scan result
+        if [ "${{ needs.codeql-analysis.result }}" == "success" ]; then
+          echo "✅ **CodeQL Analysis**: Passed" >> $GITHUB_STEP_SUMMARY
+        elif [ "${{ needs.codeql-analysis.result }}" == "failure" ]; then
+          echo "❌ **CodeQL Analysis**: Issues found" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "⏭️ **CodeQL Analysis**: Skipped" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        if [ "${{ needs.dependency-scan.result }}" == "success" ]; then
+          echo "✅ **Dependency Scan**: No critical vulnerabilities" >> $GITHUB_STEP_SUMMARY
+        elif [ "${{ needs.dependency-scan.result }}" == "failure" ]; then
+          echo "❌ **Dependency Scan**: Vulnerabilities detected" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "⏭️ **Dependency Scan**: Skipped" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        if [ "${{ needs.secret-scan.result }}" == "success" ]; then
+          echo "✅ **Secret Detection**: No secrets found" >> $GITHUB_STEP_SUMMARY
+        elif [ "${{ needs.secret-scan.result }}" == "failure" ]; then
+          echo "❌ **Secret Detection**: Secrets detected" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "⏭️ **Secret Detection**: Skipped" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        if [ "${{ needs.static-analysis.result }}" == "success" ]; then
+          echo "✅ **Static Analysis**: Passed" >> $GITHUB_STEP_SUMMARY
+        elif [ "${{ needs.static-analysis.result }}" == "failure" ]; then
+          echo "❌ **Static Analysis**: Issues found" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "⏭️ **Static Analysis**: Skipped" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## 📊 Detailed Reports" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "Detailed scan results are available in the workflow artifacts:" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        # List available artifacts
+        if [ -d "scan-results" ]; then
+          for artifact in scan-results/*/; do
+            if [ -d "$artifact" ]; then
+              artifact_name=$(basename "$artifact")
+              echo "- 📎 $artifact_name" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## 🛡️ Security Recommendations" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "- Review any flagged security issues" >> $GITHUB_STEP_SUMMARY
+        echo "- Keep dependencies up to date" >> $GITHUB_STEP_SUMMARY
+        echo "- Follow secure coding practices" >> $GITHUB_STEP_SUMMARY
+        echo "- Regularly run security scans" >> $GITHUB_STEP_SUMMARY
+
+  security-alert:
+    name: Security Alert
+    needs: [codeql-analysis, dependency-scan, secret-scan, static-analysis]
+    runs-on: ubuntu-latest
+    if: |
+      always() && (
+        needs.codeql-analysis.result == 'failure' ||
+        needs.dependency-scan.result == 'failure' ||
+        needs.secret-scan.result == 'failure' ||
+        needs.static-analysis.result == 'failure'
+      )
+    
+    steps:
+    - name: Create security issue
+      if: github.event_name == 'schedule' || github.event_name == 'push'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const title = `🚨 Security Alert: Scan Failures Detected`;
+          const body = `## Security Scan Alert
+          
+          One or more security scans have failed on the main branch.
+          
+          **Scan Results:**
+          - CodeQL: ${{ needs.codeql-analysis.result }}
+          - Dependency Scan: ${{ needs.dependency-scan.result }}
+          - Secret Detection: ${{ needs.secret-scan.result }}
+          - Static Analysis: ${{ needs.static-analysis.result }}
+          
+          **Action Required:**
+          1. Review the failed scans in the [workflow run](${context.server_url}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})
+          2. Address any security issues found
+          3. Re-run the security scans to verify fixes
+          
+          **Auto-generated by security scanning workflow**
+          `;
+          
+          // Check if issue already exists
+          const issues = await github.rest.issues.listForRepo({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            labels: 'security,alert',
+            state: 'open'
+          });
+          
+          if (issues.data.length === 0) {
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              body: body,
+              labels: ['security', 'alert', 'high-priority']
+            });
+          }
+    
+    - name: Comment on PR
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const comment = `## 🚨 Security Scan Alert
+          
+          Security scans have detected issues in this PR that require attention.
+          
+          **Failed Scans:**
+          - CodeQL: ${{ needs.codeql-analysis.result }}
+          - Dependency Scan: ${{ needs.dependency-scan.result }}
+          - Secret Detection: ${{ needs.secret-scan.result }}
+          - Static Analysis: ${{ needs.static-analysis.result }}
+          
+          Please review the scan results and address any security issues before merging.
+          
+          **View Details:** [Security Scan Results](${context.server_url}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})
+          `;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          });

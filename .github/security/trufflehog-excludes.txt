@@ -1,0 +1,34 @@
+# TruffleHog Exclusions for XP2GDL90
+# Paths to exclude from secret detection scanning
+
+# Build directories
+build/
+build-debug/
+build-release/
+**/build/**
+
+# SDK and dependencies
+SDK/
+Demo/
+**/node_modules/**
+**/.git/**
+
+# Generated documentation
+docs/generated/
+**/doxygen/**
+
+# Test files with mock data
+tests/mocks/
+**/*test*.json
+**/*mock*.json
+
+# Configuration files that may contain false positives
+.clang-format
+CMakeLists.txt
+Doxyfile
+
+# Known false positives (example patterns)
+# Add specific patterns here if certain strings trigger false alarms
+**/*example*
+**/*sample*
+**/*template*

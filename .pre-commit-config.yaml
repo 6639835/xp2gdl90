@@ -1,0 +1,253 @@
+# XP2GDL90 Pre-commit Hooks Configuration
+# 
+# Ensures code quality and consistency before commits
+# Install with: pre-commit install
+
+repos:
+  # General formatting and linting
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: trailing-whitespace
+        name: Remove trailing whitespace
+      - id: end-of-file-fixer
+        name: Fix end of files
+      - id: check-yaml
+        name: Check YAML syntax
+      - id: check-added-large-files
+        name: Check for large files
+        args: ['--maxkb=1024']
+      - id: check-case-conflict
+        name: Check for case conflicts
+      - id: check-merge-conflict
+        name: Check for merge conflicts
+      - id: mixed-line-ending
+        name: Fix mixed line endings
+        args: ['--fix=lf']
+      - id: check-executables-have-shebangs
+        name: Check executables have shebangs
+      - id: check-shebang-scripts-are-executable
+        name: Check shebang scripts are executable
+
+  # C++ specific linting and formatting
+  - repo: https://github.com/pocc/pre-commit-hooks
+    rev: v1.3.5
+    hooks:
+      - id: clang-format
+        name: Format C++ code
+        args: ['-i', '--style=file']
+        files: \.(cpp|hpp|c|h|cc|cxx)$
+      - id: cppcheck
+        name: Static analysis with cppcheck
+        args: ['--error-exitcode=1', '--enable=warning,style,performance,portability', '--suppress=missingIncludeSystem']
+        files: \.(cpp|hpp|c|h|cc|cxx)$
+      - id: cpplint
+        name: C++ style checker
+        args: ['--filter=-build/header_guard,-build/include_order,-legal/copyright,-readability/todo']
+        files: \.(cpp|hpp|c|h|cc|cxx)$
+
+  # CMake formatting
+  - repo: https://github.com/cheshirekow/cmake-format-precommit
+    rev: v0.6.13
+    hooks:
+      - id: cmake-format
+        name: Format CMake files
+        additional_dependencies: [pyyaml]
+      - id: cmake-lint
+        name: Lint CMake files
+        additional_dependencies: [pyyaml]
+
+  # Python formatting (for build scripts)
+  - repo: https://github.com/psf/black
+    rev: 23.3.0
+    hooks:
+      - id: black
+        name: Format Python code
+        language_version: python3
+        files: \.py$
+
+  - repo: https://github.com/pycqa/isort
+    rev: 5.12.0
+    hooks:
+      - id: isort
+        name: Sort Python imports
+        args: ["--profile", "black"]
+        files: \.py$
+
+  - repo: https://github.com/pycqa/flake8
+    rev: 6.0.0
+    hooks:
+      - id: flake8
+        name: Python linter
+        args: ['--max-line-length=88', '--extend-ignore=E203,W503']
+        files: \.py$
+
+  # Documentation formatting
+  - repo: https://github.com/executablebooks/mdformat
+    rev: 0.7.16
+    hooks:
+      - id: mdformat
+        name: Format Markdown files
+        args: [--wrap, "80"]
+        additional_dependencies:
+          - mdformat-gfm
+          - mdformat-black
+
+  # Security scanning
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.4.0
+    hooks:
+      - id: detect-secrets
+        name: Detect secrets
+        args: ['--baseline', '.secrets.baseline']
+
+  # Git commit message formatting
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v2.1.1
+    hooks:
+      - id: conventional-pre-commit
+        name: Check conventional commits
+        stages: [commit-msg]
+        args: [optional-scope]
+
+  # Custom hooks for project-specific checks
+  - repo: local
+    hooks:
+      - id: check-build-scripts
+        name: Validate build scripts
+        entry: python
+        args: ['-c', 'import sys; sys.exit(0)']  # Placeholder
+        language: system
+        files: ^(build\.sh|build_windows\.bat|build_all\.py)$
+        pass_filenames: false
+        
+      - id: check-version-consistency
+        name: Check version consistency
+        entry: bash
+        args: ['-c', 'test -f VERSION && grep -q "$(cat VERSION)" README.md']
+        language: system
+        files: ^(VERSION|README\.md)$
+        pass_filenames: false
+        
+      - id: check-cmake-syntax
+        name: Check CMake syntax
+        entry: cmake
+        args: ['-P', '-']
+        language: system
+        files: CMakeLists\.txt$
+        pass_filenames: false
+        
+      - id: check-header-guards
+        name: Check C++ header guards
+        entry: python
+        args: ['-c', '''
+import sys, re, os
+for filename in sys.argv[1:]:
+    if not filename.endswith((".h", ".hpp")):
+        continue
+    with open(filename, "r") as f:
+        content = f.read()
+    basename = os.path.basename(filename).upper().replace(".", "_")
+    expected_guard = f"{basename}_H" if filename.endswith(".h") else f"{basename}_HPP"
+    if f"#ifndef {expected_guard}" not in content or f"#define {expected_guard}" not in content:
+        print(f"Missing or incorrect header guard in {filename}")
+        print(f"Expected: #ifndef {expected_guard}")
+        sys.exit(1)
+        ''']
+        language: system
+        files: \.(h|hpp)$
+
+      - id: check-plugin-exports
+        name: Check plugin symbol exports
+        entry: bash
+        args: ['-c', '''
+        if [ -f "mac_exports.txt" ]; then
+          if ! grep -q "XPluginStart" mac_exports.txt; then
+            echo "Missing XPluginStart in mac_exports.txt"
+            exit 1
+          fi
+        fi
+        if [ -f "linux_exports.txt" ]; then
+          if ! grep -q "XPluginStart" linux_exports.txt; then
+            echo "Missing XPluginStart in linux_exports.txt" 
+            exit 1
+          fi
+        fi
+        if [ -f "win_exports.def" ]; then
+          if ! grep -q "XPluginStart" win_exports.def; then
+            echo "Missing XPluginStart in win_exports.def"
+            exit 1
+          fi
+        fi
+        ''']
+        language: system
+        files: ^(mac_exports\.txt|linux_exports\.txt|win_exports\.def)$
+        pass_filenames: false
+
+      - id: check-test-naming
+        name: Check test file naming convention
+        entry: python
+        args: ['-c', '''
+import sys, os
+for filename in sys.argv[1:]:
+    if "tests/" in filename and filename.endswith((".cpp", ".hpp")):
+        basename = os.path.basename(filename)
+        if not (basename.startswith("test_") or basename.endswith("_test.cpp") or basename.endswith("_test.hpp")):
+            print(f"Test file {filename} does not follow naming convention")
+            print("Expected: test_*.cpp or *_test.cpp")
+            sys.exit(1)
+        ''']
+        language: system
+        files: ^tests/.*\.(cpp|hpp)$
+
+  # Documentation generation check
+  - repo: local
+    hooks:
+      - id: check-documentation-build
+        name: Check documentation can build
+        entry: bash
+        args: ['-c', '''
+        if command -v doxygen >/dev/null 2>&1; then
+          if [ -f Doxyfile ]; then
+            doxygen Doxyfile >/dev/null 2>&1 || {
+              echo "Documentation build failed"
+              exit 1
+            }
+          fi
+        fi
+        ''']
+        language: system
+        files: ^(Doxyfile|.*\.(cpp|hpp|h|md))$
+        pass_filenames: false
+
+# Configuration
+default_language_version:
+  python: python3
+
+# Exclude patterns
+exclude: |
+  (?x)^(
+    build/.*|
+    \.git/.*|
+    SDK/.*|
+    Demo/.*|
+    __pycache__/.*|
+    .*\.xpl|
+    .*\.o|
+    .*\.so|
+    .*\.dylib|
+    .*\.dll
+  )$
+
+# Hook configuration
+ci:
+  autofix_commit_msg: |
+    [pre-commit.ci] auto fixes from pre-commit.com hooks
+    
+    for more information, see https://pre-commit.ci
+  autofix_prs: true
+  autoupdate_branch: ''
+  autoupdate_commit_msg: '[pre-commit.ci] pre-commit autoupdate'
+  autoupdate_schedule: weekly
+  skip: []
+  submodules: false

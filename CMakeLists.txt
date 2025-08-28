@@ -223,10 +223,144 @@ target_compile_definitions(xp2gdl90 PRIVATE
 
 
 
+# Testing support
+option(ENABLE_TESTING "Enable building of tests" OFF)
+if(ENABLE_TESTING)
+    enable_testing()
+    add_subdirectory(tests)
+    message(STATUS "Testing enabled")
+endif()
+
+# Static analysis support
+option(ENABLE_STATIC_ANALYSIS "Enable static analysis tools" OFF)
+if(ENABLE_STATIC_ANALYSIS)
+    # Clang-tidy
+    find_program(CLANG_TIDY_EXE NAMES "clang-tidy")
+    if(CLANG_TIDY_EXE)
+        set_target_properties(xp2gdl90 PROPERTIES
+            CXX_CLANG_TIDY "${CLANG_TIDY_EXE};-checks=-*,bugprone-*,cert-*,clang-analyzer-*,cppcoreguidelines-*,misc-*,modernize-*,performance-*,portability-*,readability-*")
+        message(STATUS "Clang-tidy enabled")
+    endif()
+    
+    # Include what you use
+    find_program(INCLUDE_WHAT_YOU_USE_EXE NAMES "include-what-you-use")
+    if(INCLUDE_WHAT_YOU_USE_EXE)
+        set_target_properties(xp2gdl90 PROPERTIES
+            CXX_INCLUDE_WHAT_YOU_USE "${INCLUDE_WHAT_YOU_USE_EXE}")
+        message(STATUS "Include-what-you-use enabled")
+    endif()
+    
+    # CppCheck
+    find_program(CPPCHECK_EXE NAMES "cppcheck")
+    if(CPPCHECK_EXE)
+        set_target_properties(xp2gdl90 PROPERTIES
+            CXX_CPPCHECK "${CPPCHECK_EXE};--enable=warning,style,performance,portability;--suppress=missingIncludeSystem")
+        message(STATUS "CppCheck enabled")
+    endif()
+endif()
+
+# Documentation support
+option(ENABLE_DOCS "Enable documentation generation" OFF)
+if(ENABLE_DOCS)
+    find_package(Doxygen)
+    if(DOXYGEN_FOUND)
+        # Configure Doxygen
+        set(DOXYGEN_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/docs)
+        set(DOXYGEN_PROJECT_NAME "XP2GDL90")
+        set(DOXYGEN_PROJECT_BRIEF "X-Plane GDL-90 Broadcasting Plugin")
+        set(DOXYGEN_EXTRACT_ALL YES)
+        set(DOXYGEN_GENERATE_HTML YES)
+        set(DOXYGEN_GENERATE_XML YES)
+        set(DOXYGEN_USE_MDFILE_AS_MAINPAGE "${CMAKE_SOURCE_DIR}/README.md")
+        
+        doxygen_add_docs(docs
+            ${CMAKE_SOURCE_DIR}/src
+            ${CMAKE_SOURCE_DIR}/README.md
+            COMMENT "Generating documentation"
+        )
+        message(STATUS "Documentation generation enabled")
+    endif()
+endif()
+
+# Benchmarking support  
+option(BUILD_BENCHMARKS "Build performance benchmarks" OFF)
+if(BUILD_BENCHMARKS)
+    find_package(benchmark QUIET)
+    if(benchmark_FOUND)
+        add_subdirectory(benchmarks)
+        message(STATUS "Benchmarks enabled")
+    else()
+        message(WARNING "Google Benchmark not found - benchmarks disabled")
+    endif()
+endif()
+
+# Address Sanitizer support
+option(ENABLE_ASAN "Enable Address Sanitizer" OFF)
+if(ENABLE_ASAN)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+        target_compile_options(xp2gdl90 PRIVATE -fsanitize=address -fno-omit-frame-pointer)
+        target_link_options(xp2gdl90 PRIVATE -fsanitize=address)
+        message(STATUS "Address Sanitizer enabled")
+    else()
+        message(WARNING "Address Sanitizer not supported with ${CMAKE_CXX_COMPILER_ID}")
+    endif()
+endif()
+
+# Thread Sanitizer support
+option(ENABLE_TSAN "Enable Thread Sanitizer" OFF)
+if(ENABLE_TSAN)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+        target_compile_options(xp2gdl90 PRIVATE -fsanitize=thread -fno-omit-frame-pointer)
+        target_link_options(xp2gdl90 PRIVATE -fsanitize=thread)
+        message(STATUS "Thread Sanitizer enabled")
+    else()
+        message(WARNING "Thread Sanitizer not supported with ${CMAKE_CXX_COMPILER_ID}")
+    endif()
+endif()
+
+# Code coverage support
+option(ENABLE_COVERAGE "Enable code coverage" OFF)
+if(ENABLE_COVERAGE)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(xp2gdl90 PRIVATE --coverage -O0 -g)
+        target_link_options(xp2gdl90 PRIVATE --coverage)
+        
+        # Add coverage target
+        find_program(LCOV_PATH lcov)
+        find_program(GENHTML_PATH genhtml)
+        
+        if(LCOV_PATH AND GENHTML_PATH)
+            add_custom_target(coverage
+                COMMAND ${LCOV_PATH} --directory . --capture --output-file coverage.info
+                COMMAND ${LCOV_PATH} --remove coverage.info '/usr/*' '*/tests/*' '*/SDK/*' --output-file coverage.info
+                COMMAND ${GENHTML_PATH} -o coverage_html coverage.info
+                COMMAND ${CMAKE_COMMAND} -E echo "Coverage report generated in coverage_html/"
+                WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+                COMMENT "Generating code coverage report"
+            )
+        endif()
+        message(STATUS "Code coverage enabled")
+    endif()
+endif()
+
 # Print build information
 message(STATUS "Building XP2GDL90 plugin")
 message(STATUS "Platform: ${CMAKE_SYSTEM_NAME}")
 message(STATUS "Architecture: ${CMAKE_SYSTEM_PROCESSOR}")
-message(STATUS "Output filename: ${PLUGIN_OUTPUT_FILENAME}")
+message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
+message(STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
 message(STATUS "X-Plane SDK path: ${XPLANE_SDK_PATH}")
 message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
+message(STATUS "OpenGL found: ${HAVE_OPENGL}")
+
+# Feature summary
+message(STATUS "")
+message(STATUS "Build Configuration:")
+message(STATUS "  Testing: ${ENABLE_TESTING}")
+message(STATUS "  Static Analysis: ${ENABLE_STATIC_ANALYSIS}")
+message(STATUS "  Documentation: ${ENABLE_DOCS}")
+message(STATUS "  Benchmarks: ${BUILD_BENCHMARKS}")
+message(STATUS "  Address Sanitizer: ${ENABLE_ASAN}")
+message(STATUS "  Thread Sanitizer: ${ENABLE_TSAN}")  
+message(STATUS "  Code Coverage: ${ENABLE_COVERAGE}")
+message(STATUS "")
