@@ -5,7 +5,7 @@ A native X-Plane plugin that broadcasts flight data in GDL-90 format to FDPRO, e
 ![Platform Support](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)
 ![X-Plane Compatibility](https://img.shields.io/badge/X--Plane-11%20%7C%2012-green)
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Version](https://img.shields.io/badge/version-1.0.5-brightgreen)
+![Version](https://img.shields.io/badge/version-1.0.6-brightgreen)
 
 ## Table of Contents
 

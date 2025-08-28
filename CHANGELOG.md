@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.6] - 2025-08-28
+
+### 🚨 **Critical Bug Fixes**
+
+#### 🛩️ **Traffic Coordinate Duplication Fix**
+- **Fixed Major Bug**: Resolved issue where all traffic aircraft reported identical coordinates
+  - **Issue**: X-Plane individual position datarefs (`plane##_lat`, `plane##_lon`) returned ownship coordinates for non-existent aircraft
+  - **Root Cause**: Plugin attempted to read 63 traffic targets but only ~10 aircraft existed in simulation
+  - **Behavior**: Array datarefs correctly returned 0.0 for non-existent aircraft, but individual datarefs returned ownship position
+  - **Fix**: Added aircraft validation in `update_traffic_targets()` to skip aircraft with no activity
+  - **Validation Logic**: Aircraft with speed=0.0, track=0.0, and vertical_speed=0.0 are considered non-existent
+  - **Impact**: Eliminates duplicate traffic reports at ownship location, ensures accurate traffic positioning
+  - **Files Modified**: `src/xp2gdl90.cpp` (added validation logic in traffic update loop)
+
+#### 🎯 **Traffic Report Accuracy**
+- **Improved Data Quality**: Traffic reports now only include aircraft that actually exist in the simulation
+  - Before: Up to 63 phantom aircraft at ownship coordinates
+  - After: Only real aircraft (typically 5-15) at their actual positions
+  - Enhanced traffic collision avoidance system accuracy
+  - Reduced false traffic alerts and display clutter
+
+### 🔍 **Data Validation Enhancements**
+
+#### 📊 **Array Dataref Consistency**
+- **Enhanced Validation**: Improved consistency between array and individual dataref sources
+  - Uses array datarefs (`psi`, `V_msc`, `vertical_speed`) to validate aircraft existence
+  - Prevents processing of aircraft beyond simulation limits
+  - Maintains data integrity across different X-Plane dataref types
+  - Ensures plugin behavior matches actual aircraft population
+
 ## [1.0.5] - 2025-08-28
 
 ### 🚀 **Traffic Data Enhancements**
