@@ -647,7 +647,6 @@ float flight_loop_callback(float elapsedMe, float elapsedSim, int counter, void*
     static double last_position = 0;
     static double last_traffic = 0;
     static double last_ui_update = 0;
-    static int total_messages_sent = 0;
     
     double current_time = XPLMGetElapsedTime();
     
@@ -664,7 +663,6 @@ float flight_loop_callback(float elapsedMe, float elapsedSim, int counter, void*
         auto heartbeat_msg = create_heartbeat();
         send_gdl90_message(heartbeat_msg);
         last_heartbeat = current_time;
-        total_messages_sent++;
         
         char debug_msg[100];
         snprintf(debug_msg, sizeof(debug_msg), "XP2GDL90: Sent heartbeat (%zu bytes)\n", heartbeat_msg.size());
@@ -676,7 +674,6 @@ float flight_loop_callback(float elapsedMe, float elapsedSim, int counter, void*
         auto position_msg = create_position_report(current_flight_data);
         send_gdl90_message(position_msg);
         last_position = current_time;
-        total_messages_sent++;
         
         char debug_msg[200];
         snprintf(debug_msg, sizeof(debug_msg), 
@@ -693,7 +690,6 @@ float flight_loop_callback(float elapsedMe, float elapsedSim, int counter, void*
                 auto traffic_msg = create_traffic_report(target);
                 send_gdl90_message(traffic_msg);
                 active_traffic_count++;
-                total_messages_sent++;
             }
         }
         
