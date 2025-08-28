@@ -1,4 +1,4 @@
-// Standard C/C++ headers first
+ // Standard C/C++ headers first
 #include <cstring>
 #include <cstdio>
 #include <cmath>
@@ -145,8 +145,10 @@ static XPLMDataRef roll_dataref = nullptr;
 static std::vector<XPLMDataRef> traffic_lat_datarefs;
 static std::vector<XPLMDataRef> traffic_lon_datarefs;
 static std::vector<XPLMDataRef> traffic_alt_datarefs;
+static std::vector<XPLMDataRef> traffic_tailnum_datarefs;
 static XPLMDataRef traffic_vs_dataref = nullptr;
 static XPLMDataRef traffic_psi_dataref = nullptr;
+static XPLMDataRef traffic_speed_dataref = nullptr;
 
 // GDL-90 Encoding Functions
 
@@ -429,7 +431,12 @@ bool init_network() {
     fdpro_addr.sin_port = htons(fdpro_port);
     inet_pton(AF_INET, fdpro_ip, &fdpro_addr.sin_addr);
 
-    XPLMDebugString("XP2GDL90: Network initialized successfully\n");
+    // Log the network configuration for verification
+    char network_msg[256];
+    snprintf(network_msg, sizeof(network_msg), 
+             "XP2GDL90: Network initialized - Target IP: %s, Port: %d\n", 
+             fdpro_ip, fdpro_port);
+    XPLMDebugString(network_msg);
     return true;
 }
 
@@ -474,12 +481,16 @@ void update_traffic_targets() {
     // Read traffic data arrays
     std::vector<float> vs_array(64);
     std::vector<float> psi_array(64);
+    std::vector<float> speed_array(64);
     
     if (traffic_vs_dataref) {
         XPLMGetDatavf(traffic_vs_dataref, vs_array.data(), 0, 64);
     }
     if (traffic_psi_dataref) {
         XPLMGetDatavf(traffic_psi_dataref, psi_array.data(), 0, 64);
+    }
+    if (traffic_speed_dataref) {
+        XPLMGetDatavf(traffic_speed_dataref, speed_array.data(), 0, 64);
     }
     
     // Update each traffic target
@@ -517,6 +528,28 @@ void update_traffic_targets() {
         if (target.plane_id < 64) {
             target.data.vs = vs_array[target.plane_id];
             target.data.track = psi_array[target.plane_id];
+            target.data.speed = speed_array[target.plane_id] * 1.94384; // m/s to knots
+        }
+        
+        // Read tailnum/callsign data
+        if (traffic_tailnum_datarefs[i]) {
+            char tailnum[32] = {0};  // Buffer for reading tailnum
+            int bytes_read = XPLMGetDatab(traffic_tailnum_datarefs[i], tailnum, 0, sizeof(tailnum) - 1);
+            if (bytes_read > 0) {
+                // Format callsign for GDL-90 (8 characters, space-padded)
+                memset(target.callsign, ' ', 8);  // Fill with spaces
+                target.callsign[8] = '\0';        // Null terminate
+                
+                // Copy tailnum, limiting to 8 characters
+                int copy_len = (bytes_read > 8) ? 8 : bytes_read;
+                for (int j = 0; j < copy_len; j++) {
+                    if (tailnum[j] != '\0' && tailnum[j] != ' ') {
+                        target.callsign[j] = tailnum[j];
+                    } else {
+                        break;  // Stop at first null or space
+                    }
+                }
+            }
         }
         
         if (updated) {
@@ -762,7 +795,12 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     SAFE_STRCPY(outSig, "com.xplane.xp2gdl90", 255);
     SAFE_STRCPY(outDesc, "X-Plane to GDL-90 data broadcaster for FDPRO", 255);
     
-    XPLMDebugString("XP2GDL90: Plugin starting...\n");
+    // Log startup configuration
+    char startup_msg[256];
+    snprintf(startup_msg, sizeof(startup_msg), 
+             "XP2GDL90: Plugin starting - Default target IP: %s, Port: %d\n", 
+             fdpro_ip, fdpro_port);
+    XPLMDebugString(startup_msg);
     
     // Initialize network
     if (!init_network()) {
@@ -786,10 +824,12 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
         traffic_lat_datarefs.resize(MAX_TRAFFIC_TARGETS);
         traffic_lon_datarefs.resize(MAX_TRAFFIC_TARGETS);
         traffic_alt_datarefs.resize(MAX_TRAFFIC_TARGETS);
+        traffic_tailnum_datarefs.resize(MAX_TRAFFIC_TARGETS);
         
         // Get traffic array datarefs
         traffic_vs_dataref = XPLMFindDataRef("sim/cockpit2/tcas/targets/position/vertical_speed");
         traffic_psi_dataref = XPLMFindDataRef("sim/cockpit2/tcas/targets/position/psi");
+        traffic_speed_dataref = XPLMFindDataRef("sim/cockpit2/tcas/targets/position/V_msc");
         
         // Get individual traffic datarefs and initialize targets
         for (int i = 0; i < MAX_TRAFFIC_TARGETS; i++) {
@@ -808,6 +848,11 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
                      "sim/cockpit2/tcas/targets/position/double/plane%d_ele", i + 1);
             traffic_alt_datarefs[i] = XPLMFindDataRef(dataref_name);
             
+            // Multiplayer tailnum dataref
+            snprintf(dataref_name, sizeof(dataref_name), 
+                     "sim/multiplayer/position/plane%d_tailnum", i + 1);
+            traffic_tailnum_datarefs[i] = XPLMFindDataRef(dataref_name);
+            
             // Initialize traffic target
             TrafficTarget& target = traffic_targets[i];
             target.plane_id = i + 1;
@@ -815,6 +860,7 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
             target.data = {};
             target.last_update = 0;
             target.active = false;
+            // Initialize with default callsign (will be updated with real tailnum when available)
             snprintf(target.callsign, sizeof(target.callsign), "TRF%03d  ", i + 1);
         }
         

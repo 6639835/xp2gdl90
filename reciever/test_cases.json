@@ -1,0 +1,162 @@
+[
+  {
+    "name": "KSFO Ownship - Normal Flight",
+    "type": "ownship",
+    "description": "Aircraft at San Francisco Airport in normal flight",
+    "input": {
+      "latitude": 37.621311,
+      "longitude": -122.378968,
+      "altitude": 1247.0,
+      "ground_speed": 145.0,
+      "vertical_speed": -580.0,
+      "track": 267.4,
+      "callsign": "PYTHON1 ",
+      "icao_address": 11259375
+    },
+    "expected_gdl90": {
+      "message_id": "0x0A",
+      "latitude_24bit": 1753166,
+      "longitude_24bit": 11076084,
+      "altitude_encoded": 89,
+      "ground_speed_encoded": 145,
+      "vertical_speed_encoded": 4087,
+      "track_encoded": 190
+    },
+    "calculated_gdl90": {
+      "latitude_24bit": 1753280,
+      "longitude_24bit": 11073943,
+      "altitude_encoded": 89,
+      "ground_speed_encoded": 145,
+      "vertical_speed_encoded": 4087,
+      "track_encoded": 190
+    }
+  },
+  {
+    "name": "Commercial Traffic - UAL123",
+    "type": "traffic",
+    "description": "United Airlines flight at cruise altitude",
+    "input": {
+      "latitude": 37.7749,
+      "longitude": -122.4194,
+      "altitude": 35000.0,
+      "ground_speed": 420.0,
+      "vertical_speed": 0.0,
+      "track": 45.0,
+      "callsign": "UAL123  ",
+      "icao_address": 1048577
+    },
+    "expected_gdl90": {
+      "message_id": "0x14",
+      "latitude_24bit": 1759672,
+      "longitude_24bit": 11071074,
+      "altitude_encoded": 1440,
+      "ground_speed_encoded": 420,
+      "vertical_speed_encoded": 2048,
+      "track_encoded": 32
+    },
+    "calculated_gdl90": {
+      "latitude_24bit": 1760437,
+      "longitude_24bit": 11072059,
+      "altitude_encoded": 1440,
+      "ground_speed_encoded": 420,
+      "vertical_speed_encoded": 2048,
+      "track_encoded": 32
+    }
+  },
+  {
+    "name": "Pattern Traffic - N737BA",
+    "type": "traffic",
+    "description": "Light aircraft in traffic pattern",
+    "input": {
+      "latitude": 37.615,
+      "longitude": -122.375,
+      "altitude": 800.0,
+      "ground_speed": 85.0,
+      "vertical_speed": 500.0,
+      "track": 180.0,
+      "callsign": "N737BA  ",
+      "icao_address": 1048578
+    },
+    "expected_gdl90": {
+      "message_id": "0x14",
+      "latitude_24bit": 1752650,
+      "longitude_24bit": 11076483,
+      "altitude_encoded": 72,
+      "ground_speed_encoded": 85,
+      "vertical_speed_encoded": 8,
+      "track_encoded": 128
+    },
+    "calculated_gdl90": {
+      "latitude_24bit": 1752986,
+      "longitude_24bit": 11074128,
+      "altitude_encoded": 72,
+      "ground_speed_encoded": 85,
+      "vertical_speed_encoded": 7,
+      "track_encoded": 128
+    }
+  },
+  {
+    "name": "Edge Cases - Extreme Values",
+    "type": "traffic",
+    "description": "Testing boundary conditions",
+    "input": {
+      "latitude": -90.0,
+      "longitude": 180.0,
+      "altitude": -1000.0,
+      "ground_speed": 0.0,
+      "vertical_speed": -6000.0,
+      "track": 0.0,
+      "callsign": "EDGE1   ",
+      "icao_address": 1048579
+    },
+    "expected_gdl90": {
+      "message_id": "0x14",
+      "latitude_24bit": 12582912,
+      "longitude_24bit": 8388608,
+      "altitude_encoded": 0,
+      "ground_speed_encoded": 0,
+      "vertical_speed_encoded": 3613,
+      "track_encoded": 0
+    },
+    "calculated_gdl90": {
+      "latitude_24bit": 12582912,
+      "longitude_24bit": 8388608,
+      "altitude_encoded": 0,
+      "ground_speed_encoded": 0,
+      "vertical_speed_encoded": 4003,
+      "track_encoded": 0
+    }
+  },
+  {
+    "name": "High Speed - Military",
+    "type": "traffic",
+    "description": "High speed military aircraft",
+    "input": {
+      "latitude": 40.0,
+      "longitude": -120.0,
+      "altitude": 45000.0,
+      "ground_speed": 600.0,
+      "vertical_speed": 4000.0,
+      "track": 270.0,
+      "callsign": "ARMY01  ",
+      "icao_address": 1048580
+    },
+    "expected_gdl90": {
+      "message_id": "0x14",
+      "latitude_24bit": 1864135,
+      "longitude_24bit": 11184896,
+      "altitude_encoded": 1840,
+      "ground_speed_encoded": 600,
+      "vertical_speed_encoded": 62,
+      "track_encoded": 192
+    },
+    "calculated_gdl90": {
+      "latitude_24bit": 1864135,
+      "longitude_24bit": 11184811,
+      "altitude_encoded": 1840,
+      "ground_speed_encoded": 600,
+      "vertical_speed_encoded": 62,
+      "track_encoded": 192
+    }
+  }
+]

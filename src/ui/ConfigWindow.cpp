@@ -1,6 +1,7 @@
 #include "ConfigWindow.h"
 #include "../imgui/imgui.h"
 #include "XPLMUtilities.h"
+#include "ImGuiManager.h"
 #include <cstdio>
 #include <cstring>
 
@@ -105,8 +106,8 @@ void ConfigWindow::DrawButtons() {
     
     // Apply button
     if (ImGui::Button("Apply", ImVec2(buttonWidth, 0))) {
-        XPLMDebugString("XP2GDL90: Configuration applied\n");
-        // Configuration will be read by the manager when needed
+        XPLMDebugString("XP2GDL90: Apply button clicked - applying configuration\n");
+        ImGuiManager::Instance().ApplyConfigFromWindow();
     }
     
     ImGui::SameLine(0, spacing);
