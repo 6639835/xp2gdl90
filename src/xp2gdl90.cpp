@@ -147,7 +147,7 @@ static XPLMDataRef roll_dataref = nullptr;
 static std::vector<XPLMDataRef> traffic_lat_datarefs;
 static std::vector<XPLMDataRef> traffic_lon_datarefs;
 static std::vector<XPLMDataRef> traffic_alt_datarefs;
-static std::vector<XPLMDataRef> traffic_tailnum_datarefs;
+static XPLMDataRef traffic_flight_id_dataref = nullptr;
 static XPLMDataRef traffic_vs_dataref = nullptr;
 static XPLMDataRef traffic_psi_dataref = nullptr;
 static XPLMDataRef traffic_speed_dataref = nullptr;
@@ -156,11 +156,11 @@ static XPLMDataRef traffic_speed_dataref = nullptr;
 
 uint16_t gdl90_crc_compute(const uint8_t* data, size_t length) {
     uint16_t crc = 0;
-    uint16_t mask16bit = 0xFFFF;
     
     for (size_t i = 0; i < length; i++) {
-        uint16_t m = (crc << 8) & mask16bit;
-        crc = GDL90_CRC16_TABLE[(crc >> 8)] ^ m ^ data[i];
+        uint16_t m = (crc << 8) & 0xFFFF;
+        uint16_t table_index = (crc >> 8) & 0xFF;
+        crc = (GDL90_CRC16_TABLE[table_index] ^ m ^ (uint16_t)data[i]) & 0xFFFF;
     }
     return crc;
 }
@@ -554,6 +554,20 @@ void update_traffic_targets() {
     for (size_t i = 0; i < traffic_targets.size() && i < traffic_lat_datarefs.size(); i++) {
         TrafficTarget& target = traffic_targets[i];
         
+        // *** FIX: Check if aircraft actually exists by validating array data ***
+        // Skip aircraft that show no activity (all zeros = non-existent aircraft)
+        if (target.plane_id < 64) {
+            float aircraft_speed = speed_array[target.plane_id];
+            float aircraft_track = psi_array[target.plane_id];
+            float aircraft_vs = vs_array[target.plane_id];
+            
+            // If speed, track, and vertical speed are all 0.0, aircraft doesn't exist
+            if (aircraft_speed == 0.0f && aircraft_track == 0.0f && aircraft_vs == 0.0f) {
+                target.active = false;
+                continue;  // Skip this aircraft entirely
+            }
+        }
+        
         bool updated = false;
         
         // Read position data
@@ -588,22 +602,46 @@ void update_traffic_targets() {
             target.data.speed = speed_array[target.plane_id] * 1.94384; // m/s to knots
         }
         
-        // Read tailnum/callsign data
-        if (traffic_tailnum_datarefs[i]) {
-            char tailnum[32] = {0};  // Buffer for reading tailnum
-            int bytes_read = XPLMGetDatab(traffic_tailnum_datarefs[i], tailnum, 0, sizeof(tailnum) - 1);
+        // Read flight ID/callsign data from TCAS interface
+        if (traffic_flight_id_dataref) {
+            char flight_id_array[512] = {0};  // Full array buffer
+            int bytes_read = XPLMGetDatab(traffic_flight_id_dataref, flight_id_array, 0, sizeof(flight_id_array));
+            
             if (bytes_read > 0) {
-                // Format callsign for GDL-90 (8 characters, space-padded)
-                memset(target.callsign, ' ', 8);  // Fill with spaces
-                target.callsign[8] = '\0';        // Null terminate
+                // Calculate offset for this aircraft (Index 0 = user, Index i+1 = AI/multiplayer)
+                int aircraft_index = i + 1;  // Skip user aircraft at index 0
+                int offset = aircraft_index * 8;  // Each aircraft takes 8 bytes (7 chars + null)
                 
-                // Copy tailnum, limiting to 8 characters
-                int copy_len = (bytes_read > 8) ? 8 : bytes_read;
-                for (int j = 0; j < copy_len; j++) {
-                    if (tailnum[j] != '\0' && tailnum[j] != ' ') {
-                        target.callsign[j] = tailnum[j];
-                    } else {
-                        break;  // Stop at first null or space
+                if (offset + 7 < bytes_read) {
+                    char flight_id[8] = {0};
+                    memcpy(flight_id, flight_id_array + offset, 7);  // Copy 7 characters
+                    flight_id[7] = '\0';  // Ensure null termination
+                    
+                    // Debug output
+                    char debug_msg[200];
+                    snprintf(debug_msg, sizeof(debug_msg), 
+                             "XP2GDL90: Traffic %d TCAS flight_id[%d]: '%s'\n", 
+                             i + 1, aircraft_index, flight_id);
+                    XPLMDebugString(debug_msg);
+                    
+                    // Check if we have a valid flight ID (not empty)
+                    if (flight_id[0] != '\0' && flight_id[0] != ' ') {
+                        // Format callsign for GDL-90 (8 characters, space-padded)
+                        memset(target.callsign, ' ', 8);  // Fill with spaces
+                        target.callsign[8] = '\0';        // Null terminate
+                        
+                        // Copy flight ID, limiting to 8 characters, only printable ASCII
+                        int j = 0;
+                        for (int k = 0; k < 7 && j < 8; k++) {
+                            if (flight_id[k] >= 32 && flight_id[k] <= 126 && flight_id[k] != ' ') {
+                                target.callsign[j++] = toupper(flight_id[k]);  // Convert to uppercase
+                            }
+                        }
+                        
+                        snprintf(debug_msg, sizeof(debug_msg), 
+                                 "XP2GDL90: Traffic %d updated callsign to: '%s'\n", 
+                                 i + 1, target.callsign);
+                        XPLMDebugString(debug_msg);
                     }
                 }
             }
@@ -881,12 +919,14 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
         traffic_lat_datarefs.resize(MAX_TRAFFIC_TARGETS);
         traffic_lon_datarefs.resize(MAX_TRAFFIC_TARGETS);
         traffic_alt_datarefs.resize(MAX_TRAFFIC_TARGETS);
-        traffic_tailnum_datarefs.resize(MAX_TRAFFIC_TARGETS);
         
         // Get traffic array datarefs
         traffic_vs_dataref = XPLMFindDataRef("sim/cockpit2/tcas/targets/position/vertical_speed");
         traffic_psi_dataref = XPLMFindDataRef("sim/cockpit2/tcas/targets/position/psi");
         traffic_speed_dataref = XPLMFindDataRef("sim/cockpit2/tcas/targets/position/V_msc");
+        
+        // Get TCAS flight ID dataref for callsigns (byte[512] array, 8 bytes per aircraft)
+        traffic_flight_id_dataref = XPLMFindDataRef("sim/cockpit2/tcas/targets/flight_id");
         
         // Get individual traffic datarefs and initialize targets
         for (int i = 0; i < MAX_TRAFFIC_TARGETS; i++) {
@@ -905,10 +945,7 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
                      "sim/cockpit2/tcas/targets/position/double/plane%d_ele", i + 1);
             traffic_alt_datarefs[i] = XPLMFindDataRef(dataref_name);
             
-            // Multiplayer tailnum dataref
-            snprintf(dataref_name, sizeof(dataref_name), 
-                     "sim/multiplayer/position/plane%d_tailnum", i + 1);
-            traffic_tailnum_datarefs[i] = XPLMFindDataRef(dataref_name);
+
             
             // Initialize traffic target
             TrafficTarget& target = traffic_targets[i];

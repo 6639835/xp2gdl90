@@ -91,7 +91,7 @@ class GDL90Decoder:
             
         # Extract message data and CRC
         message_data = unescaped[:-2]
-        received_crc = (unescaped[-2] << 8) | unescaped[-1]  # Low byte first (GDL90 spec)
+        received_crc = (unescaped[-1] << 8) | unescaped[-2]  # High byte, low byte
         
         # Verify CRC
         calculated_crc = self.compute_crc(message_data)
@@ -272,7 +272,7 @@ class GDL90Decoder:
         # Callsign (8 bytes)
         callsign_bytes = data[offset:offset+8]
         callsign = ''.join([chr(b) if 32 <= b <= 126 else ' ' for b in callsign_bytes])
-        result["callsign"] = f"'{callsign.rstrip()}'"
+        result["callsign"] = callsign.rstrip()
         offset += 8
         
         # Emergency code (4 bits)
