@@ -167,6 +167,7 @@ jobs:
       shell: pwsh
     
     - name: Configure CMake
+      shell: bash
       run: |
         mkdir build
         cd build
@@ -175,8 +176,9 @@ jobs:
         ENABLE_BENCHMARKS=ON
         BUILD_REASON="enabled"
         
-        # Check environment variable from previous step
-        if [ "${{ env.BENCHMARK_AVAILABLE }}" == "false" ]; then
+        # Check environment variable from previous step (cross-platform compatible)
+        BENCHMARK_AVAILABLE="${{ env.BENCHMARK_AVAILABLE }}"
+        if [ "$BENCHMARK_AVAILABLE" = "false" ] 2>/dev/null || [ "$BENCHMARK_AVAILABLE" = "" ]; then
           ENABLE_BENCHMARKS=OFF
           BUILD_REASON="${{ env.BENCHMARK_SKIP_REASON }}"
         fi
@@ -280,6 +282,7 @@ jobs:
         fi
     
     - name: Build benchmarks
+      shell: bash
       run: |
         cd build
         
@@ -289,8 +292,9 @@ jobs:
         BUILD_BENCHMARKS=true
         SKIP_REASON=""
         
-        # Check 1: Environment variable from previous steps  
-        if [ "${{ env.BENCHMARK_AVAILABLE }}" == "false" ]; then
+        # Check 1: Environment variable from previous steps (cross-platform)
+        BENCHMARK_AVAILABLE="${{ env.BENCHMARK_AVAILABLE }}"
+        if [ "$BENCHMARK_AVAILABLE" = "false" ] 2>/dev/null || [ "$BENCHMARK_AVAILABLE" = "" ]; then
           BUILD_BENCHMARKS=false
           SKIP_REASON="${{ env.BENCHMARK_SKIP_REASON }}"
           echo "   ❌ Disabled by environment: $SKIP_REASON"
@@ -421,7 +425,8 @@ jobs:
         cd build
         
         # Check if benchmarks were built successfully  
-        if [ "${{ env.BENCHMARKS_BUILT }}" != "true" ]; then
+        BENCHMARKS_BUILT="${{ env.BENCHMARKS_BUILT }}"
+        if [ "${BENCHMARKS_BUILT:-false}" != "true" ]; then
           echo "⏩ Benchmarks were not built - creating placeholder results for analysis consistency"
           
           # Determine skip reason for proper reporting
@@ -581,9 +586,11 @@ jobs:
         
         # If no benchmark status was set, determine from build status and availability
         if [ -z "$OVERALL_STATUS" ] || [ "$OVERALL_STATUS" = "null" ]; then
-          if [ "${{ env.BENCHMARK_AVAILABLE }}" == "false" ]; then
+          BENCHMARK_AVAILABLE="${{ env.BENCHMARK_AVAILABLE }}"
+          BENCHMARKS_BUILT="${{ env.BENCHMARKS_BUILT }}"
+          if [ "$BENCHMARK_AVAILABLE" = "false" ] 2>/dev/null || [ "$BENCHMARK_AVAILABLE" = "" ]; then
             OVERALL_STATUS="skipped"
-          elif [ "${{ env.BENCHMARKS_BUILT }}" == "false" ]; then
+          elif [ "$BENCHMARKS_BUILT" = "false" ] 2>/dev/null; then
             OVERALL_STATUS="build_failed"  
           else
             OVERALL_STATUS="unknown"
@@ -710,7 +717,7 @@ jobs:
     
     - name: Install analysis tools
       run: |
-        pip install pandas matplotlib seaborn numpy jinja2
+        pip install pandas matplotlib seaborn numpy jinja2 tabulate
     
     - name: Download all benchmark results
       uses: actions/download-artifact@v4
