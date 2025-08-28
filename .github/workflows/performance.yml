@@ -142,7 +142,11 @@ jobs:
             echo "   Reason: $MISMATCH_REASON"
             echo "   System arch: $SYSTEM_ARCH"  
             echo "   Compiler arch: $COMPILER_ARCH"
-            echo "   Library archs: ${BENCHMARK_ARCHS:-unknown}"
+            if [ -n "$BENCHMARK_ARCHS" ]; then
+              echo "   Library archs: $BENCHMARK_ARCHS"
+            else
+              echo "   Library archs: unknown"
+            fi
             echo ""
             echo "This is expected behavior for GitHub Actions and prevents build failures."
             
@@ -421,12 +425,13 @@ jobs:
     
     - name: Run benchmarks
       id: benchmark
+      shell: bash
       run: |
         cd build
         
         # Check if benchmarks were built successfully  
         BENCHMARKS_BUILT="${{ env.BENCHMARKS_BUILT }}"
-        if [ "${BENCHMARKS_BUILT:-false}" != "true" ]; then
+        if [ "$BENCHMARKS_BUILT" != "true" ] 2>/dev/null; then
           echo "⏩ Benchmarks were not built - creating placeholder results for analysis consistency"
           
           # Determine skip reason for proper reporting
@@ -578,6 +583,7 @@ jobs:
         retention-days: 30
     
     - name: Benchmark Summary
+      shell: bash
       run: |
         cd build
         
@@ -726,6 +732,7 @@ jobs:
       continue-on-error: true
     
     - name: Check for benchmark artifacts
+      shell: bash
       run: |
         if [ ! -d "benchmark-artifacts" ]; then
           echo "Creating benchmark-artifacts directory (no artifacts found)"
@@ -735,6 +742,7 @@ jobs:
         ls -la benchmark-artifacts/ || echo "No artifacts available"
     
     - name: Analyze performance results
+      shell: bash
       run: |
         python << 'EOF'
         import json
@@ -831,6 +839,7 @@ jobs:
         EOF
     
     - name: Create performance charts
+      shell: bash
       run: |
         python << 'EOF'
         import json
@@ -909,6 +918,7 @@ jobs:
         EOF
     
     - name: Update performance summary
+      shell: bash
       run: |
         cat >> $GITHUB_STEP_SUMMARY << 'EOF'
         # 📊 Performance Analysis Results
@@ -970,6 +980,7 @@ jobs:
       continue-on-error: true
     
     - name: Check for regressions
+      shell: bash
       run: |
         # This is a simplified regression check
         # In a full implementation, you would compare against baseline results
