@@ -7,6 +7,114 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2025-08-28
+
+### Major Improvements
+
+#### 🏗️ **Complete UI Architecture Overhaul**
+- **Advanced Window Management System**: Migrated from simple ImGuiManager to robust XPImgWindow architecture from xPilot project
+- **Modular Window Classes**: Separated concerns with dedicated `ConfigWindow` and `StatusWindow` classes inheriting from `XPImgWindow`
+- **Professional ImGui Integration**: Adopted industry-standard ImGui window lifecycle management with VR support, positioning modes, and window styles
+- **Enhanced Maintainability**: Clean separation of UI logic from main plugin code for better testing and future development
+
+#### ⌨️ **Completely Fixed Keyboard Input System**
+- **Modern ImGui API**: Updated from deprecated `io.KeyMap` system to current `io.AddKeyEvent` API for ImGui 1.91.5+
+- **Full Key Support**: Fixed Delete key, Backspace, arrow keys, Home/End, Page Up/Down, and all standard keyboard shortcuts
+- **Proper Event Mapping**: Complete XPLM virtual key to ImGui key mapping with modifier key support (Ctrl, Alt, Shift)
+- **Text Input Processing**: Correct handling of printable character input alongside special key events
+
+#### 🖥️ **Windows Platform Compatibility**
+- **Compilation Fixes**: Resolved critical Windows build failures caused by missing OpenGL extension headers
+- **Type System Support**: Added proper `<cstdint>` includes for `uintptr_t`, `uint32_t` and other standard types
+- **MSVC Compiler Support**: Comprehensive warning suppression for clean Windows builds (C5045, C5219, C5039, etc.)
+- **Cross-Platform Headers**: Improved platform-specific header inclusion logic for Windows, macOS, and Linux
+
+### Technical Enhancements
+
+#### 🎛️ **X-Plane SDK Integration**
+- **Extended SDK Support**: Added support for XPLM210 and XPLM301 features including VR functions and modern window decorations
+- **DataRef Management**: Implemented proper DataRef access patterns with error handling and VR status detection
+- **Flight Loop Integration**: Enhanced flight loop callback system for window mode changes and state management
+- **Memory Safety**: Proper resource cleanup with RAII patterns and exception-safe design
+
+#### 🖼️ **Font and Rendering System**
+- **Font Atlas Management**: Professional font texture management with automatic binding and cleanup
+- **OpenGL Integration**: Improved OpenGL texture handling with proper type casting and platform compatibility
+- **Rendering Optimization**: Smart texture generation with fallback systems for different ImGui contexts
+- **VR Compatibility**: Full support for X-Plane VR mode with appropriate window positioning and sizing
+
+#### 🏛️ **Code Architecture**
+- **Separation of Concerns**: Clear distinction between main plugin logic and UI presentation layers
+- **Forward Declarations**: Proper use of forward declarations to minimize compilation dependencies
+- **Namespace Organization**: Clean organization of classes and structures to prevent naming conflicts
+- **Exception Safety**: Robust error handling throughout the UI system with graceful degradation
+
+### Bug Fixes
+
+#### 🔧 **Critical Fixes**
+- **Structure Name Conflicts**: Resolved `FlightData` and `TrafficTarget` naming conflicts between UI and main plugin
+- **API Compatibility**: Fixed deprecated ImGui API usage that caused compilation failures
+- **Coordinate System**: Corrected window coordinate transformations between X-Plane and ImGui coordinate spaces
+- **Window Lifecycle**: Fixed window creation, destruction, and state management issues
+
+#### 🐛 **Platform-Specific Fixes**
+- **Windows Headers**: Fixed missing `GL/glext.h` header issue on Windows systems
+- **Type Definitions**: Added missing standard library includes for cross-platform type compatibility
+- **Constructor Initialization**: Fixed member initialization order warnings and undefined behavior
+- **Static Analysis**: Resolved various static analysis warnings and potential issues
+
+### User Experience
+
+#### 🎨 **Enhanced UI Features**
+- **Professional Window Styling**: Consistent styling across all UI components with modern appearance
+- **Flexible Window Modes**: Support for floating, pop-out, VR, and centered window positioning modes
+- **Improved Controls**: Enhanced text input fields, checkboxes, and buttons with better user feedback
+- **Status Monitoring**: Real-time connection status, traffic count, and message statistics display
+
+#### 🎯 **Usability Improvements**
+- **Keyboard Navigation**: Full keyboard navigation support with proper focus management
+- **Window Management**: Intuitive window resizing, positioning, and state persistence
+- **Visual Feedback**: Clear indicators for connection status and plugin activity
+- **Error Reporting**: Better error messages and debugging information for troubleshooting
+
+### Performance Optimizations
+
+#### ⚡ **Rendering Performance**
+- **Smart Updates**: Efficient UI update cycles tied to actual data changes
+- **Texture Management**: Optimized font texture handling with minimal GPU memory usage
+- **Event Processing**: Streamlined keyboard and mouse event processing
+- **Memory Usage**: Reduced memory footprint through better object lifecycle management
+
+### Development Experience
+
+#### 🛠️ **Build System Improvements**
+- **Warning Suppression**: Comprehensive MSVC warning management for clean professional builds
+- **Header Organization**: Better organization of platform-specific includes and dependencies
+- **Compilation Speed**: Improved compilation times through reduced header dependencies
+- **Error Messages**: Clearer compilation errors and better diagnostic information
+
+#### 📚 **Code Quality**
+- **Documentation**: Extensive inline documentation for all new UI classes and methods
+- **Testing**: Improved testability through modular architecture and clear interfaces
+- **Maintainability**: Clean code structure following modern C++ best practices
+- **Extensibility**: Architecture designed for easy addition of new UI components and features
+
+### Removed
+
+- **Legacy Code**: Removed deprecated ImGui API usage and outdated compatibility code
+- **Unused Variables**: Cleaned up unused member variables and temporary code
+- **Debug Code**: Removed temporary debugging code and diagnostic output
+
+### Changed
+
+- **UI Architecture**: Complete replacement of monolithic UI management with modular window system
+- **Event Handling**: Modern event-driven architecture replacing polling-based systems
+- **Resource Management**: RAII-based resource management throughout UI system
+- **Code Organization**: Restructured codebase for better maintainability and testing
+
+---
+*Version 1.0.3 represents a major architectural upgrade with focus on long-term maintainability, user experience, and cross-platform compatibility. This release establishes a solid foundation for future UI enhancements and feature development.*
+
 ## [1.0.2] - 2025-08-27
 
 ### Added
@@ -165,7 +273,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Performance Testing**: CPU and memory usage validation
 - **Integration Testing**: FDPRO and EFB application compatibility verification
 
-[Unreleased]: https://github.com/username/xp2gdl90/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/username/xp2gdl90/compare/v1.0.3...HEAD
+[1.0.3]: https://github.com/username/xp2gdl90/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/username/xp2gdl90/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/username/xp2gdl90/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/username/xp2gdl90/releases/tag/v1.0.0

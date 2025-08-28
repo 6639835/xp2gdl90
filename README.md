@@ -5,7 +5,7 @@ A native X-Plane plugin that broadcasts flight data in GDL-90 format to FDPRO, e
 ![Platform Support](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)
 ![X-Plane Compatibility](https://img.shields.io/badge/X--Plane-11%20%7C%2012-green)
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Version](https://img.shields.io/badge/version-1.0.1-brightgreen)
+![Version](https://img.shields.io/badge/version-1.0.3-brightgreen)
 
 ## Table of Contents
 
@@ -50,7 +50,7 @@ This C++ plugin replaces Python UDP-based solutions by:
 - **GDL-90 Compliance**: Full GDL-90 message format implementation
 - **Real-time Broadcasting**: 1Hz heartbeat, 2Hz position reports, 2Hz traffic reports
 - **Traffic Support**: Automatic detection of AI aircraft and multiplayer targets
-- **Cross-platform**: Works on Windows, macOS, and Linux
+- **Cross-platform**: Works on Windows, macOS, and Linux (v1.0.3+ includes enhanced Windows compatibility)
 - **Low overhead**: Native C++ performance
 - **Zero Configuration**: Works out of the box with sensible defaults
 - **Security Focused**: Localhost-only default configuration for safety
@@ -162,6 +162,8 @@ To modify these settings:
 1. Edit the constants in `src/xp2gdl90.cpp`
 2. Rebuild using the build scripts
 3. Reinstall the updated plugin
+
+**UI Configuration (v1.0.3+)**: The plugin now features an enhanced ImGui-based configuration interface with full keyboard support, including working Delete key, arrow keys, and standard keyboard shortcuts. The modular UI architecture provides a professional experience across all platforms.
 
 **Security Note**: The default localhost-only configuration prevents external network access. See [SECURITY.md](SECURITY.md) for security considerations when changing network settings.
 
