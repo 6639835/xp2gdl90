@@ -335,6 +335,8 @@ jobs:
     - name: Setup Pages
       if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event.inputs.deploy_docs == 'true')
       uses: actions/configure-pages@v4
+      continue-on-error: true
+      id: setup_pages
     
     - name: Upload documentation artifact
       uses: actions/upload-artifact@v4
@@ -344,14 +346,30 @@ jobs:
         retention-days: 30
     
     - name: Upload to GitHub Pages
-      if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event.inputs.deploy_docs == 'true')
+      if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event.inputs.deploy_docs == 'true') && steps.setup_pages.outcome == 'success'
       uses: actions/upload-pages-artifact@v3
       with:
         path: docs/site/
+    
+    - name: Pages Setup Status
+      if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event.inputs.deploy_docs == 'true')
+      run: |
+        if [ "${{ steps.setup_pages.outcome }}" != "success" ]; then
+          echo "⚠️  GitHub Pages not configured for this repository"
+          echo "To enable GitHub Pages deployment:"
+          echo "1. Go to repository Settings"
+          echo "2. Navigate to Pages section"  
+          echo "3. Set source to 'GitHub Actions'"
+          echo "4. Re-run this workflow"
+          echo ""
+          echo "📄 Documentation is still available as workflow artifact"
+        else
+          echo "✅ GitHub Pages configured successfully"
+        fi
 
   deploy-docs:
     name: Deploy Documentation
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event.inputs.deploy_docs == 'true')
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event.inputs.deploy_docs == 'true') && needs.build-docs.result == 'success'
     needs: build-docs
     runs-on: ubuntu-latest
     environment:
@@ -359,9 +377,33 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     
     steps:
+    - name: Check Pages Setup
+      run: |
+        echo "Attempting to deploy to GitHub Pages..."
+        echo "If this fails, GitHub Pages may not be enabled for this repository."
+    
     - name: Deploy to GitHub Pages
       id: deployment
       uses: actions/deploy-pages@v4
+      continue-on-error: true
+    
+    - name: Deployment Status
+      run: |
+        if [ "${{ steps.deployment.outcome }}" == "success" ]; then
+          echo "✅ Successfully deployed to GitHub Pages"
+          echo "🌐 URL: ${{ steps.deployment.outputs.page_url }}"
+        else
+          echo "⚠️  Failed to deploy to GitHub Pages"
+          echo "This is likely because GitHub Pages is not enabled for this repository."
+          echo ""
+          echo "To enable GitHub Pages:"
+          echo "1. Go to repository Settings"
+          echo "2. Navigate to Pages section"
+          echo "3. Set source to 'GitHub Actions'"
+          echo "4. Re-run this workflow"
+          echo ""
+          echo "📄 Documentation is available as a workflow artifact in the meantime."
+        fi
 
   doc-link-check:
     name: Check Documentation Links

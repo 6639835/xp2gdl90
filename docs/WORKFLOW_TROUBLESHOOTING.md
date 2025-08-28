@@ -113,6 +113,40 @@ public:
     fi
 ```
 
+### Architecture Mismatch Issues (macOS)
+
+**Problem**: `ld: warning: ignoring file ... found architecture 'arm64', required architecture 'x86_64'`
+
+**Root Cause**: GitHub Actions runners use x86_64 architecture, but locally installed Google Benchmark might be arm64 (Apple Silicon)
+
+**Solution**: Enhanced architecture handling:
+
+```yaml
+- name: Install dependencies (macOS)
+  run: |
+    echo "System architecture: $(uname -m)"
+    
+    if brew install google-benchmark; then
+      # Verify architecture compatibility
+      if [ -f "/opt/homebrew/lib/libbenchmark.a" ]; then
+        lipo -archs /opt/homebrew/lib/libbenchmark.a
+      fi
+    else
+      echo "BENCHMARK_AVAILABLE=false" >> $GITHUB_ENV
+    fi
+
+- name: Configure CMake
+  run: |
+    if [[ "$RUNNER_OS" == "macOS" ]]; then
+      ARCH=$(uname -m)
+      cmake -DCMAKE_OSX_ARCHITECTURES=$ARCH \
+            -DBUILD_BENCHMARKS=$ENABLE_BENCHMARKS \
+            ..
+    fi
+```
+
+**Graceful Degradation**: Benchmarks will be skipped with placeholder results if architecture incompatible, but main build continues successfully.
+
 ## Documentation Generation Issues
 
 ### Doxygen Configuration Warnings
@@ -165,6 +199,40 @@ OUTPUT_DIRECTORY       = build/docs
     sudo apt-get install -y doxygen graphviz
     pip install sphinx breathe sphinx-rtd-theme myst-parser markdown
 ```
+
+### GitHub Pages Not Enabled
+
+**Problem**: `Get Pages site failed. Please verify that the repository has Pages enabled`
+
+**Root Cause**: GitHub Pages is not enabled for the repository or not configured to use GitHub Actions
+
+**Solution**: Enable GitHub Pages with graceful fallback:
+
+```yaml
+- name: Setup Pages
+  uses: actions/configure-pages@v4
+  continue-on-error: true
+  id: setup_pages
+
+- name: Deploy to GitHub Pages
+  if: steps.setup_pages.outcome == 'success'
+  uses: actions/deploy-pages@v4
+  continue-on-error: true
+
+- name: Pages Status
+  run: |
+    if [ "${{ steps.setup_pages.outcome }}" != "success" ]; then
+      echo "⚠️  GitHub Pages not configured for this repository"
+      echo "To enable: Settings → Pages → Source: GitHub Actions"
+      echo "📄 Documentation is available as workflow artifact"
+    fi
+```
+
+**Manual Setup**:
+1. Go to repository **Settings**
+2. Navigate to **Pages** section in left sidebar
+3. Under **Source**, select **"GitHub Actions"**
+4. Save settings and re-run workflow
 
 ## Security Scanning Issues
 
