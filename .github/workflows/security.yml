@@ -26,6 +26,7 @@ permissions:
   contents: read
   security-events: write
   pull-requests: write
+  issues: write
 
 jobs:
   codeql-analysis:
@@ -266,14 +267,28 @@ jobs:
     - name: Run Cppcheck
       run: |
         echo "Running Cppcheck static analysis..."
+        
+        # Create suppressions file for third-party code
+        cat > cppcheck-suppressions.txt << 'EOF'
+        # Suppress all issues in third-party libraries
+        *:src/imgui/*
+        *:src/imgwindow/*
+        # Suppress common false positives
+        missingIncludeSystem
+        unusedFunction
+        unmatchedSuppression
+        # Suppress test-specific issues
+        missingInclude:tests/*
+        EOF
+        
         cppcheck \
-          --enable=all \
-          --suppress=missingIncludeSystem \
-          --suppress=unusedFunction \
-          --suppress=unmatchedSuppression \
+          --enable=warning,style,performance,portability \
+          --suppressions-list=cppcheck-suppressions.txt \
           --xml \
           --output-file=cppcheck-results.xml \
-          src/ tests/ 2>&1 || true
+          src/xp2gdl90.cpp src/ui/ tests/unit/ tests/integration/ 2>&1 || true
+        
+        echo "✅ Cppcheck analysis completed"
         
         # Convert XML to human-readable format
         python3 << 'EOF'
@@ -308,19 +323,31 @@ jobs:
                 else:
                     low_severity.append(issue)
             
-            print(f"🔍 Cppcheck Results:")
+            print(f"🔍 Cppcheck Results (Main Code Only):")
             print(f"  High severity: {len(high_severity)}")
             print(f"  Medium severity: {len(medium_severity)}")
             print(f"  Low severity: {len(low_severity)}")
             
             if high_severity:
-                print("\n❌ High severity issues:")
+                print("\n❌ High severity issues in main code:")
                 for issue in high_severity[:10]:  # Show first 10
                     print(f"  - {issue['location']}: {issue['message']}")
                     
-            if len(high_severity) > 5:
-                print(f"🚨 {len(high_severity)} high severity issues found!")
+                if len(high_severity) > 10:
+                    print(f"  ... and {len(high_severity) - 10} more issues")
+            else:
+                print("✅ No high severity issues found in main code!")
+            
+            # Only fail if there are high severity issues in main code (not third-party)
+            main_code_issues = [i for i in high_severity if not any(exclude in i.get('location', '') for exclude in ['imgui/', 'imgwindow/'])]
+            
+            if len(main_code_issues) > 2:
+                print(f"🚨 {len(main_code_issues)} high severity issues found in main code!")
                 sys.exit(1)
+            elif len(main_code_issues) > 0:
+                print(f"⚠️  {len(main_code_issues)} high severity issue(s) in main code - please review")
+            else:
+                print("✅ No high severity issues in main code!")
                 
         except FileNotFoundError:
             print("No cppcheck results found")
@@ -336,13 +363,19 @@ jobs:
           --html \
           --output flawfinder-results.html \
           --minlevel 2 \
-          src/ tests/ || true
+          --exclude src/imgui/ \
+          --exclude src/imgwindow/ \
+          src/xp2gdl90.cpp src/ui/ tests/unit/ tests/integration/ || true
         
         # Generate summary
         flawfinder \
           --quiet \
           --minlevel 2 \
-          src/ tests/ > flawfinder-summary.txt 2>&1 || true
+          --exclude src/imgui/ \
+          --exclude src/imgwindow/ \
+          src/xp2gdl90.cpp src/ui/ tests/unit/ tests/integration/ > flawfinder-summary.txt 2>&1 || true
+        
+        echo "✅ Flawfinder analysis completed"
         
         echo "Flawfinder summary:"
         if [ -f flawfinder-summary.txt ]; then
