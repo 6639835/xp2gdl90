@@ -189,6 +189,10 @@ if(MSVC)
         /wd4711  # Function selected for automatic inline expansion
         /wd4820  # Padding added after data member
         /wd5045  # Disable Spectre mitigation warnings
+        /wd5219  # Disable implicit conversion warnings
+        /wd5039  # Disable exception handling warnings
+        /wd4668  # Disable undefined macro warnings
+        /wd4464  # Disable relative include path warnings
     )
 else()
     # GCC/Clang specific flags
