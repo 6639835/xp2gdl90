@@ -66,20 +66,28 @@ jobs:
     - name: Generate API documentation with Doxygen
       run: |
         echo "Generating API documentation..."
+        
+        # Create output directory
+        mkdir -p build/docs
+        
+        # Generate documentation
         doxygen Doxyfile
         
         # Check if documentation was generated
-        if [ ! -d "docs/generated/html" ]; then
+        if [ ! -d "build/docs/html" ]; then
           echo "❌ Doxygen failed to generate documentation"
+          ls -la build/docs/ || echo "Build directory contents not available"
           exit 1
         fi
         
+        echo "✅ API documentation generated successfully"
+        
         # Count generated files
-        HTML_COUNT=$(find docs/generated/html -name "*.html" | wc -l)
+        HTML_COUNT=$(find build/docs/html -name "*.html" | wc -l)
         echo "✅ Generated $HTML_COUNT HTML files"
         
         # Verify main files exist
-        if [ ! -f "docs/generated/html/index.html" ]; then
+        if [ ! -f "build/docs/html/index.html" ]; then
           echo "❌ Main index.html not generated"
           exit 1
         fi
@@ -215,7 +223,7 @@ jobs:
     - name: Copy API documentation
       run: |
         # Copy Doxygen output to site
-        cp -r docs/generated/html docs/site/api
+        cp -r build/docs/html docs/site/api
         
         # Convert markdown files to HTML for easy browsing
         mkdir -p docs/site/guide

@@ -58,7 +58,13 @@ jobs:
     - name: Install dependencies (macOS)
       if: runner.os == 'macOS'
       run: |
-        brew install cmake google-benchmark
+        # Handle cmake conflicts gracefully
+        if brew list cmake &>/dev/null; then
+          echo "CMake already installed, skipping..."
+        else
+          brew install cmake
+        fi
+        brew install google-benchmark
     
     - name: Install dependencies (Windows)
       if: runner.os == 'Windows'
@@ -76,7 +82,8 @@ jobs:
     - name: Build benchmarks
       run: |
         cd build
-        cmake --build . --config Release --target xp2gdl90_benchmarks
+        # Build benchmarks - the target is created in the benchmarks subdirectory
+        cmake --build . --config Release
     
     - name: Run benchmarks
       id: benchmark
@@ -86,8 +93,20 @@ jobs:
         # Set benchmark filter
         FILTER="${{ github.event.inputs.benchmark_filter || '.*' }}"
         
+        # Find the benchmark executable
+        BENCHMARK_EXE="./benchmarks/xp2gdl90_benchmarks"
+        if [ ! -f "$BENCHMARK_EXE" ]; then
+          BENCHMARK_EXE="./xp2gdl90_benchmarks"
+        fi
+        
+        if [ ! -f "$BENCHMARK_EXE" ]; then
+          echo "Error: Benchmark executable not found"
+          find . -name "*benchmark*" -type f
+          exit 1
+        fi
+        
         # Run benchmarks with JSON output
-        ./benchmarks/xp2gdl90_benchmarks \
+        $BENCHMARK_EXE \
           --benchmark_filter="$FILTER" \
           --benchmark_format=json \
           --benchmark_out=benchmark_results_${{ matrix.platform }}.json \
@@ -95,7 +114,7 @@ jobs:
           --benchmark_report_aggregates_only=true
         
         # Also create human-readable output
-        ./benchmarks/xp2gdl90_benchmarks \
+        $BENCHMARK_EXE \
           --benchmark_filter="$FILTER" \
           --benchmark_repetitions=3 \
           --benchmark_report_aggregates_only=true \
@@ -151,6 +170,16 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         path: benchmark-artifacts/
+      continue-on-error: true
+    
+    - name: Check for benchmark artifacts
+      run: |
+        if [ ! -d "benchmark-artifacts" ]; then
+          echo "Creating benchmark-artifacts directory (no artifacts found)"
+          mkdir -p benchmark-artifacts
+        fi
+        echo "Benchmark artifacts directory contents:"
+        ls -la benchmark-artifacts/ || echo "No artifacts available"
     
     - name: Analyze performance results
       run: |
@@ -166,15 +195,31 @@ jobs:
         results = {}
         artifact_dir = Path("benchmark-artifacts")
         
-        for platform_dir in artifact_dir.iterdir():
-            if platform_dir.is_dir():
-                platform = platform_dir.name.replace("benchmark-results-", "")
-                json_file = platform_dir / f"benchmark_results_{platform}.json"
-                
-                if json_file.exists():
-                    with open(json_file) as f:
-                        data = json.load(f)
-                        results[platform] = data
+        # Check if the directory exists and has contents
+        if not artifact_dir.exists():
+            print("No benchmark artifacts directory found")
+            artifact_dir.mkdir(exist_ok=True)
+        
+        if artifact_dir.exists():
+            try:
+                for platform_dir in artifact_dir.iterdir():
+                    if platform_dir.is_dir():
+                        platform = platform_dir.name.replace("benchmark-results-", "")
+                        json_file = platform_dir / f"benchmark_results_{platform}.json"
+                        
+                        if json_file.exists():
+                            with open(json_file) as f:
+                                data = json.load(f)
+                                results[platform] = data
+                        else:
+                            print(f"No JSON results found for platform: {platform}")
+                    else:
+                        print(f"Found non-directory item: {platform_dir}")
+            except Exception as e:
+                print(f"Error processing artifacts: {e}")
+                results = {}
+        else:
+            print("Benchmark artifacts directory does not exist")
         
         # Create performance summary
         summary = []
@@ -244,15 +289,23 @@ jobs:
         results = {}
         artifact_dir = Path("benchmark-artifacts")
         
-        for platform_dir in artifact_dir.iterdir():
-            if platform_dir.is_dir():
-                platform = platform_dir.name.replace("benchmark-results-", "")
-                json_file = platform_dir / f"benchmark_results_{platform}.json"
-                
-                if json_file.exists():
-                    with open(json_file) as f:
-                        data = json.load(f)
-                        results[platform] = data
+        # Check if the directory exists and has contents
+        if artifact_dir.exists():
+            try:
+                for platform_dir in artifact_dir.iterdir():
+                    if platform_dir.is_dir():
+                        platform = platform_dir.name.replace("benchmark-results-", "")
+                        json_file = platform_dir / f"benchmark_results_{platform}.json"
+                        
+                        if json_file.exists():
+                            with open(json_file) as f:
+                                data = json.load(f)
+                                results[platform] = data
+            except Exception as e:
+                print(f"Error loading benchmark data for charts: {e}")
+                results = {}
+        else:
+            print("No benchmark artifacts directory found for charts")
         
         if results:
             # Create performance comparison chart
@@ -311,17 +364,21 @@ jobs:
         EOF
         
         # Add status for each platform
-        cd benchmark-artifacts
-        for dir in benchmark-results-*; do
-          if [ -d "$dir" ]; then
-            platform=${dir#benchmark-results-}
-            if [ -f "$dir/benchmark_results_${platform}.json" ]; then
-              echo "✅ **$platform**: Benchmarks completed" >> $GITHUB_STEP_SUMMARY
-            else
-              echo "❌ **$platform**: Benchmarks failed" >> $GITHUB_STEP_SUMMARY
+        if [ -d "benchmark-artifacts" ]; then
+          cd benchmark-artifacts
+          for dir in benchmark-results-*; do
+            if [ -d "$dir" ]; then
+              platform=${dir#benchmark-results-}
+              if [ -f "$dir/benchmark_results_${platform}.json" ]; then
+                echo "✅ **$platform**: Benchmarks completed" >> $GITHUB_STEP_SUMMARY
+              else
+                echo "❌ **$platform**: Benchmarks failed" >> $GITHUB_STEP_SUMMARY
+              fi
             fi
-          fi
-        done
+          done
+        else
+          echo "⚠️ **No benchmark artifacts found**" >> $GITHUB_STEP_SUMMARY
+        fi
         
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "## Performance Summary" >> $GITHUB_STEP_SUMMARY
@@ -357,6 +414,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         path: benchmark-artifacts/
+      continue-on-error: true
     
     - name: Check for regressions
       run: |
@@ -368,22 +426,26 @@ jobs:
         
         has_results=false
         
-        cd benchmark-artifacts
-        for dir in benchmark-results-*; do
-          if [ -d "$dir" ]; then
-            platform=${dir#benchmark-results-}
-            txt_file="$dir/benchmark_results_${platform}.txt"
-            
-            if [ -f "$txt_file" ]; then
-              has_results=true
-              echo "### $platform Results" >> $GITHUB_STEP_SUMMARY
-              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-              head -20 "$txt_file" >> $GITHUB_STEP_SUMMARY
-              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
+        if [ -d "benchmark-artifacts" ]; then
+          cd benchmark-artifacts
+          for dir in benchmark-results-*; do
+            if [ -d "$dir" ]; then
+              platform=${dir#benchmark-results-}
+              txt_file="$dir/benchmark_results_${platform}.txt"
+              
+              if [ -f "$txt_file" ]; then
+                has_results=true
+                echo "### $platform Results" >> $GITHUB_STEP_SUMMARY
+                echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+                head -20 "$txt_file" >> $GITHUB_STEP_SUMMARY
+                echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+              fi
             fi
-          fi
-        done
+          done
+        else
+          echo "⚠️ **No benchmark artifacts found for regression analysis**" >> $GITHUB_STEP_SUMMARY
+        fi
         
         if [ "$has_results" = false ]; then
           echo "No benchmark results available for analysis." >> $GITHUB_STEP_SUMMARY
