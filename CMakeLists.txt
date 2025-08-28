@@ -65,6 +65,7 @@ if(HAVE_OPENGL)
     include_directories(
         "src/imgui"
         "src/ui"
+        "src/imgwindow"
     )
     
     # ImGui source files
@@ -78,13 +79,22 @@ if(HAVE_OPENGL)
         src/imgui/imgui_impl_xplane.cpp
     )
     
+    # ImgWindow system source files
+    set(IMGWINDOW_SOURCES
+        src/imgwindow/img_font_atlas.cpp
+        src/imgwindow/img_window.cpp
+        src/imgwindow/xp_img_window.cpp
+    )
+    
     # UI source files
     set(UI_SOURCES
         src/ui/ImGuiManager.cpp
+        src/ui/ConfigWindow.cpp
+        src/ui/StatusWindow.cpp
     )
     
     # Add ImGui sources to build
-    list(APPEND SOURCES ${IMGUI_SOURCES} ${UI_SOURCES})
+    list(APPEND SOURCES ${IMGUI_SOURCES} ${IMGWINDOW_SOURCES} ${UI_SOURCES})
     
     # Define preprocessor macro to enable ImGui in the code
     add_definitions(-DHAVE_IMGUI=1)
@@ -199,7 +209,9 @@ endif()
 # Add preprocessor definitions
 target_compile_definitions(xp2gdl90 PRIVATE
     XPLM200=1
+    XPLM210=1
     XPLM300=1
+    XPLM301=1
     XPLM400=1
     XPLM410=1
 )

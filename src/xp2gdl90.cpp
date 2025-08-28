@@ -737,7 +737,6 @@ float flight_loop_callback(float elapsedMe, float elapsedSim, int counter, void*
         ImGuiManager& ui = ImGuiManager::Instance();
         ui.UpdateFlightData(current_flight_data);
         ui.UpdateTrafficTargets(traffic_targets);
-        ui.UpdateStatistics(total_messages_sent, active_traffic_count);
         last_ui_update = current_time;
     }
 #endif

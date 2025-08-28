@@ -1,11 +1,17 @@
 #pragma once
 
-#include "XPLMDisplay.h"
-#include "XPLMDataAccess.h"
 #include <vector>
-#include <cstdint>
+#include <memory>
+#include <string>
 
-// Forward declarations
+// Forward declarations for UI structures
+class ConfigWindow;
+class StatusWindow;
+struct NetworkConfig;
+struct UIFlightData;
+struct UITrafficTarget;
+
+// Forward declarations for main plugin structures
 struct FlightData;
 struct TrafficTarget;
 
@@ -20,27 +26,21 @@ public:
     // Window management
     void ShowConfigWindow();
     void HideConfigWindow();
-    bool IsConfigWindowVisible() const { return m_initialized && m_showConfig; }
+    bool IsConfigWindowVisible() const;
     
     void ShowStatusWindow();
     void HideStatusWindow();
-    bool IsStatusWindowVisible() const { return m_initialized && m_showStatus; }
+    bool IsStatusWindowVisible() const;
     
     // Data updates
     void UpdateFlightData(const FlightData& data);
     void UpdateTrafficTargets(const std::vector<TrafficTarget>& targets);
     void UpdateConnectionStatus(bool connected, const char* ip, int port);
-    void UpdateStatistics(int messagesSent, int trafficCount);
     
-    // Callbacks for configuration changes
+    // Configuration management
     void SetConfigCallback(void (*callback)(const char* ip, int port, bool broadcast, bool traffic));
-    
-    // X-Plane integration
-    void HandleDraw();
-    int HandleMouseClick(XPLMWindowID window, int x, int y, XPLMMouseStatus mouseStatus, void* refcon);
-    void HandleKeyPress(XPLMWindowID window, char key, XPLMKeyFlags flags, char virtualKey, void* refcon, int losingFocus);
-    int HandleCursor(XPLMWindowID window, int x, int y, void* refcon);
-    int HandleMouseWheel(XPLMWindowID window, int x, int y, int wheel, int clicks, void* refcon);
+    NetworkConfig GetCurrentConfig() const;
+    void ApplyConfigFromWindow();
     
 private:
     ImGuiManager() = default;
@@ -48,42 +48,19 @@ private:
     ImGuiManager(const ImGuiManager&) = delete;
     ImGuiManager& operator=(const ImGuiManager&) = delete;
     
-    // Window state
+    // Initialization state
     bool m_initialized = false;
-    bool m_showConfig = false;
-    bool m_showStatus = false;
     
-    // Window handles
-    XPLMWindowID m_windowID = nullptr;
+    // Window instances
+    std::unique_ptr<ConfigWindow> m_configWindow;
+    std::unique_ptr<StatusWindow> m_statusWindow;
     
-    // Configuration
-    char m_configIP[16] = "127.0.0.1";
-    int m_configPort = 4000;
-    bool m_configBroadcast = true;
-    bool m_configTraffic = true;
-    
-    // Status data
-    FlightData* m_flightData = nullptr;
-    std::vector<TrafficTarget>* m_trafficTargets = nullptr;
+    // Status data (kept for updates)
+    UIFlightData* m_flightData = nullptr;
+    const std::vector<UITrafficTarget>* m_trafficTargets = nullptr;
     bool m_connected = false;
-    int m_messagesSent = 0;
-    int m_trafficCount = 0;
+    std::string m_connectionAddress;
     
-    // Callback
+    // Configuration callback
     void (*m_configCallback)(const char* ip, int port, bool broadcast, bool traffic) = nullptr;
-    
-    // UI Methods
-    void DrawConfigWindow();
-    void DrawStatusWindow();
-    void DrawTrafficTable();
-    void DrawConnectionStatus();
-    void DrawStatistics();
-    
-    // Helper methods
-    void ApplyConfiguration();
-    void ResetConfiguration();
-    
-    // X-Plane window creation
-    bool CreateXPlaneWindow();
-    void DestroyXPlaneWindow();
 };
