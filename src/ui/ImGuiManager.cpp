@@ -6,6 +6,7 @@
 #include <cmath>
 #include <stdexcept>
 #include <string>
+#include <cstdint>
 
 // Main plugin structures (must match definitions in xp2gdl90.cpp)
 struct FlightData {

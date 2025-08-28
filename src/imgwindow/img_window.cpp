@@ -37,6 +37,7 @@
 
 #include <cmath>
 #include <cctype>
+#include <cstdint>
 
 // size of "frame" around a resizable window, by which its size can be changed
 constexpr int WND_RESIZE_LEFT_WIDTH = 15;

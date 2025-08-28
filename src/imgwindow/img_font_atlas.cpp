@@ -33,6 +33,7 @@
 */
 
 #include "img_font_atlas.h"
+#include <cstdint>
 
 ImgFontAtlas::ImgFontAtlas() :
 	mOurAtlas(nullptr),
