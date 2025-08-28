@@ -621,7 +621,7 @@ void update_traffic_targets() {
                     char debug_msg[200];
                     snprintf(debug_msg, sizeof(debug_msg), 
                              "XP2GDL90: Traffic %d TCAS flight_id[%d]: '%s'\n", 
-                             i + 1, aircraft_index, flight_id);
+                             (int)(i + 1), aircraft_index, flight_id);
                     XPLMDebugString(debug_msg);
                     
                     // Check if we have a valid flight ID (not empty)
@@ -640,7 +640,7 @@ void update_traffic_targets() {
                         
                         snprintf(debug_msg, sizeof(debug_msg), 
                                  "XP2GDL90: Traffic %d updated callsign to: '%s'\n", 
-                                 i + 1, target.callsign);
+                                 (int)(i + 1), target.callsign);
                         XPLMDebugString(debug_msg);
                     }
                 }
