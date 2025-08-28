@@ -62,7 +62,6 @@ ImgWindow::ImgWindow(
 	mFirstRender(true),
 	mFontAtlas(sFontAtlas),
 	mPreferredLayer(layer),
-	mTextureBound(false),
 	bHandleWndResize(xplm_WindowDecorationSelfDecoratedResizable == decoration) {
 
 	ThisThreadIsXP();
@@ -322,19 +321,49 @@ ImgWindow::updateImgui() {
 		mKeyQueue.pop();
 
 		if (io.WantCaptureKeyboard) {
-					// If you press and hold a key, the flags will actually be down, 0, 0, ..., up
-		// So the key always has to be considered as pressed unless the up flag is set
-		auto vk = static_cast<unsigned char>(press.inVirtualKey);
-		// Note: In ImGui 1.91.5+, KeysDown is replaced with event system
-		// We would need to map XPLM virtual keys to ImGuiKey values for proper handling
-			io.KeyShift = (press.inFlags & xplm_ShiftFlag) != 0;
-			io.KeyAlt = (press.inFlags & xplm_OptionAltFlag) != 0;
-			io.KeyCtrl = (press.inFlags & xplm_ControlFlag) != 0;
+			// Update modifier keys
+			io.AddKeyEvent(ImGuiMod_Shift, (press.inFlags & xplm_ShiftFlag) != 0);
+			io.AddKeyEvent(ImGuiMod_Alt, (press.inFlags & xplm_OptionAltFlag) != 0);
+			io.AddKeyEvent(ImGuiMod_Ctrl, (press.inFlags & xplm_ControlFlag) != 0);
 
-			if ((press.inFlags & xplm_UpFlag) != xplm_UpFlag
-				&& !io.KeyCtrl
-				&& !io.KeyAlt
-				&& std::isprint(press.inKey)) {
+			// Map X-Plane virtual keys to ImGui keys and send key events
+			bool isKeyDown = (press.inFlags & xplm_UpFlag) == 0;
+			ImGuiKey imguiKey = ImGuiKey_None;
+			
+			// Map common keys
+			switch (press.inVirtualKey) {
+				case XPLM_VK_TAB: imguiKey = ImGuiKey_Tab; break;
+				case XPLM_VK_LEFT: imguiKey = ImGuiKey_LeftArrow; break;
+				case XPLM_VK_RIGHT: imguiKey = ImGuiKey_RightArrow; break;
+				case XPLM_VK_UP: imguiKey = ImGuiKey_UpArrow; break;
+				case XPLM_VK_DOWN: imguiKey = ImGuiKey_DownArrow; break;
+				case XPLM_VK_PRIOR: imguiKey = ImGuiKey_PageUp; break;
+				case XPLM_VK_NEXT: imguiKey = ImGuiKey_PageDown; break;
+				case XPLM_VK_HOME: imguiKey = ImGuiKey_Home; break;
+				case XPLM_VK_END: imguiKey = ImGuiKey_End; break;
+				case XPLM_VK_INSERT: imguiKey = ImGuiKey_Insert; break;
+				case XPLM_VK_DELETE: imguiKey = ImGuiKey_Delete; break;
+				case XPLM_VK_BACK: imguiKey = ImGuiKey_Backspace; break;
+				case XPLM_VK_SPACE: imguiKey = ImGuiKey_Space; break;
+				case XPLM_VK_RETURN: imguiKey = ImGuiKey_Enter; break;
+				case XPLM_VK_ESCAPE: imguiKey = ImGuiKey_Escape; break;
+				case XPLM_VK_ENTER: imguiKey = ImGuiKey_KeypadEnter; break;
+				// Letter keys
+				case XPLM_VK_A: imguiKey = ImGuiKey_A; break;
+				case XPLM_VK_C: imguiKey = ImGuiKey_C; break;
+				case XPLM_VK_V: imguiKey = ImGuiKey_V; break;
+				case XPLM_VK_X: imguiKey = ImGuiKey_X; break;
+				case XPLM_VK_Y: imguiKey = ImGuiKey_Y; break;
+				case XPLM_VK_Z: imguiKey = ImGuiKey_Z; break;
+			}
+			
+			// Send key event if we have a mapping
+			if (imguiKey != ImGuiKey_None) {
+				io.AddKeyEvent(imguiKey, isKeyDown);
+			}
+
+			// Handle text input for printable characters (only on key down)
+			if (isKeyDown && !io.KeyCtrl && !io.KeyAlt && std::isprint(press.inKey)) {
 				char smallStr[] = { press.inKey, 0 };
 				io.AddInputCharactersUTF8(smallStr);
 			}

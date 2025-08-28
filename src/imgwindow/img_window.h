@@ -221,7 +221,7 @@ private:
     int mLeft, mTop, mRight, mBottom;
 
     // Font texture management
-    bool                mTextureBound;
+    // Note: mTextureBound removed as it's not used in current implementation
 
     // Window sizing constraints
     int minWidth = 50, minHeight = 50;
