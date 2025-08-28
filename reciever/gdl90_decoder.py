@@ -91,7 +91,7 @@ class GDL90Decoder:
             
         # Extract message data and CRC
         message_data = unescaped[:-2]
-        received_crc = (unescaped[-1] << 8) | unescaped[-2]  # High byte, low byte
+        received_crc = (unescaped[-2] << 8) | unescaped[-1]  # Low byte first (GDL90 spec)
         
         # Verify CRC
         calculated_crc = self.compute_crc(message_data)
@@ -129,8 +129,8 @@ class GDL90Decoder:
         types = {
             0x00: "Heartbeat",
             0x0A: "Ownship Position Report", 
-            0x14: "Traffic Report",
-            0x65: "Ownship Geometric Altitude"
+            0x0B: "Ownship Geometric Altitude", 
+            0x14: "Traffic Report"
         }
         return types.get(msg_id, f"Unknown (0x{msg_id:02X})")
         

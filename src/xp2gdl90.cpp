@@ -119,6 +119,8 @@ struct TrafficTarget {
 static char fdpro_ip[MAX_IP_LENGTH] = "127.0.0.1";  // Configurable FDPRO target IP
 static int fdpro_port = 4000;                       // Configurable FDPRO listening port
 static bool broadcast_enabled = true;               // Enable/disable broadcast
+static uint32_t ownship_icao_address = 0xABCDEF;    // Configurable ICAO address
+static char ownship_callsign[9] = "PYTHON1 ";      // Configurable callsign (8 chars + null)
 
 // UI - Modern ImGui interface
 static XPLMMenuID config_menu_id = nullptr;
@@ -233,8 +235,27 @@ std::vector<uint8_t> create_heartbeat() {
 #endif
     uint32_t timestamp = utc_tm.tm_hour * 3600 + utc_tm.tm_min * 60 + utc_tm.tm_sec;
     
-    uint8_t st1 = 0x81;  // Status byte 1
-    uint8_t st2 = 0x01;  // Status byte 2
+    // Status byte 1 - Per GDL90 spec section 3.1.1
+    uint8_t st1 = 0;
+    st1 |= (1 << 7);  // Bit 7: GPS Position Valid (assume valid when we have coordinates)
+    st1 |= (0 << 6);  // Bit 6: Maintenance Required (set to 0 = no maintenance)
+    st1 |= (0 << 5);  // Bit 5: IDENT (set to 0 = not transmitting IDENT)
+    st1 |= (0 << 4);  // Bit 4: Address Type (0 = using assigned ICAO address)
+    st1 |= (0 << 3);  // Bit 3: GPS Battery Low (0 = battery OK)
+    st1 |= (0 << 2);  // Bit 2: RATCS (0 = not receiving ATC services)
+    st1 |= (0 << 1);  // Bit 1: Reserved (always 0)
+    st1 |= (1 << 0);  // Bit 0: UAT Initialized (1 = initialized)
+    
+    // Status byte 2 - Per GDL90 spec section 3.1.2
+    uint8_t st2 = 0;
+    // Bit 7 will be set later with timestamp bit 16
+    st2 |= (0 << 6);  // Bit 6: CSA Requested (0 = not requested)
+    st2 |= (0 << 5);  // Bit 5: CSA Not Available (0 = available)
+    st2 |= (0 << 4);  // Bit 4: Reserved (always 0)
+    st2 |= (0 << 3);  // Bit 3: Reserved (always 0)
+    st2 |= (0 << 2);  // Bit 2: Reserved (always 0)
+    st2 |= (0 << 1);  // Bit 1: Reserved (always 0)
+    st2 |= (1 << 0);  // Bit 0: UTC OK (1 = UTC timing is valid)
     
     // Move bit 16 of timestamp to bit 7 of status byte 2
     uint8_t ts_bit16 = (timestamp & 0x10000) >> 16;
@@ -266,8 +287,7 @@ std::vector<uint8_t> create_position_report(const FlightData& data) {
     msg.push_back(((status & 0xf) << 4) | (addr_type & 0xf));
     
     // ICAO address (24-bit)
-    uint32_t icao_address = 0xabcdef;  // Default ICAO address
-    gdl90_pack24bit(msg, icao_address);
+    gdl90_pack24bit(msg, ownship_icao_address);
     
     // Latitude (24-bit)
     gdl90_pack24bit(msg, gdl90_make_latitude(data.lat));
@@ -276,7 +296,12 @@ std::vector<uint8_t> create_position_report(const FlightData& data) {
     gdl90_pack24bit(msg, gdl90_make_longitude(data.lon));
     
     // Altitude: 25-foot increments, +1000 ft offset
-    uint16_t altitude = (uint16_t)((data.alt + 1000) / 25.0);
+    // Range: -1,000 to +101,350 feet (per GDL90 spec Table 8)
+    double alt_clamped = data.alt;
+    if (alt_clamped < -1000.0) alt_clamped = -1000.0;
+    if (alt_clamped > 101350.0) alt_clamped = 101350.0;
+    
+    uint16_t altitude = (uint16_t)((alt_clamped + 1000) / 25.0);
     if (altitude > 0xffe) altitude = 0xffe;
     
     uint8_t misc = 9;  // Miscellaneous indicator
@@ -288,14 +313,28 @@ std::vector<uint8_t> create_position_report(const FlightData& data) {
     uint8_t nacp = 10;  // Navigation Accuracy Category
     msg.push_back(((nic & 0xf) << 4) | (nacp & 0xf));
     
-    // Horizontal velocity
-    uint16_t h_velocity = (uint16_t)data.speed;
-    if (h_velocity > 0xffe) h_velocity = 0xffe;
+    // Horizontal velocity (knots)
+    // Range: 0 to 4,094 knots, 0xFFF = no data available (per GDL90 spec)
+    uint16_t h_velocity = 0xfff;  // Default to "no data"
+    if (data.speed >= 0.0) {
+        uint16_t speed_knots = (uint16_t)data.speed;
+        if (speed_knots <= 4094) {
+            h_velocity = speed_knots;
+        } else {
+            h_velocity = 0xffe;  // Max representable value
+        }
+    }
     
     // Vertical velocity (64 fpm units)
-    uint16_t v_velocity = 0x800;  // No data flag
-    if (data.vs != 0) {
-        int16_t vs_64fpm = (int16_t)(data.vs / 64);
+    // Range: +/- 32,576 FPM, 0x800 = no data (per GDL90 spec Table 8)
+    uint16_t v_velocity = 0x800;  // Default to "no data"
+    if (data.vs != 0.0) {
+        // Clamp to valid range: +/- 32,576 FPM
+        double vs_clamped = data.vs;
+        if (vs_clamped > 32576.0) vs_clamped = 32576.0;
+        if (vs_clamped < -32576.0) vs_clamped = -32576.0;
+        
+        int16_t vs_64fpm = (int16_t)(vs_clamped / 64.0);
         if (vs_64fpm < 0) {
             v_velocity = (0x1000 + vs_64fpm) & 0xfff;  // 12-bit 2's complement
         } else {
@@ -317,9 +356,8 @@ std::vector<uint8_t> create_position_report(const FlightData& data) {
     msg.push_back(emitter_cat);
     
     // Call sign (8 bytes)
-    const char* callsign = "PYTHON1 ";
     for (int i = 0; i < 8; i++) {
-        msg.push_back(callsign[i]);
+        msg.push_back(ownship_callsign[i]);
     }
     
     // Emergency code
@@ -337,7 +375,7 @@ std::vector<uint8_t> create_traffic_report(const TrafficTarget& target) {
     // Traffic alert status and address type
     uint8_t alert_status = 0;  // No traffic alert
     uint8_t addr_type = 0;     // ADS-B with ICAO address
-    msg.push_back(((alert_status & 0x1) << 7) | ((addr_type & 0x7) << 4));
+    msg.push_back(((alert_status & 0xf) << 4) | (addr_type & 0xf));
     
     // ICAO address (24-bit)
     gdl90_pack24bit(msg, target.icao_address);
@@ -349,7 +387,12 @@ std::vector<uint8_t> create_traffic_report(const TrafficTarget& target) {
     gdl90_pack24bit(msg, gdl90_make_longitude(target.data.lon));
     
     // Altitude: 25-foot increments, +1000 ft offset
-    uint16_t altitude = (uint16_t)((target.data.alt + 1000) / 25.0);
+    // Range: -1,000 to +101,350 feet (per GDL90 spec Table 8)
+    double alt_clamped = target.data.alt;
+    if (alt_clamped < -1000.0) alt_clamped = -1000.0;
+    if (alt_clamped > 101350.0) alt_clamped = 101350.0;
+    
+    uint16_t altitude = (uint16_t)((alt_clamped + 1000) / 25.0);
     if (altitude > 0xffe) altitude = 0xffe;
     
     uint8_t misc = 9;  // Miscellaneous indicator
@@ -361,14 +404,28 @@ std::vector<uint8_t> create_traffic_report(const TrafficTarget& target) {
     uint8_t nacp = 10;  // Navigation Accuracy Category
     msg.push_back(((nic & 0xf) << 4) | (nacp & 0xf));
     
-    // Horizontal velocity
-    uint16_t h_velocity = (uint16_t)target.data.speed;
-    if (h_velocity > 0xffe) h_velocity = 0xffe;
+    // Horizontal velocity (knots) 
+    // Range: 0 to 4,094 knots, 0xFFF = no data available (per GDL90 spec)
+    uint16_t h_velocity = 0xfff;  // Default to "no data"
+    if (target.data.speed >= 0.0) {
+        uint16_t speed_knots = (uint16_t)target.data.speed;
+        if (speed_knots <= 4094) {
+            h_velocity = speed_knots;
+        } else {
+            h_velocity = 0xffe;  // Max representable value
+        }
+    }
     
     // Vertical velocity (64 fpm units)
-    uint16_t v_velocity = 0x800;  // No data flag
-    if (target.data.vs != 0) {
-        int16_t vs_64fpm = (int16_t)(target.data.vs / 64);
+    // Range: +/- 32,576 FPM, 0x800 = no data (per GDL90 spec Table 8)
+    uint16_t v_velocity = 0x800;  // Default to "no data"
+    if (target.data.vs != 0.0) {
+        // Clamp to valid range: +/- 32,576 FPM
+        double vs_clamped = target.data.vs;
+        if (vs_clamped > 32576.0) vs_clamped = 32576.0;
+        if (vs_clamped < -32576.0) vs_clamped = -32576.0;
+        
+        int16_t vs_64fpm = (int16_t)(vs_clamped / 64.0);
         if (vs_64fpm < 0) {
             v_velocity = (0x1000 + vs_64fpm) & 0xfff;  // 12-bit 2's complement
         } else {

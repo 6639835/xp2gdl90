@@ -112,7 +112,7 @@ class UDPCapture:
             0x00: "Heartbeat",
             0x0A: "Ownship Position",
             0x14: "Traffic Report",
-            0x65: "Ownship Geometric Altitude",
+            0x0B: "Ownship Geometric Altitude",
         }
         return message_types.get(msg_id, f"Unknown (0x{msg_id:02X})")
 
