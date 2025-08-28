@@ -65,22 +65,54 @@ jobs:
           brew install cmake
         fi
         
-        # Install Google Benchmark with architecture awareness
-        echo "System architecture: $(uname -m)"
-        echo "Compiler target: $(clang -dumpmachine 2>/dev/null || echo "unknown")"
+        # Check system and compiler architecture
+        SYSTEM_ARCH=$(uname -m)
+        COMPILER_ARCH=$(clang -dumpmachine 2>/dev/null | cut -d'-' -f1 || echo "unknown")
+        echo "System architecture: $SYSTEM_ARCH"
+        echo "Compiler target: $COMPILER_ARCH"
         
-        # Try to install google-benchmark
+        # GitHub Actions macOS runners are x86_64, but Homebrew on Apple Silicon defaults to arm64
+        # This creates architecture mismatches that we need to detect and handle
+        
+        echo "Attempting to install Google Benchmark..."
         if brew install google-benchmark; then
-          echo "✅ Google Benchmark installed successfully"
-          # Verify the benchmark library architecture
+          echo "✅ Google Benchmark installed"
+          
+          # Check for architecture compatibility issues
+          BENCHMARK_COMPATIBLE=true
+          
           if [ -f "/opt/homebrew/lib/libbenchmark.a" ]; then
-            echo "Benchmark library info:"
-            file /opt/homebrew/lib/libbenchmark.a || echo "Could not analyze library"
-            lipo -archs /opt/homebrew/lib/libbenchmark.a 2>/dev/null || echo "Could not check architectures"
+            BENCHMARK_ARCHS=$(lipo -archs /opt/homebrew/lib/libbenchmark.a 2>/dev/null || echo "unknown")
+            echo "Benchmark library architectures: $BENCHMARK_ARCHS"
+            
+            # Check if our target architecture is supported by the benchmark library
+            if [[ "$BENCHMARK_ARCHS" != *"$SYSTEM_ARCH"* ]] && [[ "$BENCHMARK_ARCHS" != "unknown" ]]; then
+              echo "⚠️  Architecture mismatch detected:"
+              echo "   System: $SYSTEM_ARCH"
+              echo "   Benchmark library: $BENCHMARK_ARCHS"
+              echo "   This will cause linking failures"
+              BENCHMARK_COMPATIBLE=false
+            fi
+          elif [ -f "/usr/local/lib/libbenchmark.a" ]; then
+            BENCHMARK_ARCHS=$(lipo -archs /usr/local/lib/libbenchmark.a 2>/dev/null || echo "unknown")
+            echo "Benchmark library architectures (Intel): $BENCHMARK_ARCHS"
+          else
+            echo "⚠️  Could not find benchmark library files"
+            BENCHMARK_COMPATIBLE=false
+          fi
+          
+          if [ "$BENCHMARK_COMPATIBLE" = false ]; then
+            echo "🚫 Disabling benchmarks due to architecture incompatibility"
+            echo "BENCHMARK_AVAILABLE=false" >> $GITHUB_ENV
+            echo "BENCHMARK_SKIP_REASON=architecture_mismatch" >> $GITHUB_ENV
+          else
+            echo "✅ Benchmark architecture compatibility verified"
+            echo "BENCHMARK_AVAILABLE=true" >> $GITHUB_ENV
           fi
         else
-          echo "⚠️  Failed to install Google Benchmark, benchmarks will be skipped"
+          echo "❌ Failed to install Google Benchmark"
           echo "BENCHMARK_AVAILABLE=false" >> $GITHUB_ENV
+          echo "BENCHMARK_SKIP_REASON=install_failed" >> $GITHUB_ENV
         fi
     
     - name: Install dependencies (Windows)
@@ -95,59 +127,146 @@ jobs:
         mkdir build
         cd build
         
-        # Check if we should enable benchmarks
+        # Determine benchmark availability
         ENABLE_BENCHMARKS=ON
+        BUILD_REASON="enabled"
+        
         if [ "${{ env.BENCHMARK_AVAILABLE }}" == "false" ]; then
           ENABLE_BENCHMARKS=OFF
-          echo "⚠️  Benchmarks disabled due to dependency issues"
+          BUILD_REASON="${{ env.BENCHMARK_SKIP_REASON }}"
+          
+          case "$BUILD_REASON" in
+            "architecture_mismatch")
+              echo "🚫 Benchmarks disabled: Architecture mismatch between system and benchmark library"
+              ;;
+            "install_failed")
+              echo "🚫 Benchmarks disabled: Failed to install Google Benchmark library"
+              ;;
+            *)
+              echo "🚫 Benchmarks disabled: Dependency issues detected"
+              ;;
+          esac
+        else
+          echo "✅ Benchmarks enabled: All dependencies available and compatible"
         fi
         
-        # Configure with architecture-aware settings for macOS
+        # Configure with platform-specific settings
+        CMAKE_ARGS="-DCMAKE_BUILD_TYPE=Release -DBUILD_BENCHMARKS=$ENABLE_BENCHMARKS"
+        
         if [[ "$RUNNER_OS" == "macOS" ]]; then
-          # Check system architecture and set appropriate flags
+          # Set architecture explicitly for macOS
           ARCH=$(uname -m)
-          if [[ "$ARCH" == "arm64" ]]; then
-            echo "Configuring for Apple Silicon (arm64)"
-            cmake -DCMAKE_BUILD_TYPE=Release \
-                  -DBUILD_BENCHMARKS=$ENABLE_BENCHMARKS \
-                  -DCMAKE_OSX_ARCHITECTURES=arm64 \
-                  ..
-          else
-            echo "Configuring for Intel (x86_64)"
-            cmake -DCMAKE_BUILD_TYPE=Release \
-                  -DBUILD_BENCHMARKS=$ENABLE_BENCHMARKS \
-                  -DCMAKE_OSX_ARCHITECTURES=x86_64 \
-                  ..
+          CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_OSX_ARCHITECTURES=$ARCH"
+          
+          echo "Configuring for macOS ($ARCH architecture):"
+          echo "  - Build type: Release"
+          echo "  - Benchmarks: $ENABLE_BENCHMARKS"
+          echo "  - Target architecture: $ARCH"
+          
+          # Add additional macOS-specific flags if benchmarks are disabled due to architecture
+          if [ "$BUILD_REASON" == "architecture_mismatch" ]; then
+            # Force disable any benchmark-related CMake searching
+            CMAKE_ARGS="$CMAKE_ARGS -Dbenchmark_ROOT=NOTFOUND -DCMAKE_DISABLE_FIND_PACKAGE_benchmark=TRUE"
+            echo "  - Benchmark package search: disabled"
           fi
         else
-          # Standard configuration for non-macOS platforms
-          cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_BENCHMARKS=$ENABLE_BENCHMARKS ..
+          echo "Configuring for $RUNNER_OS:"
+          echo "  - Build type: Release" 
+          echo "  - Benchmarks: $ENABLE_BENCHMARKS"
+        fi
+        
+        # Run CMake configuration
+        echo "Running: cmake $CMAKE_ARGS .."
+        if cmake $CMAKE_ARGS ..; then
+          echo "✅ CMake configuration successful"
+        else
+          echo "❌ CMake configuration failed"
+          exit 1
         fi
     
     - name: Build benchmarks
       run: |
         cd build
         
-        # Build benchmarks - the target is created in the benchmarks subdirectory
+        # Check if benchmarks were supposed to be built
+        if [ "${{ env.BENCHMARK_AVAILABLE }}" == "false" ]; then
+          echo "⏩ Skipping benchmark build (benchmarks disabled: ${{ env.BENCHMARK_SKIP_REASON }})"
+          echo "BENCHMARKS_BUILT=false" >> $GITHUB_ENV
+          
+          # Build main project only
+          echo "Building main plugin only..."
+          if cmake --build . --config Release --target xp2gdl90; then
+            echo "✅ Main plugin build completed successfully"
+            
+            # Check that the main plugin was built
+            if [ -f "mac.xpl" ] || [ -f "lin.xpl" ] || [ -f "win.xpl" ]; then
+              echo "✅ Plugin executable found"
+            else
+              echo "⚠️  Plugin executable not found after build"
+              ls -la *.xpl || echo "No .xpl files found"
+            fi
+          else
+            echo "❌ Main plugin build failed"
+            exit 1
+          fi
+          
+          exit 0  # Skip to next step
+        fi
+        
+        # Build everything including benchmarks
+        echo "Building project with benchmarks..."
         if cmake --build . --config Release; then
           echo "✅ Build completed successfully"
           
           # Check if benchmarks were actually built
-          if [ -f "benchmarks/xp2gdl90_benchmarks" ] || [ -f "xp2gdl90_benchmarks" ] || [ -f "benchmarks/Release/xp2gdl90_benchmarks.exe" ]; then
-            echo "✅ Benchmark executable found"
+          BENCHMARK_PATHS=(
+            "benchmarks/xp2gdl90_benchmarks"
+            "xp2gdl90_benchmarks" 
+            "benchmarks/Release/xp2gdl90_benchmarks.exe"
+            "Release/xp2gdl90_benchmarks.exe"
+          )
+          
+          BENCHMARK_FOUND=false
+          for bench_path in "${BENCHMARK_PATHS[@]}"; do
+            if [ -f "$bench_path" ]; then
+              echo "✅ Benchmark executable found: $bench_path"
+              BENCHMARK_FOUND=true
+              break
+            fi
+          done
+          
+          if [ "$BENCHMARK_FOUND" = true ]; then
             echo "BENCHMARKS_BUILT=true" >> $GITHUB_ENV
           else
-            echo "⚠️  Main build succeeded but benchmark executable not found"
-            echo "This may be due to benchmark dependencies not being available"
+            echo "⚠️  Build succeeded but benchmark executable not found"
+            echo "This indicates a configuration issue even though benchmarks were enabled"
             echo "BENCHMARKS_BUILT=false" >> $GITHUB_ENV
             
-            # List what was actually built for debugging
+            # Debugging information
+            echo ""
+            echo "Searched for benchmark executable in:"
+            printf '%s\n' "${BENCHMARK_PATHS[@]}"
+            echo ""
             echo "Files in build directory:"
-            find . -name "*benchmark*" -type f || echo "No benchmark files found"
+            find . -name "*benchmark*" -type f 2>/dev/null || echo "No benchmark files found"
+            echo ""
+            echo "Available executables:"
+            find . -name "*.exe" -o -name "*benchmark*" -type f 2>/dev/null || echo "No executables found"
           fi
         else
           echo "❌ Build failed"
           echo "BENCHMARKS_BUILT=false" >> $GITHUB_ENV
+          
+          # Try to provide some diagnostic information
+          echo ""
+          echo "Build failure diagnostic information:"
+          echo "- OS: ${{ runner.os }}"
+          echo "- Architecture: $(uname -m)"
+          echo "- Benchmark availability: ${{ env.BENCHMARK_AVAILABLE }}"
+          if [ "${{ env.BENCHMARK_AVAILABLE }}" == "false" ]; then
+            echo "- Skip reason: ${{ env.BENCHMARK_SKIP_REASON }}"
+          fi
+          
           exit 1
         fi
     
@@ -267,39 +386,101 @@ jobs:
       run: |
         cd build
         
-        case "${{ env.BENCHMARK_STATUS }}" in
+        # Determine overall status
+        OVERALL_STATUS="${{ env.BENCHMARK_STATUS }}"
+        
+        # If no benchmark status was set, determine from build status and availability
+        if [ -z "$OVERALL_STATUS" ] || [ "$OVERALL_STATUS" = "null" ]; then
+          if [ "${{ env.BENCHMARK_AVAILABLE }}" == "false" ]; then
+            OVERALL_STATUS="skipped"
+          elif [ "${{ env.BENCHMARKS_BUILT }}" == "false" ]; then
+            OVERALL_STATUS="build_failed"  
+          else
+            OVERALL_STATUS="unknown"
+          fi
+        fi
+        
+        echo "📊 **Benchmark Summary for ${{ matrix.platform }}**"
+        echo ""
+        
+        case "$OVERALL_STATUS" in
           "success")
-            echo "✅ **Benchmarks completed successfully on ${{ matrix.platform }}**"
-            
+            echo "✅ **Status: Completed Successfully**"
+            echo ""
             if [ -f "benchmark_results_${{ matrix.platform }}.txt" ]; then
-              echo ""
               echo "**Sample Results:**"
               echo "\`\`\`"
               head -n 15 "benchmark_results_${{ matrix.platform }}.txt" || echo "Could not read results"
               echo "\`\`\`"
             fi
+            echo ""
+            echo "📈 Full results available in workflow artifacts"
             ;;
+            
           "skipped")
-            echo "⚠️  **Benchmarks skipped on ${{ matrix.platform }}**"
+            echo "⏩ **Status: Skipped (Expected)**"
             echo ""
-            echo "Reasons:"
-            echo "- Architecture mismatch (GitHub Actions runners vs local development)"
-            echo "- Missing or incompatible Google Benchmark library"
-            echo "- Build configuration issues"
+            
+            SKIP_REASON="${{ env.BENCHMARK_SKIP_REASON }}"
+            case "$SKIP_REASON" in
+              "architecture_mismatch")
+                echo "**Reason:** Architecture Compatibility Issue"
+                echo ""
+                echo "- 🏗️  **System**: GitHub Actions macOS runner (x86_64)"
+                echo "- 📚 **Library**: Google Benchmark installed via Homebrew (arm64)"  
+                echo "- ⚖️  **Result**: Architecture mismatch prevents linking"
+                echo ""
+                echo "**This is normal and expected behavior in CI environments.**"
+                echo "The workflow automatically detects this and gracefully skips benchmarks."
+                ;;
+              "install_failed")
+                echo "**Reason:** Dependency Installation Failed"
+                echo ""
+                echo "Google Benchmark could not be installed on this platform."
+                ;;
+              *)
+                echo "**Reason:** Dependency Issues"
+                echo ""
+                echo "Benchmarks were disabled due to detected compatibility problems."
+                ;;
+            esac
+            
             echo ""
-            echo "**Note:** The main plugin build completed successfully."
-            echo "**Note:** Benchmark results are available as placeholder data for analysis consistency."
+            echo "✅ **Main plugin build**: Completed successfully"
+            echo "📄 **Analysis data**: Placeholder results generated for consistency"
+            echo "🔧 **Local development**: Benchmarks will work on matching architectures"
             ;;
+            
+          "build_failed")
+            echo "❌ **Status: Build Failed**"
+            echo ""
+            echo "The benchmark build failed even though dependencies appeared available."
+            echo "This suggests a configuration or compatibility issue."
+            echo ""
+            echo "**Diagnostic Info:**"
+            echo "- Benchmark availability: ${{ env.BENCHMARK_AVAILABLE }}"
+            echo "- Skip reason: ${{ env.BENCHMARK_SKIP_REASON }}"
+            echo "- OS: ${{ runner.os }}"
+            echo "- Architecture: $(uname -m 2>/dev/null || echo 'unknown')"
+            ;;
+            
           "failed")
-            echo "❌ **Benchmark execution failed on ${{ matrix.platform }}**"
+            echo "❌ **Status: Execution Failed**"
             echo ""
-            echo "The benchmark executable was built but failed to run."
-            echo "Check the build logs for specific error details."
+            echo "Benchmarks were built successfully but failed to execute."
+            echo "Check the build logs above for specific error details."
             ;;
-          "error"|*)
-            echo "❌ **Benchmark error on ${{ matrix.platform }}**"
+            
+          "error"|"unknown"|*)
+            echo "❓ **Status: Unknown Error**"
             echo ""
-            echo "An unexpected error occurred during benchmark setup or execution."
+            echo "An unexpected issue occurred during benchmark processing."
+            echo ""
+            echo "**Debug Info:**"
+            echo "- Benchmark status: $OVERALL_STATUS"
+            echo "- Available: ${{ env.BENCHMARK_AVAILABLE }}"
+            echo "- Built: ${{ env.BENCHMARKS_BUILT }}"
+            echo "- Skip reason: ${{ env.BENCHMARK_SKIP_REASON }}"
             ;;
         esac
     

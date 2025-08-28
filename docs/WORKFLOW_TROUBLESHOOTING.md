@@ -147,6 +147,29 @@ public:
 
 **Graceful Degradation**: Benchmarks will be skipped with placeholder results if architecture incompatible, but main build continues successfully.
 
+**Latest Enhanced Solution (v2)**:
+
+The workflow now includes comprehensive architecture mismatch detection and handling:
+
+```yaml
+# Enhanced architecture detection
+SYSTEM_ARCH=$(uname -m)
+if [ -f "/opt/homebrew/lib/libbenchmark.a" ]; then
+  BENCHMARK_ARCHS=$(lipo -archs /opt/homebrew/lib/libbenchmark.a)
+  if [[ "$BENCHMARK_ARCHS" != *"$SYSTEM_ARCH"* ]]; then
+    echo "BENCHMARK_AVAILABLE=false" >> $GITHUB_ENV
+    echo "BENCHMARK_SKIP_REASON=architecture_mismatch" >> $GITHUB_ENV
+  fi
+fi
+
+# CMake configuration with forced disable
+if [ "$BUILD_REASON" == "architecture_mismatch" ]; then
+  CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_DISABLE_FIND_PACKAGE_benchmark=TRUE"
+fi
+```
+
+**Status Reporting**: The workflow provides clear, professional reporting about why benchmarks were skipped, making it clear this is expected behavior in CI environments.
+
 ## Documentation Generation Issues
 
 ### Doxygen Configuration Warnings

@@ -2,8 +2,19 @@
 
 cmake_minimum_required(VERSION 3.10)
 
-# Find Google Benchmark
-find_package(benchmark REQUIRED)
+# Find Google Benchmark - gracefully handle if not available
+find_package(benchmark QUIET)
+
+if(NOT benchmark_FOUND)
+    message(WARNING "Google Benchmark not found - benchmarks will be disabled")
+    message(STATUS "To enable benchmarks, install Google Benchmark:")
+    message(STATUS "  - Linux: sudo apt-get install libbenchmark-dev")
+    message(STATUS "  - macOS: brew install google-benchmark") 
+    message(STATUS "  - Windows: vcpkg install benchmark")
+    return()
+endif()
+
+message(STATUS "Google Benchmark found - building benchmarks")
 
 # Create benchmark executable
 set(BENCHMARK_SOURCES
