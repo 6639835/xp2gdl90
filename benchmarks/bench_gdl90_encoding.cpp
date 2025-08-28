@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstring>
 #include <random>
+#include <cmath>
 
 // Mock GDL-90 encoding functions for benchmarking
 namespace gdl90_bench {
@@ -393,7 +394,7 @@ static void BM_RealisticFlightScenario(benchmark::State& state) {
             37.524 + sin(t * 2 * M_PI) * 0.01,  // Circular pattern
             -122.063 + cos(t * 2 * M_PI) * 0.01,
             1000 + static_cast<int32_t>(sin(t * M_PI) * 500), // Climb/descend
-            150.0f + sin(t * 4 * M_PI) * 50.0f,  // Speed variation
+            150.0f + static_cast<float>(sin(t * 4 * M_PI) * 50.0),  // Speed variation
             static_cast<float>(t * 360.0), // Complete rotation
             static_cast<int16_t>(cos(t * M_PI) * 1000) // Vertical speed
         });

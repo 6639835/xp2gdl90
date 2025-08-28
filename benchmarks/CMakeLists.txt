@@ -24,11 +24,10 @@ include_directories(
 # Create benchmark executable
 add_executable(xp2gdl90_benchmarks ${BENCHMARK_SOURCES})
 
-# Link against Google Benchmark and mock library
+# Link against Google Benchmark only
 target_link_libraries(xp2gdl90_benchmarks 
     benchmark::benchmark
     benchmark::benchmark_main
-    xplane_mock
 )
 
 # Platform-specific linking

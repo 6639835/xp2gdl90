@@ -55,7 +55,7 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y doxygen graphviz
-        pip install sphinx breathe sphinx-rtd-theme myst-parser
+        pip install sphinx breathe sphinx-rtd-theme myst-parser markdown
     
     - name: Validate Doxyfile
       run: |
