@@ -57,6 +57,54 @@ const int MAX_TRAFFIC_TARGETS = 63;  // Maximum traffic targets
 // Default configuration values
 const char* DEFAULT_FDPRO_IP = "127.0.0.1";  // Default FDPRO target IP
 
+// GDL-90 Constants per official specification
+// Navigation Integrity and Accuracy Categories (Table 10)
+const uint8_t DEFAULT_NIC = 11;      // HPL < 7.5m, VPL < 11m  
+const uint8_t DEFAULT_NACP = 10;     // HFOM < 3m, VFOM < 4m
+const uint8_t DEGRADED_NIC = 6;      // HPL < 0.6 NM (lower accuracy)
+const uint8_t DEGRADED_NACP = 6;     // HFOM < 0.3 NM (lower accuracy)
+
+// Emitter Categories (Table 11)
+const uint8_t EMITTER_LIGHT = 1;     // Light aircraft < 15,500 lbs
+const uint8_t EMITTER_SMALL = 2;     // Small aircraft 15,500-75,000 lbs  
+const uint8_t EMITTER_LARGE = 3;     // Large aircraft 75,000-300,000 lbs
+const uint8_t EMITTER_HEAVY = 5;     // Heavy aircraft > 300,000 lbs
+const uint8_t EMITTER_ROTORCRAFT = 7; // Helicopters
+
+// Address Types (Section 3.5.1.2)
+const uint8_t ADDR_TYPE_ADSB_ICAO = 0;      // ADS-B with ICAO address
+const uint8_t ADDR_TYPE_ADSB_SELF = 1;      // ADS-B with Self-assigned address
+const uint8_t ADDR_TYPE_TISB_ICAO = 2;      // TIS-B with ICAO address
+const uint8_t ADDR_TYPE_TISB_TRACK = 3;     // TIS-B with track file ID
+const uint8_t ADDR_TYPE_SURFACE = 4;        // Surface Vehicle
+const uint8_t ADDR_TYPE_BEACON = 5;         // Ground Station Beacon
+
+// Miscellaneous Field Constants (Table 9)
+const uint8_t TRACK_TYPE_INVALID = 0;       // Track/heading not valid
+const uint8_t TRACK_TYPE_TRUE_TRACK = 1;    // True Track Angle
+const uint8_t TRACK_TYPE_MAG_HEADING = 2;   // Magnetic Heading
+const uint8_t TRACK_TYPE_TRUE_HEADING = 3;  // True Heading
+
+// Emergency Codes (Section 3.5.1.12)
+const uint8_t EMERGENCY_NONE = 0;           // No emergency
+const uint8_t EMERGENCY_GENERAL = 1;        // General emergency
+const uint8_t EMERGENCY_MEDICAL = 2;        // Medical emergency
+const uint8_t EMERGENCY_MIN_FUEL = 3;       // Minimum fuel
+const uint8_t EMERGENCY_NO_COMM = 4;        // No communication
+const uint8_t EMERGENCY_UNLAWFUL = 5;       // Unlawful interference
+const uint8_t EMERGENCY_DOWNED = 6;         // Downed aircraft
+
+// Data staleness thresholds
+const double DATA_FRESH_THRESHOLD = 2.0;    // Seconds - data considered fresh
+const double DATA_TIMEOUT_THRESHOLD = 30.0; // Seconds - data considered stale/inactive
+
+// Air/Ground detection thresholds
+const double AIRBORNE_ALT_THRESHOLD = 100.0;   // Feet - altitude indicating airborne
+const double AIRBORNE_SPEED_THRESHOLD = 60.0;  // Knots - speed indicating airborne  
+const double GROUND_ALT_THRESHOLD = 50.0;      // Feet - altitude indicating on ground
+const double GROUND_SPEED_THRESHOLD = 40.0;    // Knots - speed indicating on ground
+const double GROUND_VS_THRESHOLD = 100.0;      // FPM - vertical speed indicating on ground
+
 // GDL-90 CRC-16-CCITT lookup table
 static const uint16_t GDL90_CRC16_TABLE[256] = {
     0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50a5, 0x60c6, 0x70e7,
@@ -111,8 +159,15 @@ struct TrafficTarget {
     uint32_t icao_address;
     FlightData data;
     double last_update;
+    double last_data_update;        // When position/speed data was last fresh
     bool active;
-    char callsign[9];  // 8 chars + null terminator
+    bool airborne;                  // Air/ground state
+    bool is_extrapolated;          // True if data is stale/extrapolated
+    uint8_t address_type;          // Address type per spec Table 8
+    uint8_t emitter_category;      // Aircraft type per spec Table 11
+    uint8_t emergency_code;        // Emergency status per spec
+    uint8_t track_type;            // Track/heading type
+    char callsign[9];              // 8 chars + null terminator
 };
 
 // Configuration variables
@@ -151,6 +206,106 @@ static XPLMDataRef traffic_flight_id_dataref = nullptr;
 static XPLMDataRef traffic_vs_dataref = nullptr;
 static XPLMDataRef traffic_psi_dataref = nullptr;
 static XPLMDataRef traffic_speed_dataref = nullptr;
+
+// GDL-90 Helper Functions
+
+// Determine if aircraft is airborne based on multiple criteria
+bool determine_airborne_state(const FlightData& data) {
+    // Multi-criteria approach for air/ground determination
+    // Criteria 1: Altitude above ground level
+    if (data.alt > AIRBORNE_ALT_THRESHOLD) {  // Above 100 feet AGL
+        return true;
+    }
+    
+    // Criteria 2: High ground speed indicates airborne
+    if (data.speed > AIRBORNE_SPEED_THRESHOLD) {  // Above 60 knots ground speed
+        return true;
+    }
+    
+    // Criteria 3: Significant vertical speed
+    if (fabs(data.vs) > 200.0) {  // Above 200 fpm vertical speed
+        return true;
+    }
+    
+    // If low altitude, low speed, and minimal vertical speed -> likely on ground
+    if (data.alt < GROUND_ALT_THRESHOLD && data.speed < GROUND_SPEED_THRESHOLD && fabs(data.vs) < GROUND_VS_THRESHOLD) {
+        return false;
+    }
+    
+    // Default to airborne for ambiguous cases (safety)
+    return true;
+}
+
+// Determine emitter category based on aircraft characteristics
+uint8_t determine_emitter_category(const char* callsign, double speed) {
+    // Basic heuristics for aircraft type classification
+    
+    // Check callsign patterns for specific aircraft types
+    if (strstr(callsign, "HELO") || strstr(callsign, "CHOP")) {
+        return EMITTER_ROTORCRAFT;
+    }
+    
+    // Speed-based classification (rough approximation)
+    if (speed > 400.0) {
+        return EMITTER_LARGE;  // High speed suggests larger aircraft
+    } else if (speed > 250.0) {
+        return EMITTER_SMALL;  // Medium speed
+    } else {
+        return EMITTER_LIGHT;  // Default to light aircraft
+    }
+}
+
+// Determine Navigation Integrity Category based on data quality
+uint8_t determine_nic_category(bool has_recent_update) {
+    // Use degraded accuracy for stale data
+    return has_recent_update ? DEFAULT_NIC : DEGRADED_NIC;
+}
+
+// Determine Navigation Accuracy Category for Position based on data quality  
+uint8_t determine_nacp_category(bool has_recent_update) {
+    // Use degraded accuracy for stale data
+    return has_recent_update ? DEFAULT_NACP : DEGRADED_NACP;
+}
+
+// Create properly encoded miscellaneous field per GDL-90 spec Table 9
+uint8_t create_misc_field(bool airborne, bool extrapolated, uint8_t track_type) {
+    uint8_t misc = 0;
+    
+    // Bit 3: Air/Ground state (0=Ground, 1=Airborne)
+    if (airborne) {
+        misc |= 0x8;
+    }
+    
+    // Bit 2: Report type (0=Updated, 1=Extrapolated)
+    if (extrapolated) {
+        misc |= 0x4;
+    }
+    
+    // Bits 1-0: Track/Heading type
+    misc |= (track_type & 0x3);
+    
+    return misc;
+}
+
+// Validate coordinate encoding precision per spec
+bool validate_coordinate_precision(double original, uint32_t encoded, bool is_latitude) {
+    // Decode back to verify precision
+    double max_range = is_latitude ? 180.0 : 180.0;
+    int32_t signed_encoded = encoded;
+    
+    // Handle 2's complement for negative values
+    if (encoded & 0x800000) {
+        signed_encoded = -((0x1000000 - encoded) & 0xFFFFFF);
+    }
+    
+    double decoded = signed_encoded * (max_range / 0x800000);
+    double error = fabs(original - decoded);
+    
+    // Spec requires ~2.38m resolution at equator (approximately 0.0000214 degrees)
+    const double MAX_ERROR = 0.000025;  // Slight tolerance for floating point
+    
+    return error <= MAX_ERROR;
+}
 
 // GDL-90 Encoding Functions
 
@@ -283,17 +438,29 @@ std::vector<uint8_t> create_position_report(const FlightData& data) {
     
     // Status and address type
     uint8_t status = 0;
-    uint8_t addr_type = 0;
+    uint8_t addr_type = ADDR_TYPE_ADSB_ICAO;  // Use constant instead of hardcoded 0
     msg.push_back(((status & 0xf) << 4) | (addr_type & 0xf));
     
     // ICAO address (24-bit)
     gdl90_pack24bit(msg, ownship_icao_address);
     
-    // Latitude (24-bit)
-    gdl90_pack24bit(msg, gdl90_make_latitude(data.lat));
+    // Latitude (24-bit) - validate precision per spec
+    uint32_t lat_encoded = gdl90_make_latitude(data.lat);
+    gdl90_pack24bit(msg, lat_encoded);
     
-    // Longitude (24-bit)
-    gdl90_pack24bit(msg, gdl90_make_longitude(data.lon));
+    // Longitude (24-bit) - validate precision per spec
+    uint32_t lon_encoded = gdl90_make_longitude(data.lon);
+    gdl90_pack24bit(msg, lon_encoded);
+    
+    // Validate coordinate precision (optional debug validation)
+    if (!validate_coordinate_precision(data.lat, lat_encoded, true) || 
+        !validate_coordinate_precision(data.lon, lon_encoded, false)) {
+        char debug_msg[200];
+        snprintf(debug_msg, sizeof(debug_msg), 
+                 "XP2GDL90: WARNING - Coordinate precision outside spec: LAT=%.6f, LON=%.6f\n",
+                 data.lat, data.lon);
+        XPLMDebugString(debug_msg);
+    }
     
     // Altitude: 25-foot increments, +1000 ft offset
     // Range: -1,000 to +101,350 feet (per GDL90 spec Table 8)
@@ -304,13 +471,18 @@ std::vector<uint8_t> create_position_report(const FlightData& data) {
     uint16_t altitude = (uint16_t)((alt_clamped + 1000) / 25.0);
     if (altitude > 0xffe) altitude = 0xffe;
     
-    uint8_t misc = 9;  // Miscellaneous indicator
+    // Create proper miscellaneous field per spec Table 9
+    bool airborne = determine_airborne_state(data);
+    bool extrapolated = false;  // Ownship data is always fresh
+    uint8_t track_type = TRACK_TYPE_TRUE_TRACK;  // X-Plane provides true track
+    uint8_t misc = create_misc_field(airborne, extrapolated, track_type);
+    
     msg.push_back((altitude >> 4) & 0xff);
     msg.push_back(((altitude & 0xf) << 4) | (misc & 0xf));
     
-    // Navigation integrity and accuracy categories
-    uint8_t nic = 11;   // Navigation Integrity Category
-    uint8_t nacp = 10;  // Navigation Accuracy Category
+    // Navigation integrity and accuracy categories (use constants)
+    uint8_t nic = DEFAULT_NIC;   // High accuracy for ownship
+    uint8_t nacp = DEFAULT_NACP; // High accuracy for ownship
     msg.push_back(((nic & 0xf) << 4) | (nacp & 0xf));
     
     // Horizontal velocity (knots)
@@ -351,8 +523,8 @@ std::vector<uint8_t> create_position_report(const FlightData& data) {
     uint8_t track_heading = (uint8_t)(data.track / (360.0 / 256));
     msg.push_back(track_heading);
     
-    // Emitter category
-    uint8_t emitter_cat = 1;  // Light aircraft
+    // Emitter category (use constant)
+    uint8_t emitter_cat = EMITTER_LIGHT;  // Default to light aircraft
     msg.push_back(emitter_cat);
     
     // Call sign (8 bytes)
@@ -360,9 +532,9 @@ std::vector<uint8_t> create_position_report(const FlightData& data) {
         msg.push_back(ownship_callsign[i]);
     }
     
-    // Emergency code
-    uint8_t emergency_code = 0;
-    msg.push_back(emergency_code << 4);
+    // Emergency code - FIX: Properly encode bits per spec Section 3.5.1.12
+    uint8_t emergency_code = EMERGENCY_NONE;  // Use constant
+    msg.push_back(((emergency_code & 0xF) << 4) | 0x0);  // Ensure reserved bits are 0
     
     return gdl90_prepare_message(msg);
 }
@@ -373,18 +545,30 @@ std::vector<uint8_t> create_traffic_report(const TrafficTarget& target) {
     msg.push_back(0x14);  // Message ID
     
     // Traffic alert status and address type
-    uint8_t alert_status = 0;  // No traffic alert
-    uint8_t addr_type = 0;     // ADS-B with ICAO address
+    uint8_t alert_status = 0;  // No traffic alert (CSA not implemented)
+    uint8_t addr_type = target.address_type;  // Use target's address type
     msg.push_back(((alert_status & 0xf) << 4) | (addr_type & 0xf));
     
     // ICAO address (24-bit)
     gdl90_pack24bit(msg, target.icao_address);
     
-    // Latitude (24-bit)
-    gdl90_pack24bit(msg, gdl90_make_latitude(target.data.lat));
+    // Latitude (24-bit) - validate precision per spec
+    uint32_t lat_encoded = gdl90_make_latitude(target.data.lat);
+    gdl90_pack24bit(msg, lat_encoded);
     
-    // Longitude (24-bit)
-    gdl90_pack24bit(msg, gdl90_make_longitude(target.data.lon));
+    // Longitude (24-bit) - validate precision per spec
+    uint32_t lon_encoded = gdl90_make_longitude(target.data.lon);
+    gdl90_pack24bit(msg, lon_encoded);
+    
+    // Validate coordinate precision (optional debug validation)
+    if (!validate_coordinate_precision(target.data.lat, lat_encoded, true) || 
+        !validate_coordinate_precision(target.data.lon, lon_encoded, false)) {
+        char debug_msg[200];
+        snprintf(debug_msg, sizeof(debug_msg), 
+                 "XP2GDL90: WARNING - Traffic coordinate precision outside spec: LAT=%.6f, LON=%.6f\n",
+                 target.data.lat, target.data.lon);
+        XPLMDebugString(debug_msg);
+    }
     
     // Altitude: 25-foot increments, +1000 ft offset
     // Range: -1,000 to +101,350 feet (per GDL90 spec Table 8)
@@ -395,13 +579,18 @@ std::vector<uint8_t> create_traffic_report(const TrafficTarget& target) {
     uint16_t altitude = (uint16_t)((alt_clamped + 1000) / 25.0);
     if (altitude > 0xffe) altitude = 0xffe;
     
-    uint8_t misc = 9;  // Miscellaneous indicator
+    // Create proper miscellaneous field per spec Table 9
+    uint8_t misc = create_misc_field(target.airborne, target.is_extrapolated, target.track_type);
+    
     msg.push_back((altitude >> 4) & 0xff);
     msg.push_back(((altitude & 0xf) << 4) | (misc & 0xf));
     
-    // Navigation integrity and accuracy categories
-    uint8_t nic = 11;   // Navigation Integrity Category
-    uint8_t nacp = 10;  // Navigation Accuracy Category
+    // Navigation integrity and accuracy categories based on data quality
+    double time_since_update = XPLMGetElapsedTime() - target.last_data_update;
+    bool has_recent_update = (time_since_update <= DATA_FRESH_THRESHOLD);
+    
+    uint8_t nic = determine_nic_category(has_recent_update);
+    uint8_t nacp = determine_nacp_category(has_recent_update);
     msg.push_back(((nic & 0xf) << 4) | (nacp & 0xf));
     
     // Horizontal velocity (knots) 
@@ -442,18 +631,16 @@ std::vector<uint8_t> create_traffic_report(const TrafficTarget& target) {
     uint8_t track_heading = (uint8_t)(target.data.track / (360.0 / 256));
     msg.push_back(track_heading);
     
-    // Emitter category
-    uint8_t emitter_cat = 1;  // Light aircraft
-    msg.push_back(emitter_cat);
+    // Emitter category (use target's category)
+    msg.push_back(target.emitter_category);
     
     // Call sign (8 bytes)
     for (int i = 0; i < 8; i++) {
         msg.push_back(target.callsign[i]);
     }
     
-    // Emergency code
-    uint8_t emergency_code = 0;
-    msg.push_back(emergency_code << 4);
+    // Emergency code - FIX: Properly encode bits per spec Section 3.5.1.12
+    msg.push_back(((target.emergency_code & 0xF) << 4) | 0x0);  // Ensure reserved bits are 0
     
     return gdl90_prepare_message(msg);
 }
@@ -570,6 +757,8 @@ void update_traffic_targets() {
         
         bool updated = false;
         
+        // Data is being updated
+        
         // Read position data
         if (traffic_lat_datarefs[i]) {
             double lat = XPLMGetDatad(traffic_lat_datarefs[i]);
@@ -601,6 +790,15 @@ void update_traffic_targets() {
             target.data.track = psi_array[target.plane_id];
             target.data.speed = speed_array[target.plane_id] * 1.94384; // m/s to knots
         }
+        
+        // Update air/ground state using new logic
+        target.airborne = determine_airborne_state(target.data);
+        
+        // Update emitter category based on speed and callsign
+        target.emitter_category = determine_emitter_category(target.callsign, target.data.speed);
+        
+        // Track type is always true track from X-Plane
+        target.track_type = TRACK_TYPE_TRUE_TRACK;
         
         // Read flight ID/callsign data from TCAS interface
         if (traffic_flight_id_dataref) {
@@ -649,10 +847,16 @@ void update_traffic_targets() {
         
         if (updated) {
             target.last_update = current_time;
+            target.last_data_update = current_time;  // Fresh data received
             target.active = true;
+            target.is_extrapolated = false;  // Fresh data is not extrapolated
         } else {
-            // Mark inactive if no update for 30 seconds
-            if (current_time - target.last_update > 30.0) {
+            // Check if data has become stale
+            double time_since_data_update = current_time - target.last_data_update;
+            target.is_extrapolated = (time_since_data_update > DATA_FRESH_THRESHOLD);
+            
+            // Mark inactive if no update for timeout period
+            if (current_time - target.last_update > DATA_TIMEOUT_THRESHOLD) {
                 target.active = false;
             }
         }
@@ -947,13 +1151,20 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
             
 
             
-            // Initialize traffic target
+            // Initialize traffic target with all new fields
             TrafficTarget& target = traffic_targets[i];
             target.plane_id = i + 1;
             target.icao_address = 0x100000 + (i + 1);
             target.data = {};
             target.last_update = 0;
+            target.last_data_update = 0.0;
             target.active = false;
+            target.airborne = true;  // Default to airborne (safer assumption)
+            target.is_extrapolated = false;
+            target.address_type = ADDR_TYPE_ADSB_ICAO;  // Default to ADS-B with ICAO
+            target.emitter_category = EMITTER_LIGHT;    // Default to light aircraft
+            target.emergency_code = EMERGENCY_NONE;     // No emergency by default
+            target.track_type = TRACK_TYPE_TRUE_TRACK;  // X-Plane provides true track
             // Initialize with default callsign (will be updated with real tailnum when available)
             snprintf(target.callsign, sizeof(target.callsign), "TRF%03d  ", i + 1);
         }
