@@ -3,7 +3,7 @@
 #include <cstdio>
 #include <cmath>
 #include <cstdlib>
-#include <cstdint>
+#include <cstdint>  // For intptr_t and uint types
 #include <vector>
 #include <string>
 #include <ctime>
@@ -198,6 +198,18 @@ static XPLMDataRef vs_dataref = nullptr;
 static XPLMDataRef pitch_dataref = nullptr;
 static XPLMDataRef roll_dataref = nullptr;
 
+// Aircraft identification datarefs
+static XPLMDataRef aircraft_icao_dataref = nullptr;
+static XPLMDataRef aircraft_tailnum_dataref = nullptr;
+
+// Landing gear and ground detection datarefs
+static XPLMDataRef gear_deploy_dataref = nullptr;
+static XPLMDataRef on_ground_dataref = nullptr;
+
+// Transponder datarefs
+static XPLMDataRef transponder_code_dataref = nullptr;
+static XPLMDataRef transponder_mode_dataref = nullptr;
+
 // Traffic datarefs
 static std::vector<XPLMDataRef> traffic_lat_datarefs;
 static std::vector<XPLMDataRef> traffic_lon_datarefs;
@@ -211,7 +223,36 @@ static XPLMDataRef traffic_speed_dataref = nullptr;
 
 // Determine if aircraft is airborne based on multiple criteria
 bool determine_airborne_state(const FlightData& data) {
-    // Multi-criteria approach for air/ground determination
+    // Priority 1: Use X-Plane's definitive on-ground flag if available
+    if (on_ground_dataref) {
+        int on_ground = XPLMGetDatai(on_ground_dataref);
+        if (on_ground == 1) {
+            return false; // Definitely on ground
+        }
+    }
+    
+    // Priority 2: Check landing gear deployment
+    if (gear_deploy_dataref) {
+        float gear_deploy = XPLMGetDataf(gear_deploy_dataref);
+        
+        // If gear is deployed AND we're at low altitude/speed, likely on ground
+        if (gear_deploy > 0.8f) { // Gear mostly deployed
+            if (data.alt < GROUND_ALT_THRESHOLD && 
+                data.speed < GROUND_SPEED_THRESHOLD && 
+                fabs(data.vs) < GROUND_VS_THRESHOLD) {
+                return false;
+            }
+        }
+        
+        // If gear is retracted AND we have reasonable altitude/speed, likely airborne
+        if (gear_deploy < 0.2f) { // Gear mostly retracted
+            if (data.alt > AIRBORNE_ALT_THRESHOLD || data.speed > AIRBORNE_SPEED_THRESHOLD) {
+                return true;
+            }
+        }
+    }
+    
+    // Fallback: Multi-criteria approach for air/ground determination
     // Criteria 1: Altitude above ground level
     if (data.alt > AIRBORNE_ALT_THRESHOLD) {  // Above 100 feet AGL
         return true;
@@ -265,6 +306,30 @@ uint8_t determine_nic_category(bool has_recent_update) {
 uint8_t determine_nacp_category(bool has_recent_update) {
     // Use degraded accuracy for stale data
     return has_recent_update ? DEFAULT_NACP : DEGRADED_NACP;
+}
+
+// Determine address type based on transponder mode
+uint8_t determine_address_type() {
+    if (transponder_mode_dataref) {
+        int xpdr_mode = XPLMGetDatai(transponder_mode_dataref);
+        
+        switch (xpdr_mode) {
+            case 5: // GND (Mode S)
+            case 6: // TA_ONLY (Mode S) 
+            case 7: // TA/RA (Mode S)
+                return ADDR_TYPE_ADSB_ICAO; // Mode S with ICAO address
+            case 2: // ON (Mode A)
+            case 3: // ALT (Mode C)
+                return ADDR_TYPE_ADSB_ICAO; // Standard ADS-B with ICAO
+            case 0: // OFF
+            case 1: // STDBY
+            case 4: // TEST
+            default:
+                return ADDR_TYPE_ADSB_ICAO; // Default to ADS-B with ICAO
+        }
+    }
+    
+    return ADDR_TYPE_ADSB_ICAO; // Default if no transponder dataref
 }
 
 // Create properly encoded miscellaneous field per GDL-90 spec Table 9
@@ -436,9 +501,9 @@ std::vector<uint8_t> create_position_report(const FlightData& data) {
     std::vector<uint8_t> msg;
     msg.push_back(0x0a);  // Message ID
     
-    // Status and address type
+    // Status and address type (determine based on transponder mode)
     uint8_t status = 0;
-    uint8_t addr_type = ADDR_TYPE_ADSB_ICAO;  // Use constant instead of hardcoded 0
+    uint8_t addr_type = determine_address_type();  // Use transponder-based address type
     msg.push_back(((status & 0xf) << 4) | (addr_type & 0xf));
     
     // ICAO address (24-bit)
@@ -717,6 +782,136 @@ void read_flight_data() {
     if (roll_dataref) current_flight_data.roll = XPLMGetDataf(roll_dataref);
 }
 
+// Read and update aircraft identification
+void update_aircraft_identification() {
+    static double last_id_update = 0;
+    double current_time = XPLMGetElapsedTime();
+    
+    // Update aircraft ID only every 10 seconds (it rarely changes)
+    if (current_time - last_id_update < 10.0) {
+        return;
+    }
+    last_id_update = current_time;
+    
+    // Read ICAO address from aircraft
+    if (aircraft_icao_dataref) {
+        char icao_str[8] = {0};
+        int bytes_read = XPLMGetDatab(aircraft_icao_dataref, icao_str, 0, sizeof(icao_str) - 1);
+        if (bytes_read > 0) {
+            icao_str[bytes_read] = '\0';
+            
+            // Convert ICAO string to 24-bit address
+            uint32_t new_icao = 0;
+            if (strlen(icao_str) >= 6) {
+                // Parse hex ICAO address (e.g., "A1B2C3")
+                for (int i = 0; i < 6 && icao_str[i]; i++) {
+                    new_icao <<= 4;
+                    if (icao_str[i] >= '0' && icao_str[i] <= '9') {
+                        new_icao |= (icao_str[i] - '0');
+                    } else if (icao_str[i] >= 'A' && icao_str[i] <= 'F') {
+                        new_icao |= (icao_str[i] - 'A' + 10);
+                    } else if (icao_str[i] >= 'a' && icao_str[i] <= 'f') {
+                        new_icao |= (icao_str[i] - 'a' + 10);
+                    }
+                }
+                
+                if (new_icao != 0 && new_icao != ownship_icao_address) {
+                    ownship_icao_address = new_icao;
+                    
+                    char debug_msg[100];
+                    snprintf(debug_msg, sizeof(debug_msg), 
+                             "XP2GDL90: Updated ICAO address to: %06X (from %s)\n", 
+                             ownship_icao_address, icao_str);
+                    XPLMDebugString(debug_msg);
+                }
+            }
+        }
+    }
+    
+    // Read tail number from aircraft
+    if (aircraft_tailnum_dataref) {
+        char tailnum_str[32] = {0};
+        int bytes_read = XPLMGetDatab(aircraft_tailnum_dataref, tailnum_str, 0, sizeof(tailnum_str) - 1);
+        if (bytes_read > 0) {
+            tailnum_str[bytes_read] = '\0';
+            
+            // Format callsign for GDL-90 (8 characters, space-padded)
+            char new_callsign[9] = "        "; // 8 spaces + null
+            new_callsign[8] = '\0';
+            
+            // Copy tail number, converting to uppercase and skipping invalid chars
+            int dest_pos = 0;
+            for (int i = 0; i < bytes_read && dest_pos < 8; i++) {
+                char c = tailnum_str[i];
+                // Only include alphanumeric characters
+                if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+                    new_callsign[dest_pos++] = c;
+                } else if (c >= 'a' && c <= 'z') {
+                    new_callsign[dest_pos++] = c - 'a' + 'A'; // Convert to uppercase
+                }
+            }
+            
+            // Update callsign if it's different and valid
+            if (new_callsign[0] != ' ' && strcmp(ownship_callsign, new_callsign) != 0) {
+                memcpy(ownship_callsign, new_callsign, 9);
+                
+                char debug_msg[100];
+                snprintf(debug_msg, sizeof(debug_msg), 
+                         "XP2GDL90: Updated callsign to: '%s' (from %s)\n", 
+                         ownship_callsign, tailnum_str);
+                XPLMDebugString(debug_msg);
+            }
+        }
+    }
+}
+
+// Read transponder information for enhanced GDL-90 accuracy
+void update_transponder_info() {
+    static int last_transponder_code = 0;
+    static int last_transponder_mode = 0;
+    static double last_xpdr_update = 0;
+    double current_time = XPLMGetElapsedTime();
+    
+    // Update transponder info every 5 seconds (it changes infrequently)
+    if (current_time - last_xpdr_update < 5.0) {
+        return;
+    }
+    last_xpdr_update = current_time;
+    
+    // Read transponder code
+    if (transponder_code_dataref) {
+        int xpdr_code = XPLMGetDatai(transponder_code_dataref);
+        if (xpdr_code != last_transponder_code) {
+            last_transponder_code = xpdr_code;
+            
+            char debug_msg[100];
+            snprintf(debug_msg, sizeof(debug_msg), 
+                     "XP2GDL90: Transponder code: %04d\n", xpdr_code);
+            XPLMDebugString(debug_msg);
+        }
+    }
+    
+    // Read transponder mode  
+    if (transponder_mode_dataref) {
+        int xpdr_mode = XPLMGetDatai(transponder_mode_dataref);
+        if (xpdr_mode != last_transponder_mode) {
+            last_transponder_mode = xpdr_mode;
+            
+            const char* mode_names[] = {
+                "OFF", "STDBY", "ON (Mode A)", "ALT (Mode C)", 
+                "TEST", "GND (Mode S)", "TA_ONLY (Mode S)", "TA/RA"
+            };
+            const char* mode_name = (xpdr_mode >= 0 && xpdr_mode <= 7) ? 
+                                   mode_names[xpdr_mode] : "UNKNOWN";
+            
+            char debug_msg[100];
+            snprintf(debug_msg, sizeof(debug_msg), 
+                     "XP2GDL90: Transponder mode: %d (%s)\n", xpdr_mode, mode_name);
+            XPLMDebugString(debug_msg);
+        }
+    }
+}
+
 void update_traffic_targets() {
     if (!enable_traffic) return;
     
@@ -990,6 +1185,12 @@ float flight_loop_callback(float elapsedMe, float elapsedSim, int counter, void*
     // Read current flight data
     read_flight_data();
     
+    // Update aircraft identification (ICAO and callsign)
+    update_aircraft_identification();
+    
+    // Update transponder information
+    update_transponder_info();
+    
     // Update traffic targets if enabled
     if (enable_traffic) {
         update_traffic_targets();
@@ -1116,6 +1317,18 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     vs_dataref = XPLMFindDataRef("sim/flightmodel/position/vh_ind_fpm");
     pitch_dataref = XPLMFindDataRef("sim/flightmodel/position/theta");
     roll_dataref = XPLMFindDataRef("sim/flightmodel/position/phi");
+    
+    // Get aircraft identification datarefs
+    aircraft_icao_dataref = XPLMFindDataRef("sim/aircraft/view/acf_ICAO");
+    aircraft_tailnum_dataref = XPLMFindDataRef("sim/aircraft/view/acf_tailnum");
+    
+    // Get landing gear and ground detection datarefs
+    gear_deploy_dataref = XPLMFindDataRef("sim/aircraft/parts/acf_gear_deploy");
+    on_ground_dataref = XPLMFindDataRef("sim/flightmodel/failures/onground_any");
+    
+    // Get transponder datarefs
+    transponder_code_dataref = XPLMFindDataRef("sim/cockpit/radios/transponder_code");
+    transponder_mode_dataref = XPLMFindDataRef("sim/cockpit/radios/transponder_mode");
     
     // Initialize traffic targets if enabled
     if (enable_traffic) {
