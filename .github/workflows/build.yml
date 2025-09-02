@@ -112,7 +112,23 @@ jobs:
     - name: Install dependencies (macOS)
       if: runner.os == 'macOS'
       run: |
-        brew install cmake
+        # Check if cmake is already installed
+        if brew list --formula | grep -q "^cmake$"; then
+          echo "CMake is already installed"
+          # Check if it's from a different tap and needs to be reinstalled
+          if ! brew install cmake 2>/dev/null; then
+            echo "CMake installation failed, attempting to fix tap conflict..."
+            brew uninstall cmake
+            brew install cmake
+          fi
+        else
+          echo "Installing CMake..."
+          brew install cmake
+        fi
+        
+        # Verify installation
+        echo "CMake version:"
+        cmake --version
     
     - name: Install dependencies (Linux)
       if: runner.os == 'Linux'
