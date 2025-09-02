@@ -395,7 +395,7 @@ For a detailed history of changes, see [CHANGELOG.md](CHANGELOG.md).
 
 ### Recent Updates
 
-- **v1.0.5** (2025-01-23): **Traffic Data Enhancements** + Real aircraft callsigns, accurate ground speeds, and critical UI configuration fixes
+- **v1.0.5** (2025-08-29): **Traffic Data Enhancements** + Real aircraft callsigns, accurate ground speeds, and critical UI configuration fixes
 - **v1.0.4** (2025-08-28): **Critical Security Fixes** + Revolutionary development workflow overhaul with enterprise-grade automation, comprehensive testing, CI/CD pipeline, and professional development tools
 - **v1.0.3** (2025-08-28): Complete UI architecture overhaul with ImGui integration and enhanced cross-platform compatibility  
 - **v1.0.2** (2025-08-27): Modern ImGui UI system with real-time configuration and status monitoring
