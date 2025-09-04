@@ -760,13 +760,21 @@ void cleanup_network() {
 }
 
 void send_gdl90_message(const std::vector<uint8_t>& message) {
+    // CRITICAL: Add safety checks to prevent crashes
     if (udp_socket == INVALID_SOCKET || !broadcast_enabled) return;
+    
+    // Validate message size to prevent buffer overflow
+    if (message.empty() || message.size() > 432) {  // GDL-90 max message size
+        XPLMDebugString("XP2GDL90: Invalid message size - skipping send\n");
+        return;
+    }
     
     int result = sendto(udp_socket, (const char*)message.data(), message.size(), 0,
                         (struct sockaddr*)&fdpro_addr, sizeof(fdpro_addr));
     
     if (result == SOCKET_ERROR) {
         XPLMDebugString("XP2GDL90: Failed to send UDP packet\n");
+        // Don't close socket here - let it retry on next attempt
     }
 }
 
@@ -797,8 +805,8 @@ void update_aircraft_identification() {
     if (aircraft_icao_dataref) {
         char icao_str[8] = {0};
         int bytes_read = XPLMGetDatab(aircraft_icao_dataref, icao_str, 0, sizeof(icao_str) - 1);
-        if (bytes_read > 0) {
-            icao_str[bytes_read] = '\0';
+        if (bytes_read > 0 && bytes_read < (int)sizeof(icao_str)) {
+            icao_str[bytes_read] = '\0';  // Ensure null termination
             
             // Convert ICAO string to 24-bit address
             uint32_t new_icao = 0;
@@ -832,8 +840,8 @@ void update_aircraft_identification() {
     if (aircraft_tailnum_dataref) {
         char tailnum_str[32] = {0};
         int bytes_read = XPLMGetDatab(aircraft_tailnum_dataref, tailnum_str, 0, sizeof(tailnum_str) - 1);
-        if (bytes_read > 0) {
-            tailnum_str[bytes_read] = '\0';
+        if (bytes_read > 0 && bytes_read < (int)sizeof(tailnum_str)) {
+            tailnum_str[bytes_read] = '\0';  // Ensure null termination
             
             // Format callsign for GDL-90 (8 characters, space-padded)
             char new_callsign[9] = "        "; // 8 spaces + null
@@ -932,13 +940,17 @@ void update_traffic_targets() {
         XPLMGetDatavf(traffic_speed_dataref, speed_array.data(), 0, 64);
     }
     
-    // Update each traffic target
-    for (size_t i = 0; i < traffic_targets.size() && i < traffic_lat_datarefs.size(); i++) {
+    // Update each traffic target with safety bounds checking
+    size_t max_targets = std::min(traffic_targets.size(), traffic_lat_datarefs.size());
+    max_targets = std::min(max_targets, (size_t)MAX_TRAFFIC_TARGETS);  // Prevent excessive processing
+    
+    for (size_t i = 0; i < max_targets; i++) {
         TrafficTarget& target = traffic_targets[i];
         
         // *** FIX: Check if aircraft actually exists by validating array data ***
         // Skip aircraft that show no activity (all zeros = non-existent aircraft)
-        if (target.plane_id < 64) {
+        // CRITICAL: Add bounds checking to prevent array access crashes
+        if (target.plane_id >= 0 && target.plane_id < 64) {
             float aircraft_speed = speed_array[target.plane_id];
             float aircraft_track = psi_array[target.plane_id];
             float aircraft_vs = vs_array[target.plane_id];
@@ -948,14 +960,18 @@ void update_traffic_targets() {
                 target.active = false;
                 continue;  // Skip this aircraft entirely
             }
+        } else {
+            // Invalid plane_id - mark as inactive and skip
+            target.active = false;
+            continue;
         }
         
         bool updated = false;
         
         // Data is being updated
         
-        // Read position data
-        if (traffic_lat_datarefs[i]) {
+        // Read position data with null pointer checks
+        if (i < traffic_lat_datarefs.size() && traffic_lat_datarefs[i]) {
             double lat = XPLMGetDatad(traffic_lat_datarefs[i]);
             if (fabs(lat) > 0.00001) {
                 target.data.lat = lat;
@@ -963,7 +979,7 @@ void update_traffic_targets() {
             }
         }
         
-        if (traffic_lon_datarefs[i]) {
+        if (i < traffic_lon_datarefs.size() && traffic_lon_datarefs[i]) {
             double lon = XPLMGetDatad(traffic_lon_datarefs[i]);
             if (fabs(lon) > 0.00001) {
                 target.data.lon = lon;
@@ -971,7 +987,7 @@ void update_traffic_targets() {
             }
         }
         
-        if (traffic_alt_datarefs[i]) {
+        if (i < traffic_alt_datarefs.size() && traffic_alt_datarefs[i]) {
             double alt = XPLMGetDatad(traffic_alt_datarefs[i]);
             if (fabs(alt) > 1.0) {
                 target.data.alt = alt * 3.28084; // m to ft
@@ -1005,7 +1021,8 @@ void update_traffic_targets() {
                 int aircraft_index = i + 1;  // Skip user aircraft at index 0
                 int offset = aircraft_index * 8;  // Each aircraft takes 8 bytes (7 chars + null)
                 
-                if (offset + 7 < bytes_read) {
+                // CRITICAL: Bounds checking to prevent buffer overflow crash
+                if (offset >= 0 && offset + 7 < bytes_read && offset + 7 < (int)sizeof(flight_id_array)) {
                     char flight_id[8] = {0};
                     memcpy(flight_id, flight_id_array + offset, 7);  // Copy 7 characters
                     flight_id[7] = '\0';  // Ensure null termination
@@ -1178,7 +1195,7 @@ float flight_loop_callback(float elapsedMe, float elapsedSim, int counter, void*
     static double last_heartbeat = 0;
     static double last_position = 0;
     static double last_traffic = 0;
-    static double last_ui_update = 0;
+    // Note: last_ui_update removed as it was unused
     
     double current_time = XPLMGetElapsedTime();
     
@@ -1362,11 +1379,9 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
                      "sim/cockpit2/tcas/targets/position/double/plane%d_ele", i + 1);
             traffic_alt_datarefs[i] = XPLMFindDataRef(dataref_name);
             
-
-            
             // Initialize traffic target with all new fields
             TrafficTarget& target = traffic_targets[i];
-            target.plane_id = i + 1;
+            target.plane_id = i;  // CRITICAL FIX: Use 0-based index to match array access
             target.icao_address = 0x100000 + (i + 1);
             target.data = {};
             target.last_update = 0;
