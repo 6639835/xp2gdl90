@@ -103,9 +103,10 @@ struct FlightData {
     double vs;        // Vertical speed (feet/minute)
     double pitch;     // Pitch (degrees)
     double roll;      // Roll (degrees)
+    bool on_ground;   // Ground state
 };
 
-// Traffic target structure
+// Traffic target structure  
 struct TrafficTarget {
     int plane_id;
     uint32_t icao_address;
@@ -142,6 +143,7 @@ static XPLMDataRef track_dataref = nullptr;
 static XPLMDataRef vs_dataref = nullptr;
 static XPLMDataRef pitch_dataref = nullptr;
 static XPLMDataRef roll_dataref = nullptr;
+static XPLMDataRef on_ground_dataref = nullptr;
 
 // Traffic datarefs
 static std::vector<XPLMDataRef> traffic_lat_datarefs;
@@ -304,7 +306,13 @@ std::vector<uint8_t> create_position_report(const FlightData& data) {
     uint16_t altitude = (uint16_t)((alt_clamped + 1000) / 25.0);
     if (altitude > 0xffe) altitude = 0xffe;
     
-    uint8_t misc = 9;  // Miscellaneous indicator
+    // Miscellaneous indicator (per GDL90 spec Table 9)
+    uint8_t misc = 0;
+    misc |= (data.on_ground ? 0 : 1) << 3;  // Bit 3: Air/Ground (0=Ground, 1=Airborne)
+    misc |= (0 << 2);                       // Bit 2: Report updated (0=updated, 1=extrapolated)
+    misc |= (0 << 1);                       // Bit 1: Track type (01 = True Track Angle)
+    misc |= (1 << 0);                       // Bit 0: Track type
+    
     msg.push_back((altitude >> 4) & 0xff);
     msg.push_back(((altitude & 0xf) << 4) | (misc & 0xf));
     
@@ -328,8 +336,10 @@ std::vector<uint8_t> create_position_report(const FlightData& data) {
     // Vertical velocity (64 fpm units)
     // Range: +/- 32,576 FPM, 0x800 = no data (per GDL90 spec Table 8)
     uint16_t v_velocity = 0x800;  // Default to "no data"
-    if (data.vs != 0.0) {
-        // Clamp to valid range: +/- 32,576 FPM
+    
+    // Check if vertical speed data is available (not checking for != 0.0 since 0.0 is valid level flight)
+    if (vs_dataref != nullptr) {  // We have valid dataref, so data is available
+        // Clamp to valid range: +/- 32,576 FPM  
         double vs_clamped = data.vs;
         if (vs_clamped > 32576.0) vs_clamped = 32576.0;
         if (vs_clamped < -32576.0) vs_clamped = -32576.0;
@@ -395,7 +405,13 @@ std::vector<uint8_t> create_traffic_report(const TrafficTarget& target) {
     uint16_t altitude = (uint16_t)((alt_clamped + 1000) / 25.0);
     if (altitude > 0xffe) altitude = 0xffe;
     
-    uint8_t misc = 9;  // Miscellaneous indicator
+    // Miscellaneous indicator (per GDL90 spec Table 9)
+    uint8_t misc = 0;
+    misc |= (target.data.on_ground ? 0 : 1) << 3;  // Bit 3: Air/Ground (0=Ground, 1=Airborne)
+    misc |= (0 << 2);                              // Bit 2: Report updated (0=updated, 1=extrapolated)
+    misc |= (0 << 1);                              // Bit 1: Track type (01 = True Track Angle)
+    misc |= (1 << 0);                              // Bit 0: Track type
+    
     msg.push_back((altitude >> 4) & 0xff);
     msg.push_back(((altitude & 0xf) << 4) | (misc & 0xf));
     
@@ -419,7 +435,9 @@ std::vector<uint8_t> create_traffic_report(const TrafficTarget& target) {
     // Vertical velocity (64 fpm units)
     // Range: +/- 32,576 FPM, 0x800 = no data (per GDL90 spec Table 8)
     uint16_t v_velocity = 0x800;  // Default to "no data"
-    if (target.data.vs != 0.0) {
+    
+    // Check if vertical speed data is available (not checking for != 0.0 since 0.0 is valid level flight)
+    if (traffic_vs_dataref != nullptr) {  // We have valid dataref, so data is available
         // Clamp to valid range: +/- 32,576 FPM
         double vs_clamped = target.data.vs;
         if (vs_clamped > 32576.0) vs_clamped = 32576.0;
@@ -528,6 +546,12 @@ void read_flight_data() {
     if (vs_dataref) current_flight_data.vs = XPLMGetDataf(vs_dataref);
     if (pitch_dataref) current_flight_data.pitch = XPLMGetDataf(pitch_dataref);
     if (roll_dataref) current_flight_data.roll = XPLMGetDataf(roll_dataref);
+    if (on_ground_dataref) {
+        int gear_on_ground[10] = {0};
+        XPLMGetDatavi(on_ground_dataref, gear_on_ground, 0, 10);
+        // Aircraft is on ground if any gear is on ground (check first few elements)
+        current_flight_data.on_ground = (gear_on_ground[0] != 0 || gear_on_ground[1] != 0 || gear_on_ground[2] != 0);
+    }
 }
 
 void update_traffic_targets() {
@@ -600,6 +624,7 @@ void update_traffic_targets() {
             target.data.vs = vs_array[target.plane_id];
             target.data.track = psi_array[target.plane_id];
             target.data.speed = speed_array[target.plane_id] * 1.94384; // m/s to knots
+            target.data.on_ground = false;  // Assume traffic is airborne (no individual ground state dataref available)
         }
         
         // Read flight ID/callsign data from TCAS interface
@@ -620,7 +645,7 @@ void update_traffic_targets() {
                     // Debug output
                     char debug_msg[200];
                     snprintf(debug_msg, sizeof(debug_msg), 
-                             "XP2GDL90: Traffic %d TCAS flight_id[%d]: '%s'\n", 
+                             "XP2GDL90: Traffic %zu TCAS flight_id[%d]: '%s'\n", 
                              i + 1, aircraft_index, flight_id);
                     XPLMDebugString(debug_msg);
                     
@@ -639,7 +664,7 @@ void update_traffic_targets() {
                         }
                         
                         snprintf(debug_msg, sizeof(debug_msg), 
-                                 "XP2GDL90: Traffic %d updated callsign to: '%s'\n", 
+                                 "XP2GDL90: Traffic %zu updated callsign to: '%s'\n", 
                                  i + 1, target.callsign);
                         XPLMDebugString(debug_msg);
                     }
@@ -779,7 +804,6 @@ float flight_loop_callback(float elapsedMe, float elapsedSim, int counter, void*
     static double last_heartbeat = 0;
     static double last_position = 0;
     static double last_traffic = 0;
-    static double last_ui_update = 0;
     
     double current_time = XPLMGetElapsedTime();
     
@@ -845,6 +869,7 @@ float flight_loop_callback(float elapsedMe, float elapsedSim, int counter, void*
     // Try to initialize ImGui after X-Plane has been running for a few seconds (if available)
 #if HAVE_IMGUI
     static bool imgui_initialized = false;
+    static double last_ui_update = 0;
     
     if (!imgui_initialized && current_time > 5.0) { // Wait 5 seconds after plugin start
         XPLMDebugString("XP2GDL90: Attempting delayed ImGui initialization...\n");
@@ -912,6 +937,7 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     vs_dataref = XPLMFindDataRef("sim/flightmodel/position/vh_ind_fpm");
     pitch_dataref = XPLMFindDataRef("sim/flightmodel/position/theta");
     roll_dataref = XPLMFindDataRef("sim/flightmodel/position/phi");
+    on_ground_dataref = XPLMFindDataRef("sim/flightmodel2/gear/on_ground");  // int[10] array
     
     // Initialize traffic targets if enabled
     if (enable_traffic) {
@@ -952,6 +978,7 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
             target.plane_id = i + 1;
             target.icao_address = 0x100000 + (i + 1);
             target.data = {};
+            target.data.on_ground = false;  // Initialize ground state
             target.last_update = 0;
             target.active = false;
             // Initialize with default callsign (will be updated with real tailnum when available)

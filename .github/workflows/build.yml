@@ -93,38 +93,25 @@ jobs:
       with:
         python-version: '3.x'
     
-    - name: Install dependencies (Windows)
-      if: runner.os == 'Windows'
-      run: |
-        choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System'
-      shell: pwsh
+    - name: Set up CMake
+      uses: jwlawson/actions-setup-cmake@v2
+      with:
+        cmake-version: '3.16.0'  # Minimum version required
     
-    - name: Verify CMake installation (Windows)
-      if: runner.os == 'Windows'
+    - name: Verify CMake installation
       run: |
-        # Restart PowerShell session to ensure environment variables take effect
-        $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "User")
-        
-        Write-Host "=== CMake Version ==="
+        echo "=== CMake Version ==="
         cmake --version
-      shell: pwsh
     
-    - name: Install dependencies (macOS)
-      if: runner.os == 'macOS'
-      run: |
-        brew install cmake
-    
-    - name: Install dependencies (Linux)
+    - name: Install additional dependencies (Linux)
       if: runner.os == 'Linux'
       run: |
         sudo apt-get update
-        sudo apt-get install -y cmake build-essential
+        sudo apt-get install -y build-essential
     
     - name: Build plugin (Windows)
       if: runner.os == 'Windows'
       run: |
-        # Ensure environment variables are set correctly
-        $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "User")
         python build_all.py --platform ${{ matrix.platform }}
       shell: pwsh
     

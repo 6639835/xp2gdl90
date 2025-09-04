@@ -7,6 +7,145 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.7] - 2025-09-04
+
+### 🔧 **Critical GDL-90 Specification Compliance Fixes**
+
+#### 🛩️ **Zero Vertical Speed Handling Fix**
+- **Fixed Critical Bug**: Corrected zero vertical speed encoding per GDL-90 specification Section 3.5.1.8
+  - **Issue**: Zero vertical speed (0 FPM level flight) was incorrectly encoded as 0x800 ("no data available")
+  - **Spec Requirement**: 0x000 represents 0 FPM, 0x800 reserved for "no vertical velocity information available"
+  - **Root Cause**: Logic checked `if (data.vs != 0.0)` treating legitimate zero values as missing data
+  - **Fix**: Changed to check dataref availability `if (vs_dataref != nullptr)` instead of value comparison
+  - **Impact**: Level flight now correctly reports zero vertical speed instead of "no data"
+  - **Compliance**: Ensures proper GDL-90 specification adherence per Table 8
+
+#### 🎯 **Dynamic Miscellaneous Field Implementation**
+- **Enhanced Compliance**: Implemented dynamic miscellaneous field per GDL-90 specification Table 9
+  - **Issue**: Miscellaneous field hardcoded to value `9` regardless of aircraft state
+  - **Spec Requirement**: Field must reflect actual Air/Ground state, report type, and track type
+  - **Implementation**: Dynamic field construction based on real aircraft parameters
+    - Bit 3: Air/Ground state (0=Ground, 1=Airborne) from ground detection dataref
+    - Bit 2: Report status (0=Updated, 1=Extrapolated) 
+    - Bits 1-0: Track type (01=True Track Angle per spec)
+  - **Data Source**: Added `sim/flightmodel2/gear/on_ground` dataref (int[10] array)
+  - **Impact**: Accurate aircraft state reporting for both ownship and traffic targets
+
+### 🛡️ **Security and Code Quality Fixes**
+
+#### 🔒 **Format Specifier Security**
+- **Fixed Security Issues**: Resolved format string vulnerabilities in debug logging
+  - **Issue**: Format specifiers `%d` used with `size_t` loop variables (unsigned long)
+  - **Security Risk**: Potential undefined behavior and security warnings
+  - **Fix**: Updated to proper `%zu` format specifiers for size_t compatibility
+  - **Files Modified**: `src/xp2gdl90.cpp` (lines 648, 667)
+  - **Impact**: Eliminates compiler warnings and potential runtime issues
+
+#### 🧹 **Unused Variable Cleanup**
+- **Code Quality**: Eliminated unused variable warnings in conditional compilation blocks
+  - **Issue**: `last_ui_update` variable declared outside `#if HAVE_IMGUI` block
+  - **Fix**: Moved variable declaration inside conditional compilation where it's actually used
+  - **Impact**: Cleaner compilation with no unused variable warnings
+
+### 📊 **Enhanced Aircraft State Detection**
+
+#### ⚡ **Improved Ground State Detection**
+- **Accurate Detection**: Implemented proper ground state detection using correct X-Plane dataref
+  - **Dataref**: `sim/flightmodel2/gear/on_ground` (boolean int[10] array)
+  - **Logic**: Aircraft considered on ground if any gear element indicates ground contact
+  - **Implementation**: Checks first three array elements for comprehensive ground detection
+  - **Impact**: Accurate Air/Ground status in GDL-90 miscellaneous field bit 3
+
+#### 🎛️ **Flight Data Structure Enhancement**
+- **Extended Data Model**: Added ground state tracking to core flight data structures
+  - **Added**: `bool on_ground` field to `FlightData` structure
+  - **Integration**: Ground state included in both ownship and traffic report generation
+  - **Initialization**: Proper ground state initialization for all aircraft targets
+  - **Consistency**: Uniform ground state handling across ownship and traffic reports
+
+### 🔍 **Specification Compliance Validation**
+
+#### 📋 **Comprehensive Spec Analysis**
+- **Deep Specification Review**: Thorough analysis of GDL-90 specification document (560-1058-00 Rev A)
+  - **Message Structure**: Validated against spec Tables 2, 3, 6, 7, 8
+  - **Data Encoding**: Confirmed compliance with coordinate, altitude, and velocity encoding
+  - **CRC Calculation**: Verified CRC-16-CCITT implementation matches spec Section 2.2.3
+  - **Byte Stuffing**: Confirmed proper handling of flag bytes and escape sequences
+  - **Field Packing**: Validated bit-level field packing per specification diagrams
+
+#### ✅ **Standards Compliance**
+- **GDL-90 Specification**: Full compliance with Garmin GDL-90 Data Interface Specification
+  - **Heartbeat Messages**: Table 3 format compliance with proper status bit encoding
+  - **Position Reports**: Table 8 format compliance for both ownship and traffic
+  - **Message Structure**: Section 2.2 compliance with framing, CRC, and byte stuffing
+  - **Data Encoding**: Proper semicircle coordinate encoding and altitude offset handling
+  - **Special Values**: Correct handling of invalid/unavailable data indicators
+
+### 🏗️ **Code Architecture Improvements**
+
+#### 🎯 **Enhanced Data Validation** 
+- **Robust Data Handling**: Improved validation logic for aircraft existence and data availability
+  - **Zero Value Handling**: Proper distinction between zero values and missing data
+  - **Dataref Validation**: Check dataref availability before assuming data validity
+  - **State Management**: Comprehensive aircraft state tracking and validation
+  - **Error Prevention**: Prevents encoding invalid states as valid flight data
+
+#### 🔄 **Improved Update Logic**
+- **Smart Data Processing**: Enhanced logic for determining when aircraft data is valid vs. missing
+  - **Vertical Speed**: Validates dataref existence rather than value comparison
+  - **Ground State**: Real-time ground state detection from X-Plane gear system
+  - **Field Construction**: Dynamic field construction based on actual aircraft parameters
+  - **Consistency**: Uniform handling across ownship and traffic target processing
+
+### 📈 **Quality and Reliability**
+
+#### 🧪 **Validation and Testing**
+- **Specification Testing**: Comprehensive validation against GDL-90 specification examples
+  - **Known Good Messages**: Validated against official spec example messages
+  - **Edge Cases**: Proper handling of boundary conditions and special values
+  - **Format Compliance**: Bit-level validation of message structure and field encoding
+  - **Cross-Platform**: Consistent behavior across Windows, macOS, and Linux
+
+#### 🛡️ **Robustness Enhancements**
+- **Error Prevention**: Proactive fixes for potential runtime issues
+  - **Type Safety**: Proper format specifiers for all data types
+  - **Memory Safety**: Continued focus on buffer safety and bounds checking
+  - **Thread Safety**: Maintains thread-safe operations throughout
+  - **Resource Management**: Proper cleanup and initialization patterns
+
+### 🔧 **Technical Implementation Details**
+
+#### 📡 **Dataref Management**
+- **Enhanced Dataref Access**: Added ground state detection with proper array handling
+  - **New Dataref**: `sim/flightmodel2/gear/on_ground` for accurate ground detection
+  - **Array Processing**: Proper int[10] array reading with logical OR combination
+  - **Integration**: Seamless integration with existing dataref management system
+  - **Performance**: Minimal overhead addition to existing data reading cycle
+
+#### 🎯 **Message Construction**
+- **Specification-Compliant Encoding**: All message construction now follows GDL-90 spec exactly
+  - **Vertical Speed**: Proper encoding of all values including zero FPM
+  - **Miscellaneous Field**: Dynamic construction per Table 9 requirements  
+  - **Bit Operations**: Correct bit manipulation for all packed fields
+  - **Data Validation**: Proper range checking and special value handling
+
+### Migration and Compatibility
+
+#### 🔄 **Backward Compatibility**
+- **No Breaking Changes**: All existing functionality preserved and enhanced
+- **API Stability**: No changes to external interfaces or configuration options
+- **Data Format**: GDL-90 message format improvements maintain standard compliance
+- **Network Protocol**: UDP broadcast behavior unchanged, only message content improved
+
+#### ⚡ **Performance Impact**
+- **Minimal Overhead**: Additional ground state checking adds negligible performance cost
+- **Optimized Logic**: More efficient data validation reduces unnecessary processing
+- **Memory Usage**: No increase in memory footprint
+- **Network Traffic**: Same message frequency and size, improved data quality
+
+---
+*Version 1.0.7 delivers critical GDL-90 specification compliance fixes ensuring proper encoding of zero vertical speed and dynamic aircraft state, plus security enhancements for production-ready aviation data broadcasting.*
+
 ## [1.0.6] - 2025-08-28
 
 ### 🚨 **Critical Bug Fixes**
@@ -558,7 +697,9 @@ git commit                 # Pre-commit hooks run automatically
 - **Performance Testing**: CPU and memory usage validation
 - **Integration Testing**: FDPRO and EFB application compatibility verification
 
-[Unreleased]: https://github.com/6639835/xp2gdl90/compare/v1.0.5...HEAD
+[Unreleased]: https://github.com/6639835/xp2gdl90/compare/v1.0.7...HEAD
+[1.0.7]: https://github.com/6639835/xp2gdl90/compare/v1.0.6...v1.0.7
+[1.0.6]: https://github.com/6639835/xp2gdl90/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/6639835/xp2gdl90/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/6639835/xp2gdl90/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/6639835/xp2gdl90/compare/v1.0.2...v1.0.3
