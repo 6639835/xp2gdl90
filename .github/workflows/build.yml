@@ -114,9 +114,21 @@ jobs:
       run: |
         echo "=== MSVC Environment ==="
         where cl
-        cl
-        echo "=== CMake Generator Check ==="
-        cmake --help | findstr /C:"Visual Studio" || echo "Visual Studio generators available"
+        cl 2>&1 || echo "cl command failed"
+        echo.
+        echo "=== Environment Variables ==="
+        echo GITHUB_ACTIONS: %GITHUB_ACTIONS%
+        echo PATH: %PATH%
+        echo.
+        echo "=== CMake Available Generators ==="
+        cmake --help
+        echo.
+        echo "=== Visual Studio Installations ==="
+        dir "C:\Program Files (x86)\Microsoft Visual Studio" 2>nul || echo "No VS in Program Files (x86)"
+        dir "C:\Program Files\Microsoft Visual Studio" 2>nul || echo "No VS in Program Files"
+        echo.
+        echo "=== Windows SDK ==="
+        dir "C:\Program Files (x86)\Windows Kits" 2>nul || echo "No Windows Kits in Program Files (x86)"
       shell: cmd
     
     - name: Install additional dependencies (Linux)
@@ -124,6 +136,15 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential
+    
+    - name: Clean build directory (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        if (Test-Path "build") {
+            Write-Host "Cleaning existing build directory..."
+            Remove-Item -Path "build" -Recurse -Force
+        }
+      shell: pwsh
     
     - name: Build plugin (Windows)
       if: runner.os == 'Windows'

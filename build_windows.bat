@@ -42,17 +42,41 @@ if not exist "%PROJECT_DIR%SDK" (
 
 echo Running CMake configuration...
 
-REM Try Visual Studio generator first, fall back to NMake if not available
-cmake -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release "%PROJECT_DIR:~0,-1%"
-if errorlevel 1 (
-    echo Visual Studio generator failed, trying Visual Studio 16...
-    cmake -G "Visual Studio 16 2019" -A x64 -DCMAKE_BUILD_TYPE=Release "%PROJECT_DIR:~0,-1%"
+REM Check if this is a CI environment (GitHub Actions)
+if defined GITHUB_ACTIONS (
+    echo Detected CI environment, using NMake Makefiles generator
+    cmake -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release "%PROJECT_DIR:~0,-1%"
     if errorlevel 1 (
-        echo Visual Studio generators failed, trying NMake...
-        cmake -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release "%PROJECT_DIR:~0,-1%"
+        echo CMake configuration failed.
+        exit /b 1
+    )
+) else (
+    REM Try Visual Studio generator first for local development
+    cmake -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release "%PROJECT_DIR:~0,-1%"
+    if errorlevel 1 (
+        echo Visual Studio 2022 generator failed, trying Visual Studio 16...
+        
+        REM Clean build directory on generator change
+        cd /d "%PROJECT_DIR%"
+        if exist "%BUILD_DIR%" rmdir /s /q "%BUILD_DIR%"
+        mkdir "%BUILD_DIR%"
+        cd /d "%BUILD_DIR%"
+        
+        cmake -G "Visual Studio 16 2019" -A x64 -DCMAKE_BUILD_TYPE=Release "%PROJECT_DIR:~0,-1%"
         if errorlevel 1 (
-            echo CMake configuration failed with all generators.
-            exit /b 1
+            echo Visual Studio generators failed, trying NMake...
+            
+            REM Clean build directory on generator change
+            cd /d "%PROJECT_DIR%"
+            if exist "%BUILD_DIR%" rmdir /s /q "%BUILD_DIR%"
+            mkdir "%BUILD_DIR%"
+            cd /d "%BUILD_DIR%"
+            
+            cmake -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release "%PROJECT_DIR:~0,-1%"
+            if errorlevel 1 (
+                echo CMake configuration failed with all generators.
+                exit /b 1
+            )
         )
     )
 )
