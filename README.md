@@ -395,6 +395,7 @@ For a detailed history of changes, see [CHANGELOG.md](CHANGELOG.md).
 
 ### Recent Updates
 
+- **v1.0.8** (2024-09-04): **Major GDL-90 Specification Compliance & Traffic Improvements** + Fixed position validation for equatorial coordinates, aircraft existence detection, callsign processing, and added comprehensive test suite
 - **v1.0.7** (2025-09-04): **Critical GDL-90 Compliance Fixes** + Zero vertical speed handling, dynamic miscellaneous field implementation, enhanced ground state detection, and security improvements
 - **v1.0.6** (2025-08-29): **Traffic Coordinate Duplication Fix** + Resolved major bug where all traffic aircraft reported identical coordinates
 - **v1.0.5** (2025-08-29): **Traffic Data Enhancements** + Real aircraft callsigns, accurate ground speeds, and critical UI configuration fixes
