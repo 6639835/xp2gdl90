@@ -578,26 +578,45 @@ void update_traffic_targets() {
     for (size_t i = 0; i < traffic_targets.size() && i < traffic_lat_datarefs.size(); i++) {
         TrafficTarget& target = traffic_targets[i];
         
-        // *** FIX: Check if aircraft actually exists by validating array data ***
-        // Skip aircraft that show no activity (all zeros = non-existent aircraft)
-        if (target.plane_id < 64) {
+        // *** IMPROVED: Check if aircraft exists using better validation ***
+        // Use position validity as primary indicator of aircraft existence
+        bool aircraft_exists = false;
+        
+        // First check if we have valid position data from individual datarefs
+        if (traffic_lat_datarefs[i] && traffic_lon_datarefs[i]) {
+            double lat = XPLMGetDatad(traffic_lat_datarefs[i]);
+            double lon = XPLMGetDatad(traffic_lon_datarefs[i]);
+            
+            // Aircraft exists if it has any non-zero position (excluding exactly 0,0 which is unlikely)
+            if (lat != 0.0 || lon != 0.0) {
+                aircraft_exists = true;
+            }
+        }
+        
+        // Secondary check: if position is 0,0, check if array data shows activity
+        if (!aircraft_exists && target.plane_id < 64) {
             float aircraft_speed = speed_array[target.plane_id];
             float aircraft_track = psi_array[target.plane_id];
             float aircraft_vs = vs_array[target.plane_id];
             
-            // If speed, track, and vertical speed are all 0.0, aircraft doesn't exist
-            if (aircraft_speed == 0.0f && aircraft_track == 0.0f && aircraft_vs == 0.0f) {
-                target.active = false;
-                continue;  // Skip this aircraft entirely
+            // Aircraft exists if it has any non-zero velocity data
+            if (aircraft_speed != 0.0f || aircraft_track != 0.0f || aircraft_vs != 0.0f) {
+                aircraft_exists = true;
             }
+        }
+        
+        if (!aircraft_exists) {
+            target.active = false;
+            continue;  // Skip this aircraft entirely
         }
         
         bool updated = false;
         
-        // Read position data
+        // Read position data - FIXED: Don't reject valid coordinates near 0°,0°
         if (traffic_lat_datarefs[i]) {
             double lat = XPLMGetDatad(traffic_lat_datarefs[i]);
-            if (fabs(lat) > 0.00001) {
+            // Accept any latitude in valid range (-90 to +90 degrees)
+            if (lat >= -90.0 && lat <= 90.0) {
                 target.data.lat = lat;
                 updated = true;
             }
@@ -605,7 +624,8 @@ void update_traffic_targets() {
         
         if (traffic_lon_datarefs[i]) {
             double lon = XPLMGetDatad(traffic_lon_datarefs[i]);
-            if (fabs(lon) > 0.00001) {
+            // Accept any longitude in valid range (-180 to +180 degrees)  
+            if (lon >= -180.0 && lon <= 180.0) {
                 target.data.lon = lon;
                 updated = true;
             }
@@ -613,16 +633,21 @@ void update_traffic_targets() {
         
         if (traffic_alt_datarefs[i]) {
             double alt = XPLMGetDatad(traffic_alt_datarefs[i]);
-            if (fabs(alt) > 1.0) {
+            // IMPROVED: Accept any reasonable altitude (X-Plane uses meters, convert to feet)
+            // X-Plane altitude range is typically -1000m to +100000m 
+            if (alt >= -1000.0 && alt <= 100000.0) {
                 target.data.alt = alt * 3.28084; // m to ft
                 updated = true;
             }
         }
         
-        // Read array data (plane_id is 1-based, but arrays are 0-based with plane 0 being ownship)
+        // Read array data - CLARIFIED: Array indexing relationship
+        // Individual datarefs: plane1_lat, plane2_lat, etc. (1-based)
+        // Array datarefs: Index 0 = ownship, Index 1 = plane1, Index 2 = plane2, etc.
+        // So target.plane_id (which is i+1) correctly maps to array[plane_id] for AI aircraft
         if (target.plane_id < 64) {
-            target.data.vs = vs_array[target.plane_id];
-            target.data.track = psi_array[target.plane_id];
+            target.data.vs = vs_array[target.plane_id];  // Already in feet/minute per X-Plane TCAS spec
+            target.data.track = psi_array[target.plane_id];  // Track angle in degrees
             target.data.speed = speed_array[target.plane_id] * 1.94384; // m/s to knots
             target.data.on_ground = false;  // Assume traffic is airborne (no individual ground state dataref available)
         }
@@ -655,11 +680,17 @@ void update_traffic_targets() {
                         memset(target.callsign, ' ', 8);  // Fill with spaces
                         target.callsign[8] = '\0';        // Null terminate
                         
-                        // Copy flight ID, limiting to 8 characters, only printable ASCII
+                        // FIXED: Copy flight ID including spaces as per GDL-90 spec
+                        // GDL-90 allows '0'-'9', 'A'-'Z', and space characters
                         int j = 0;
                         for (int k = 0; k < 7 && j < 8; k++) {
-                            if (flight_id[k] >= 32 && flight_id[k] <= 126 && flight_id[k] != ' ') {
-                                target.callsign[j++] = toupper(flight_id[k]);  // Convert to uppercase
+                            char c = flight_id[k];
+                            if (c == '\0') break;  // End of string
+                            
+                            // Allow digits, letters, and spaces as per GDL-90 spec section 3.5.1.11
+                            if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || 
+                                (c >= 'a' && c <= 'z') || c == ' ') {
+                                target.callsign[j++] = toupper(c);  // Convert to uppercase
                             }
                         }
                         
