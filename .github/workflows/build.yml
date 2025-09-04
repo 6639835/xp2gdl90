@@ -98,10 +98,26 @@ jobs:
       with:
         cmake-version: '3.16.0'  # Minimum version required
     
+    - name: Set up MSVC (Windows)
+      if: runner.os == 'Windows'
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
+    
     - name: Verify CMake installation
       run: |
         echo "=== CMake Version ==="
         cmake --version
+    
+    - name: Verify MSVC environment (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        echo "=== MSVC Environment ==="
+        where cl
+        cl
+        echo "=== CMake Generator Check ==="
+        cmake --help | findstr /C:"Visual Studio" || echo "Visual Studio generators available"
+      shell: cmd
     
     - name: Install additional dependencies (Linux)
       if: runner.os == 'Linux'

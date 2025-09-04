@@ -41,10 +41,20 @@ if not exist "%PROJECT_DIR%SDK" (
 )
 
 echo Running CMake configuration...
-cmake -DCMAKE_BUILD_TYPE=Release "%PROJECT_DIR:~0,-1%"
+
+REM Try Visual Studio generator first, fall back to NMake if not available
+cmake -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release "%PROJECT_DIR:~0,-1%"
 if errorlevel 1 (
-    echo CMake configuration failed.
-    exit /b 1
+    echo Visual Studio generator failed, trying Visual Studio 16...
+    cmake -G "Visual Studio 16 2019" -A x64 -DCMAKE_BUILD_TYPE=Release "%PROJECT_DIR:~0,-1%"
+    if errorlevel 1 (
+        echo Visual Studio generators failed, trying NMake...
+        cmake -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release "%PROJECT_DIR:~0,-1%"
+        if errorlevel 1 (
+            echo CMake configuration failed with all generators.
+            exit /b 1
+        )
+    )
 )
 
 echo Starting compilation...
