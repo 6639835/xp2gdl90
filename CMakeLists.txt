@@ -88,8 +88,6 @@ elseif(WIN32)
     # Compiler flags
     if(MSVC)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4 /EHsc")
-        # Runtime library
-        set_property(TARGET ${PLUGIN_NAME} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     endif()
     
     # X-Plane specific definitions
@@ -116,6 +114,11 @@ elseif(WIN32)
         RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_CURRENT_BINARY_DIR}"
         RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_CURRENT_BINARY_DIR}"
     )
+    
+    # Runtime library (must be set after target is created)
+    if(MSVC)
+        set_property(TARGET ${PLUGIN_NAME} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
     
     # Link against XPLM library
     target_link_libraries(${PLUGIN_NAME} PRIVATE
