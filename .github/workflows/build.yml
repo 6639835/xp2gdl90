@@ -1,0 +1,257 @@
+name: Build XP2GDL90
+
+on:
+  push:
+    branches: [ main, master, develop ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    
+    - name: Setup MSVC
+      uses: ilammy/msvc-dev-cmd@v1
+    
+    - name: Configure CMake
+      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+    
+    - name: Build
+      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+    
+    - name: Verify Build
+      run: |
+        if (Test-Path "build/${{env.BUILD_TYPE}}/win.xpl") {
+          Write-Host "✓ Build successful: win.xpl"
+          Get-Item "build/${{env.BUILD_TYPE}}/win.xpl" | Format-List
+        } else {
+          Write-Error "✗ Build failed: win.xpl not found"
+          exit 1
+        }
+      shell: pwsh
+    
+    - name: Package
+      run: |
+        mkdir -p package/xp2gdl90/64
+        cp build/${{env.BUILD_TYPE}}/win.xpl package/xp2gdl90/64/
+        cp xp2gdl90.ini package/xp2gdl90/
+        cp README.md package/xp2gdl90/
+        cp LICENSE package/xp2gdl90/
+    
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: xp2gdl90-windows
+        path: package/
+
+  build-macos:
+    name: Build macOS
+    runs-on: macos-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    
+    - name: Configure CMake
+      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+    
+    - name: Build
+      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+    
+    - name: Verify Build
+      run: |
+        if [ -f "build/mac.xpl" ]; then
+          echo "✓ Build successful: mac.xpl"
+          ls -lh build/mac.xpl
+          file build/mac.xpl
+          lipo -info build/mac.xpl
+        else
+          echo "✗ Build failed: mac.xpl not found"
+          exit 1
+        fi
+    
+    - name: Package
+      run: |
+        mkdir -p package/xp2gdl90
+        cp build/mac.xpl package/xp2gdl90/
+        cp xp2gdl90.ini package/xp2gdl90/
+        cp README.md package/xp2gdl90/
+        cp LICENSE package/xp2gdl90/
+    
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: xp2gdl90-macos
+        path: package/
+
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-20.04
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake
+    
+    - name: Configure CMake
+      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+    
+    - name: Build
+      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+    
+    - name: Verify Build
+      run: |
+        if [ -f "build/lin.xpl" ]; then
+          echo "✓ Build successful: lin.xpl"
+          ls -lh build/lin.xpl
+          file build/lin.xpl
+        else
+          echo "✗ Build failed: lin.xpl not found"
+          exit 1
+        fi
+    
+    - name: Package
+      run: |
+        mkdir -p package/xp2gdl90/64
+        cp build/lin.xpl package/xp2gdl90/64/
+        cp xp2gdl90.ini package/xp2gdl90/
+        cp README.md package/xp2gdl90/
+        cp LICENSE package/xp2gdl90/
+    
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: xp2gdl90-linux
+        path: package/
+
+  create-release:
+    name: Create Release
+    needs: [build-windows, build-macos, build-linux]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+    - name: Download Windows Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: xp2gdl90-windows
+        path: windows/
+    
+    - name: Download macOS Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: xp2gdl90-macos
+        path: macos/
+    
+    - name: Download Linux Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: xp2gdl90-linux
+        path: linux/
+    
+    - name: Create Combined Package
+      run: |
+        mkdir -p xp2gdl90/64
+        # Copy platform-specific binaries
+        # macOS plugin goes in root directory
+        cp macos/xp2gdl90/mac.xpl xp2gdl90/
+        # Windows and Linux plugins go in 64/ subdirectory
+        cp windows/xp2gdl90/64/win.xpl xp2gdl90/64/
+        cp linux/xp2gdl90/64/lin.xpl xp2gdl90/64/
+        # Copy common files (using Windows as source)
+        cp windows/xp2gdl90/xp2gdl90.ini xp2gdl90/
+        cp windows/xp2gdl90/README.md xp2gdl90/
+        cp windows/xp2gdl90/LICENSE xp2gdl90/
+        # Create ZIP
+        zip -r xp2gdl90-${{github.ref_name}}.zip xp2gdl90/
+    
+    - name: Generate checksums
+      run: |
+        sha256sum xp2gdl90-${{github.ref_name}}.zip > xp2gdl90-${{github.ref_name}}.zip.sha256
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          xp2gdl90-${{github.ref_name}}.zip
+          xp2gdl90-${{github.ref_name}}.zip.sha256
+        draft: false
+        prerelease: false
+        body: |
+          ## 🚀 XP2GDL90 ${{github.ref_name}}
+          
+          A high-performance X-Plane 12 plugin that broadcasts flight data in GDL90 format to ForeFlight, Garmin Pilot, and other EFB applications.
+          
+          ### 📦 Installation
+          
+          1. **Download** `xp2gdl90-${{github.ref_name}}.zip` (all platforms included)
+          2. **Extract** the ZIP file
+          3. **Copy** the `xp2gdl90` folder to:
+             ```
+             X-Plane 12/Resources/plugins/xp2gdl90/
+             ```
+          4. **Configure** your settings in `xp2gdl90.ini`:
+             - Set `target_ip` to your iPad/tablet IP address
+             - Adjust `target_port` if needed (default: 4000)
+          5. **Start** X-Plane 12
+          
+          ### 📁 Package Structure
+          
+          ```
+          xp2gdl90/
+          ├── mac.xpl              # macOS (Universal: Intel + Apple Silicon)
+          ├── 64/
+          │   ├── win.xpl         # Windows 64-bit
+          │   └── lin.xpl         # Linux 64-bit
+          ├── xp2gdl90.ini        # Configuration file
+          ├── README.md           # Documentation
+          └── LICENSE             # MIT License
+          ```
+          
+          ### ✅ Supported Platforms
+          
+          - **Windows** 64-bit
+          - **macOS** Universal (Intel x86_64 + Apple Silicon arm64)
+          - **Linux** 64-bit
+          
+          ### ✨ Features
+          
+          - 🛩️ Real-time ownship position broadcasting
+          - 📡 GDL90 Heartbeat and Position Report messages
+          - ⚙️ Configurable update rates and accuracy settings
+          - 🔧 INI-based configuration (no GUI required)
+          - ⚡ Minimal CPU usage (< 0.1%)
+          - 🌐 Compatible with ForeFlight, Garmin Pilot, WingX, etc.
+          
+          ### 🔐 Verification
+          
+          SHA-256 checksum is provided for download verification.
+          
+          ### 📖 Documentation
+          
+          For detailed setup instructions, troubleshooting, and configuration options, see the included `README.md` or visit the [GitHub repository](https://github.com/6639835/xp2gdl90).
+          
+          ### 🐛 Issues & Support
+          
+          If you encounter any problems, please [open an issue](https://github.com/6639835/xp2gdl90/issues).
+      env:
+        GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+

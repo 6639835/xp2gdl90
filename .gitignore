@@ -1,0 +1,83 @@
+# Build directories
+build/
+cmake-build-*/
+out/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Compiled files
+*.o
+*.obj
+*.so
+*.dylib
+*.dll
+*.lib
+*.a
+*.xpl
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+!CMakeLists.txt
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.vcxproj.filters
+*.vcxproj.user
+x64/
+Debug/
+Release/
+
+# Xcode
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+DerivedData/
+
+# Package files
+*.zip
+*.tar.gz
+*.7z
+package/
+
+# Logs
+*.log
+Log.txt
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# OS specific
+Thumbs.db
+.fuse_hidden*
+.directory
+.Trash-*
+nohup.out
+
+# Python (for original standalone version)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+*.egg-info/
+
+# Temporary files
+*.tmp
+*.temp
+
