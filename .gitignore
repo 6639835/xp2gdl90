@@ -15,9 +15,11 @@ out/
 *.o
 *.obj
 *.so
+!SDK/Libraries/**/*.so
 *.dylib
 *.dll
 *.lib
+!SDK/Libraries/**/*.lib
 *.a
 *.xpl
 
@@ -71,7 +73,6 @@ nohup.out
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
 .Python
 env/
 venv/
