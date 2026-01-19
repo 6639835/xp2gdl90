@@ -12,11 +12,14 @@ set(PLUGIN_NAME "xp2gdl90")
 set(SDK_PATH "${CMAKE_SOURCE_DIR}/SDK")
 
 # Source files
-set(SOURCES
-    src/main.cpp
+set(CORE_SOURCES
     src/gdl90_encoder.cpp
     src/udp_broadcaster.cpp
     src/config.cpp
+)
+
+set(PLUGIN_SOURCES
+    src/main.cpp
 )
 
 set(HEADERS
@@ -24,6 +27,15 @@ set(HEADERS
     include/xp2gdl90/udp_broadcaster.h
     include/xp2gdl90/config.h
 )
+
+# Core library (shared between plugin and tests)
+add_library(xp2gdl90_core STATIC ${CORE_SOURCES} ${HEADERS})
+target_include_directories(xp2gdl90_core PUBLIC ${CMAKE_SOURCE_DIR}/include)
+if(APPLE)
+    set_target_properties(xp2gdl90_core PROPERTIES
+        OSX_ARCHITECTURES "x86_64;arm64"
+    )
+endif()
 
 # Platform-specific configurations
 if(APPLE)
@@ -56,7 +68,7 @@ if(APPLE)
     )
     
     # Create plugin library
-    add_library(${PLUGIN_NAME} MODULE ${SOURCES} ${HEADERS})
+    add_library(${PLUGIN_NAME} MODULE ${PLUGIN_SOURCES})
     
     # Set output name
     set_target_properties(${PLUGIN_NAME} PROPERTIES
@@ -67,6 +79,7 @@ if(APPLE)
     
     # Link against XPLM framework
     target_link_libraries(${PLUGIN_NAME} PRIVATE
+        xp2gdl90_core
         "-F${SDK_PATH}/Libraries/Mac"
         "-framework XPLM"
         "-framework XPWidgets"
@@ -104,7 +117,7 @@ elseif(WIN32)
     )
     
     # Create plugin library
-    add_library(${PLUGIN_NAME} MODULE ${SOURCES} ${HEADERS})
+    add_library(${PLUGIN_NAME} MODULE ${PLUGIN_SOURCES})
     
     # Set output name
     set_target_properties(${PLUGIN_NAME} PROPERTIES
@@ -123,6 +136,7 @@ elseif(WIN32)
     
     # Link against XPLM library
     target_link_libraries(${PLUGIN_NAME} PRIVATE
+        xp2gdl90_core
         ${SDK_PATH}/Libraries/Win/XPLM_64.lib
         ${SDK_PATH}/Libraries/Win/XPWidgets_64.lib
         ws2_32  # Windows sockets
@@ -158,7 +172,7 @@ elseif(UNIX AND NOT APPLE)
     )
     
     # Create plugin library
-    add_library(${PLUGIN_NAME} MODULE ${SOURCES} ${HEADERS})
+    add_library(${PLUGIN_NAME} MODULE ${PLUGIN_SOURCES})
     
     # Set output name
     set_target_properties(${PLUGIN_NAME} PROPERTIES
@@ -169,6 +183,7 @@ elseif(UNIX AND NOT APPLE)
     
     # Link against XPLM library
     target_link_libraries(${PLUGIN_NAME} PRIVATE
+        xp2gdl90_core
         ${SDK_PATH}/Libraries/Lin/XPLM_64.so
         ${SDK_PATH}/Libraries/Lin/XPWidgets_64.so
         dl  # Dynamic link library
@@ -198,6 +213,20 @@ message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")
 if(APPLE)
     message(STATUS "Target Architectures: ${CMAKE_OSX_ARCHITECTURES}")
     message(STATUS "macOS Deployment Target: ${CMAKE_OSX_DEPLOYMENT_TARGET}")
+endif()
+
+# Tests
+option(XP2GDL90_BUILD_TESTS "Build XP2GDL90 tests" OFF)
+if(XP2GDL90_BUILD_TESTS)
+    enable_testing()
+    add_executable(xp2gdl90_tests
+        tests/test_main.cpp
+        tests/test_config.cpp
+        tests/test_gdl90_encoder.cpp
+        tests/test_udp_broadcaster.cpp
+    )
+    target_link_libraries(xp2gdl90_tests PRIVATE xp2gdl90_core)
+    add_test(NAME xp2gdl90_tests COMMAND xp2gdl90_tests)
 endif()
 
 # Package creation

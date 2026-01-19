@@ -11,7 +11,7 @@ A high-performance X-Plane 12 plugin that broadcasts real-time flight data in GD
 - **High Performance**: Native C++ plugin, minimal CPU overhead
 - **Cross-Platform**: Windows, macOS (Universal), and Linux support
 - **Fully Configurable**: INI-based configuration for all settings
-- **Standards Compliant**: Implements GDL90 Data Interface Specification (Rev A)
+- **Standards Based**: GDL90 framing/CRC/byte-stuffing per Rev A (message subset below)
 - **Easy Setup**: No external dependencies, works out of the box
 
 ## Quick Start
@@ -222,16 +222,18 @@ Then check `X-Plane 12/Log.txt` for detailed output.
 
 ## GDL90 Protocol Details
 
-This plugin implements the following GDL90 messages:
+This plugin currently transmits a subset of GDL90 messages:
 
 | Message ID | Name | Description |
 |------------|------|-------------|
 | 0x00 | Heartbeat | Status and timing information (1 Hz) |
 | 0x0A | Ownship Report | Own aircraft position and status |
 
+Other GDL90 message types (e.g., Traffic, Uplink Data, Ownship Geometric Altitude) are not transmitted yet.
+
 ### Message Format
 
-All messages follow the GDL90 specification:
+All transmitted messages follow the GDL90 framing rules:
 - CRC-16-CCITT error checking
 - Byte stuffing for 0x7D and 0x7E characters
 - Flag bytes (0x7E) for message framing
