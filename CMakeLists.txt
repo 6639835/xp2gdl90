@@ -9,7 +9,7 @@ if(MSVC)
     # Keep a consistent dynamic CRT across all targets/libraries.
     function(set_msvc_runtime target_name)
         set_property(TARGET ${target_name} PROPERTY
-            MSVC_RUNTIME_LIBRARY "MultiThreadedDLL$<$<CONFIG:Debug>:Debug>"
+            MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
         )
     endfunction()
 endif()
