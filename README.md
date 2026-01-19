@@ -5,16 +5,16 @@
 
 A high-performance X-Plane 12 plugin that broadcasts real-time flight data in GDL90 format via UDP. Compatible with ForeFlight, Garmin Pilot, WingX, and other Electronic Flight Bag (EFB) applications.
 
-## ✨ Features
+## Features
 
-- 🛩️ **Real-time Position Broadcasting**: Ownship position, altitude, speed, and heading
-- ⚡ **High Performance**: Native C++ plugin, minimal CPU overhead
-- 🌐 **Cross-Platform**: Windows, macOS (Universal), and Linux support
-- ⚙️ **Fully Configurable**: INI-based configuration for all settings
-- 📡 **Standards Compliant**: Implements GDL90 Data Interface Specification (Rev A)
-- 🔧 **Easy Setup**: No external dependencies, works out of the box
+- **Real-time Position Broadcasting**: Ownship position, altitude, speed, and heading
+- **High Performance**: Native C++ plugin, minimal CPU overhead
+- **Cross-Platform**: Windows, macOS (Universal), and Linux support
+- **Fully Configurable**: INI-based configuration for all settings
+- **Standards Compliant**: Implements GDL90 Data Interface Specification (Rev A)
+- **Easy Setup**: No external dependencies, works out of the box
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Installation
 
@@ -54,16 +54,16 @@ emitter_category = 1         # 1 = Light aircraft
 2. Tap your connected network
 3. Note the **IP address**
 
-## 📱 Compatible Applications
+## Compatible Applications
 
 | Application | Port | Tested |
 |------------|------|--------|
-| ForeFlight | 4000 | ✅ Yes |
-| Garmin Pilot | 4000 | ✅ Yes |
-| WingX Pro | 4000 | ⚠️ Not tested |
-| FltPlan Go | 4000 | ⚠️ Not tested |
+| ForeFlight | 4000 | Yes |
+| Garmin Pilot | 4000 | Yes |
+| WingX Pro | 4000 | Not tested |
+| FltPlan Go | 4000 | Not tested |
 
-## 🔧 Building from Source
+## Building from Source
 
 ### Prerequisites
 
@@ -108,7 +108,7 @@ The plugin will be built in `build/` directory:
 - macOS: `mac.xpl` (Universal binary)
 - Linux: `lin.xpl`
 
-## 📖 Configuration Reference
+## Configuration Reference
 
 ### Network Settings
 
@@ -158,7 +158,7 @@ nacp = 11                    # Navigation Accuracy Category
                              # RECOMMENDED: Use 11 for best EFB compatibility
 ```
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Plugin doesn't load
 
@@ -184,10 +184,10 @@ nacp = 11                    # Navigation Accuracy Category
 **Important:** Many EFB applications (especially ForeFlight and Garmin Pilot) **filter out low-accuracy GPS reports**. The default configuration uses `nic=11` and `nacp=11` (highest accuracy) to ensure compatibility with all EFB apps.
 
 **Checklist:**
-1. ✅ Verify `nic = 11` and `nacp = 11` in `xp2gdl90.ini`
-2. ✅ Confirm plugin is enabled (check Plugins menu → XP2GDL90)
-3. ✅ Ensure GPS is available in X-Plane (not in a hangar, GPS panel powered on)
-4. ✅ Check X-Plane's `Log.txt` for `[XP2GDL90] Plugin enabled` message
+1. Verify `nic = 11` and `nacp = 11` in `xp2gdl90.ini`
+2. Confirm plugin is enabled (check Plugins menu → XP2GDL90)
+3. Ensure GPS is available in X-Plane (not in a hangar, GPS panel powered on)
+4. Check X-Plane's `Log.txt` for `[XP2GDL90] Plugin enabled` message
 
 ### EFB app not receiving data
 
@@ -220,7 +220,7 @@ log_messages = true      # Log raw message hex dumps
 
 Then check `X-Plane 12/Log.txt` for detailed output.
 
-## 📊 GDL90 Protocol Details
+## GDL90 Protocol Details
 
 This plugin implements the following GDL90 messages:
 
@@ -236,7 +236,7 @@ All messages follow the GDL90 specification:
 - Byte stuffing for 0x7D and 0x7E characters
 - Flag bytes (0x7E) for message framing
 
-## 🔬 Technical Details
+## Technical Details
 
 ### Architecture
 
@@ -271,7 +271,7 @@ EFB Application
 | `sim/flightmodel/failures/onground_any` | Airborne status |
 | `sim/aircraft/view/acf_tailnum` | Aircraft tail number (callsign) |
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
@@ -286,23 +286,23 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 3. Test in X-Plane 12
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - [X-Plane SDK](https://developer.x-plane.com/sdk/) - Laminar Research
 - [GDL90 Specification](https://www.faa.gov/) - Garmin/FAA
 - Inspired by the original Python implementation
 
-## 📞 Support
+## Support
 
 - **Issues**: [GitHub Issues](https://github.com/6639835/xp2gdl90/issues)
 - **Documentation**: [Wiki](https://github.com/6639835/xp2gdl90/wiki)
 - **Discussions**: [GitHub Discussions](https://github.com/6639835/xp2gdl90/discussions)
 
-## 🗺️ Roadmap
+## Roadmap
 
 - [ ] Geometric altitude support (XPLM 4.1 feature)
 - [ ] GUI configuration panel
@@ -312,5 +312,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Made with ❤️ for the flight simulation community**
-
+**Made with love for the flight simulation community**

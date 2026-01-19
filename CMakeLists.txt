@@ -46,7 +46,7 @@ if(APPLE)
     
     # X-Plane specific definitions
     add_definitions(-DAPL=1 -DIBM=0 -DLIN=0)
-    add_definitions(-DXPLM200=1 -DXPLM300=1 -DXPLM400=1 -DXPLM410=1)
+    add_definitions(-DXPLM200=1 -DXPLM300=1 -DXPLM400=1 -DXPLM410=1 -DXPLM411=1)
     
     # Include directories
     include_directories(
@@ -92,7 +92,7 @@ elseif(WIN32)
     
     # X-Plane specific definitions
     add_definitions(-DAPL=0 -DIBM=1 -DLIN=0)
-    add_definitions(-DXPLM200=1 -DXPLM300=1 -DXPLM400=1 -DXPLM410=1)
+    add_definitions(-DXPLM200=1 -DXPLM300=1 -DXPLM400=1 -DXPLM410=1 -DXPLM411=1)
     add_definitions(-D_CRT_SECURE_NO_WARNINGS)
     
     # Include directories
@@ -146,7 +146,7 @@ elseif(UNIX AND NOT APPLE)
     
     # X-Plane specific definitions
     add_definitions(-DAPL=0 -DIBM=0 -DLIN=1)
-    add_definitions(-DXPLM200=1 -DXPLM300=1 -DXPLM400=1 -DXPLM410=1)
+    add_definitions(-DXPLM200=1 -DXPLM300=1 -DXPLM400=1 -DXPLM410=1 -DXPLM411=1)
     
     # Include directories
     include_directories(

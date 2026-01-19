@@ -199,11 +199,11 @@ jobs:
         draft: false
         prerelease: false
         body: |
-          ## 🚀 XP2GDL90 ${{github.ref_name}}
+          ## XP2GDL90 ${{github.ref_name}}
           
           A high-performance X-Plane 12 plugin that broadcasts flight data in GDL90 format to ForeFlight, Garmin Pilot, and other EFB applications.
           
-          ### 📦 Installation
+          ### Installation
           
           1. **Download** `xp2gdl90-${{github.ref_name}}.zip` (all platforms included)
           2. **Extract** the ZIP file
@@ -216,7 +216,7 @@ jobs:
              - Adjust `target_port` if needed (default: 4000)
           5. **Start** X-Plane 12
           
-          ### 📁 Package Structure
+          ### Package Structure
           
           ```
           xp2gdl90/
@@ -229,32 +229,31 @@ jobs:
           └── LICENSE             # MIT License
           ```
           
-          ### ✅ Supported Platforms
+          ### Supported Platforms
           
           - **Windows** 64-bit
           - **macOS** Universal (Intel x86_64 + Apple Silicon arm64)
           - **Linux** 64-bit
           
-          ### ✨ Features
+          ### Features
           
-          - 🛩️ Real-time ownship position broadcasting
-          - 📡 GDL90 Heartbeat and Position Report messages
-          - ⚙️ Configurable update rates and accuracy settings
-          - 🔧 INI-based configuration (no GUI required)
-          - ⚡ Minimal CPU usage (< 0.1%)
-          - 🌐 Compatible with ForeFlight, Garmin Pilot, WingX, etc.
+          - Real-time ownship position broadcasting
+          - GDL90 Heartbeat and Position Report messages
+          - Configurable update rates and accuracy settings
+          - INI-based configuration (no GUI required)
+          - Minimal CPU usage (< 0.1%)
+          - Compatible with ForeFlight, Garmin Pilot, WingX, etc.
           
-          ### 🔐 Verification
+          ### Verification
           
           SHA-256 checksum is provided for download verification.
           
-          ### 📖 Documentation
+          ### Documentation
           
           For detailed setup instructions, troubleshooting, and configuration options, see the included `README.md` or visit the [GitHub repository](https://github.com/6639835/xp2gdl90).
           
-          ### 🐛 Issues & Support
+          ### Issues & Support
           
           If you encounter any problems, please [open an issue](https://github.com/6639835/xp2gdl90/issues).
       env:
         GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
-
