@@ -69,6 +69,7 @@ if(APPLE)
     target_link_libraries(${PLUGIN_NAME} PRIVATE
         "-F${SDK_PATH}/Libraries/Mac"
         "-framework XPLM"
+        "-framework XPWidgets"
         "-framework CoreFoundation"
     )
     
@@ -123,6 +124,7 @@ elseif(WIN32)
     # Link against XPLM library
     target_link_libraries(${PLUGIN_NAME} PRIVATE
         ${SDK_PATH}/Libraries/Win/XPLM_64.lib
+        ${SDK_PATH}/Libraries/Win/XPWidgets_64.lib
         ws2_32  # Windows sockets
     )
     
@@ -168,6 +170,7 @@ elseif(UNIX AND NOT APPLE)
     # Link against XPLM library
     target_link_libraries(${PLUGIN_NAME} PRIVATE
         ${SDK_PATH}/Libraries/Lin/XPLM_64.so
+        ${SDK_PATH}/Libraries/Lin/XPWidgets_64.so
         dl  # Dynamic link library
     )
     

@@ -10,11 +10,12 @@
 
 #include <XPLMDataAccess.h>
 #include <XPLMDisplay.h>
-#include <XPLMGraphics.h>
 #include <XPLMMenus.h>
 #include <XPLMPlugin.h>
 #include <XPLMProcessing.h>
 #include <XPLMUtilities.h>
+#include <XPStandardWidgets.h>
+#include <XPWidgets.h>
 
 #include <array>
 #include <cctype>
@@ -67,17 +68,6 @@ constexpr std::array<FieldDef, 11> kFieldDefs = {{
     {FieldId::LogMessages, "Log Messages"},
 }};
 
-struct Rect {
-  int l = 0;
-  int t = 0;
-  int r = 0;
-  int b = 0;
-
-  bool Contains(int x, int y) const {
-    return x >= l && x <= r && y <= t && y >= b;
-  }
-};
-
 struct PluginState {
   std::unique_ptr<gdl90::GDL90Encoder> encoder;
   std::unique_ptr<udp::UDPBroadcaster> broadcaster;
@@ -103,10 +93,13 @@ struct PluginState {
   int menu_item_enable = 0;
   int menu_item_settings = 0;
 
-  XPLMWindowID window_id = nullptr;
-  bool window_visible = false;
-  int active_field = -1;
-  std::string edit_buffer;
+  XPWidgetID settings_widget = nullptr;
+  XPWidgetID settings_panel = nullptr;
+  XPWidgetID status_caption = nullptr;
+  XPWidgetID apply_button = nullptr;
+  XPWidgetID save_button = nullptr;
+  XPWidgetID close_button = nullptr;
+  std::array<XPWidgetID, static_cast<size_t>(FieldId::Count)> field_widgets = {};
   std::array<std::string, static_cast<size_t>(FieldId::Count)> field_values;
   std::string config_path;
 };
@@ -118,40 +111,19 @@ float FlightLoopCallback(float in_elapsed_since_last_call,
                          int in_counter,
                          void* in_refcon);
 void MenuHandlerCallback(void* in_menu_ref, void* in_item_ref);
-void DrawSettingsWindow(XPLMWindowID in_window_id, void* in_refcon);
-int HandleSettingsMouseClick(XPLMWindowID in_window_id,
-                             int x,
-                             int y,
-                             XPLMMouseStatus status,
-                             void* in_refcon);
-void HandleSettingsKey(XPLMWindowID in_window_id,
-                       char in_key,
-                       XPLMKeyFlags in_flags,
-                       char in_virtual_key,
-                       void* in_refcon,
-                       int losing_focus);
-XPLMCursorStatus HandleSettingsCursor(XPLMWindowID in_window_id,
-                                      int x,
-                                      int y,
-                                      void* in_refcon);
-int HandleSettingsMouseWheel(XPLMWindowID in_window_id,
-                             int x,
-                             int y,
-                             int wheel,
-                             int clicks,
-                             void* in_refcon);
-int HandleSettingsRightClick(XPLMWindowID in_window_id,
-                             int x,
-                             int y,
-                             XPLMMouseStatus status,
-                             void* in_refcon);
+int SettingsWidgetCallback(XPWidgetMessage in_message,
+                           XPWidgetID in_widget,
+                           intptr_t in_param1,
+                           intptr_t in_param2);
 
 void SyncFieldsFromConfig();
 bool ApplyFieldsToConfig();
 bool SaveConfig();
 void ShowSettingsWindow(bool show);
-Rect GetFieldRect(int index, int left, int top);
-Rect GetButtonRect(int index, int left, int bottom);
+void CreateSettingsWindow();
+void DestroySettingsWindow();
+void UpdateStatusCaption();
+void ReadFieldsFromWidgets();
 std::string FormatHex24(uint32_t value);
 std::string ToLower(const std::string& value);
 bool ReloadConfigFromDisk();
@@ -267,6 +239,55 @@ std::string ToLower(const std::string& value) {
   return lowered;
 }
 
+bool IsCheckboxField(FieldId field_id) {
+  return field_id == FieldId::DebugLogging || field_id == FieldId::LogMessages;
+}
+
+void UpdateStatusCaption() {
+  if (!g_state.status_caption) {
+    return;
+  }
+  const config::Config& cfg = g_state.config_manager->getConfig();
+  std::string status = g_state.enabled ? "Broadcasting: ON"
+                                       : "Broadcasting: OFF";
+  status += " (" + cfg.target_ip + ":" + std::to_string(cfg.target_port) + ")";
+  XPSetWidgetDescriptor(g_state.status_caption, status.c_str());
+}
+
+void ReadFieldsFromWidgets() {
+  if (!g_state.settings_widget) {
+    return;
+  }
+
+  char buffer[128] = {};
+  for (size_t i = 0; i < kFieldDefs.size(); ++i) {
+    const FieldId field_id = kFieldDefs[i].id;
+    XPWidgetID widget = g_state.field_widgets[i];
+    if (!widget) {
+      continue;
+    }
+
+    if (IsCheckboxField(field_id)) {
+      const int state =
+          static_cast<int>(XPGetWidgetProperty(widget, xpProperty_ButtonState,
+                                               nullptr));
+      g_state.field_values[i] = state ? "true" : "false";
+      continue;
+    }
+
+    const int length =
+        XPGetWidgetDescriptor(widget, buffer, static_cast<int>(sizeof(buffer)));
+    if (length > 0 && length < static_cast<int>(sizeof(buffer))) {
+      buffer[length] = '\0';
+    } else if (length <= 0) {
+      buffer[0] = '\0';
+    } else {
+      buffer[sizeof(buffer) - 1] = '\0';
+    }
+    g_state.field_values[i] = buffer;
+  }
+}
+
 void SyncFieldsFromConfig() {
   const config::Config& cfg = g_state.config_manager->getConfig();
   g_state.field_values[static_cast<size_t>(FieldId::TargetIp)] = cfg.target_ip;
@@ -289,6 +310,27 @@ void SyncFieldsFromConfig() {
       cfg.debug_logging ? "true" : "false";
   g_state.field_values[static_cast<size_t>(FieldId::LogMessages)] =
       cfg.log_messages ? "true" : "false";
+
+  if (!g_state.settings_widget) {
+    return;
+  }
+
+  for (size_t i = 0; i < kFieldDefs.size(); ++i) {
+    const FieldId field_id = kFieldDefs[i].id;
+    XPWidgetID widget = g_state.field_widgets[i];
+    if (!widget) {
+      continue;
+    }
+
+    if (IsCheckboxField(field_id)) {
+      const bool enabled = (g_state.field_values[i] == "true");
+      XPSetWidgetProperty(widget, xpProperty_ButtonState, enabled ? 1 : 0);
+    } else {
+      XPSetWidgetDescriptor(widget, g_state.field_values[i].c_str());
+    }
+  }
+
+  UpdateStatusCaption();
 }
 
 bool ParseBool(const std::string& value, bool* out_value) {
@@ -444,263 +486,214 @@ bool ReloadConfigFromDisk() {
   return true;
 }
 
-Rect GetFieldRect(int index, int left, int top) {
-  const int row_height = 22;
-  const int field_left = left + 160;
-  const int field_right = left + 360;
-  const int field_top = top - 50 - (index * row_height);
-  return {field_left, field_top, field_right, field_top - 18};
-}
-
-Rect GetButtonRect(int index, int left, int bottom) {
-  const int button_width = 90;
-  const int button_height = 22;
-  const int spacing = 10;
-  const int start_left = left + 20;
-  const int button_left = start_left + index * (button_width + spacing);
-  return {button_left, bottom + 12 + button_height, button_left + button_width,
-          bottom + 12};
-}
-
 void ShowSettingsWindow(bool show) {
-  if (!g_state.window_id) {
+  if (!g_state.settings_widget) {
+    CreateSettingsWindow();
+  }
+  if (!g_state.settings_widget) {
     return;
   }
-  g_state.window_visible = show;
-  XPLMSetWindowIsVisible(g_state.window_id, show ? 1 : 0);
   if (show) {
     SyncFieldsFromConfig();
-    g_state.active_field = -1;
-    g_state.edit_buffer.clear();
-    XPLMBringWindowToFront(g_state.window_id);
+    XPShowWidget(g_state.settings_widget);
+    XPLMWindowID window = XPGetWidgetUnderlyingWindow(g_state.settings_widget);
+    if (window) {
+      XPLMBringWindowToFront(window);
+    }
+  } else {
+    XPHideWidget(g_state.settings_widget);
   }
 }
 
-void DrawSettingsWindow(XPLMWindowID in_window_id, void* in_refcon) {
-  (void)in_refcon;
+void CreateSettingsWindow() {
+  if (g_state.settings_widget) {
+    return;
+  }
 
-  int left = 0;
-  int top = 0;
-  int right = 0;
-  int bottom = 0;
-  XPLMGetWindowGeometry(in_window_id, &left, &top, &right, &bottom);
+  XPLMEnableFeature("XPLM_USE_NATIVE_WIDGET_WINDOWS", 1);
 
-  XPLMDrawTranslucentDarkBox(left, top, right, bottom);
+  int screen_left = 0;
+  int screen_top = 0;
+  int screen_right = 0;
+  int screen_bottom = 0;
+  XPLMGetScreenBoundsGlobal(&screen_left, &screen_top, &screen_right,
+                            &screen_bottom);
 
-  float color_white[] = {1.0f, 1.0f, 1.0f};
-  float color_yellow[] = {1.0f, 0.85f, 0.1f};
+  const int window_width = 460;
+  const int window_height = 360;
+  const int window_left =
+      screen_left + (screen_right - screen_left - window_width) / 2;
+  const int window_top =
+      screen_top - (screen_top - screen_bottom - window_height) / 2;
+  const int window_right = window_left + window_width;
+  const int window_bottom = window_top - window_height;
 
-  XPLMDrawString(color_white, left + 14, top - 24,
-                 const_cast<char*>("XP2GDL90 Settings"), nullptr,
-                 xplmFont_Proportional);
+  g_state.settings_widget = XPCreateWidget(window_left, window_top,
+                                           window_right, window_bottom, 0,
+                                           "XP2GDL90 Settings", 1, nullptr,
+                                           xpWidgetClass_MainWindow);
+  if (!g_state.settings_widget) {
+    return;
+  }
+
+  XPSetWidgetProperty(g_state.settings_widget, xpProperty_MainWindowType,
+                      xpMainWindowStyle_Translucent);
+  XPSetWidgetProperty(g_state.settings_widget, xpProperty_MainWindowHasCloseBoxes,
+                      1);
+  XPAddWidgetCallback(g_state.settings_widget, SettingsWidgetCallback);
+
+  const int panel_left = window_left + 10;
+  const int panel_top = window_top - 30;
+  const int panel_right = window_right - 10;
+  const int panel_bottom = window_bottom + 60;
+  g_state.settings_panel = XPCreateWidget(panel_left, panel_top, panel_right,
+                                          panel_bottom, 1, "", 0,
+                                          g_state.settings_widget,
+                                          xpWidgetClass_SubWindow);
+  XPSetWidgetProperty(g_state.settings_panel, xpProperty_SubWindowType,
+                      xpSubWindowStyle_SubWindow);
+
+  const int label_left = panel_left + 10;
+  const int label_right = label_left + 150;
+  const int field_left = label_right + 10;
+  const int field_right = field_left + 210;
+  const int row_height = 22;
+  const int first_row_top = panel_top - 20;
 
   for (size_t i = 0; i < kFieldDefs.size(); ++i) {
-    const Rect rect = GetFieldRect(static_cast<int>(i), left, top);
-    XPLMDrawString(color_white, left + 20, rect.t - 12,
-                   const_cast<char*>(kFieldDefs[i].label), nullptr,
-                   xplmFont_Proportional);
+    const int row_top = first_row_top - static_cast<int>(i) * row_height;
+    const int row_bottom = row_top - 18;
 
-    const bool active = (g_state.active_field == static_cast<int>(i));
-    XPLMDrawTranslucentDarkBox(rect.l, rect.t, rect.r, rect.b);
+    XPCreateWidget(label_left, row_top, label_right, row_bottom, 1,
+                   kFieldDefs[i].label, 0, g_state.settings_panel,
+                   xpWidgetClass_Caption);
 
-    const std::string& value = active ? g_state.edit_buffer
-                                      : g_state.field_values[i];
-    XPLMDrawString(active ? color_yellow : color_white, rect.l + 6,
-                   rect.t - 12, const_cast<char*>(value.c_str()), nullptr,
-                   xplmFont_Proportional);
+    if (IsCheckboxField(kFieldDefs[i].id)) {
+      XPWidgetID checkbox = XPCreateWidget(field_left, row_top, field_left + 20,
+                                           row_bottom, 1, "", 0,
+                                           g_state.settings_panel,
+                                           xpWidgetClass_Button);
+      XPSetWidgetProperty(checkbox, xpProperty_ButtonType, xpRadioButton);
+      XPSetWidgetProperty(checkbox, xpProperty_ButtonBehavior,
+                          xpButtonBehaviorCheckBox);
+      g_state.field_widgets[i] = checkbox;
+    } else {
+      XPWidgetID field = XPCreateWidget(field_left, row_top, field_right,
+                                        row_bottom, 1, "", 0,
+                                        g_state.settings_panel,
+                                        xpWidgetClass_TextField);
+      XPSetWidgetProperty(field, xpProperty_TextFieldType, xpTextEntryField);
+      XPSetWidgetProperty(field, xpProperty_MaxCharacters, 64);
+      g_state.field_widgets[i] = field;
+    }
   }
 
-  const Rect apply_rect = GetButtonRect(0, left, bottom);
-  const Rect save_rect = GetButtonRect(1, left, bottom);
-  const Rect close_rect = GetButtonRect(2, left, bottom);
+  const int button_top = panel_bottom - 10;
+  const int button_bottom = button_top - 20;
+  const int button_width = 90;
+  const int button_gap = 10;
+  const int button_left = panel_left + 10;
+  g_state.apply_button = XPCreateWidget(button_left, button_top,
+                                        button_left + button_width,
+                                        button_bottom, 1, "Apply", 0,
+                                        g_state.settings_panel,
+                                        xpWidgetClass_Button);
+  XPSetWidgetProperty(g_state.apply_button, xpProperty_ButtonType, xpPushButton);
+  XPSetWidgetProperty(g_state.apply_button, xpProperty_ButtonBehavior,
+                      xpButtonBehaviorPushButton);
 
-  XPLMDrawTranslucentDarkBox(apply_rect.l, apply_rect.t, apply_rect.r,
-                            apply_rect.b);
-  XPLMDrawTranslucentDarkBox(save_rect.l, save_rect.t, save_rect.r,
-                            save_rect.b);
-  XPLMDrawTranslucentDarkBox(close_rect.l, close_rect.t, close_rect.r,
-                            close_rect.b);
+  const int save_left = button_left + button_width + button_gap;
+  g_state.save_button = XPCreateWidget(save_left, button_top,
+                                       save_left + button_width, button_bottom,
+                                       1, "Save", 0,
+                                       g_state.settings_panel,
+                                       xpWidgetClass_Button);
+  XPSetWidgetProperty(g_state.save_button, xpProperty_ButtonType, xpPushButton);
+  XPSetWidgetProperty(g_state.save_button, xpProperty_ButtonBehavior,
+                      xpButtonBehaviorPushButton);
 
-  XPLMDrawString(color_white, apply_rect.l + 20, apply_rect.t - 15,
-                 const_cast<char*>("Apply"), nullptr, xplmFont_Proportional);
-  XPLMDrawString(color_white, save_rect.l + 24, save_rect.t - 15,
-                 const_cast<char*>("Save"), nullptr, xplmFont_Proportional);
-  XPLMDrawString(color_white, close_rect.l + 20, close_rect.t - 15,
-                 const_cast<char*>("Close"), nullptr, xplmFont_Proportional);
+  const int close_left = save_left + button_width + button_gap;
+  g_state.close_button = XPCreateWidget(close_left, button_top,
+                                        close_left + button_width,
+                                        button_bottom, 1, "Close", 0,
+                                        g_state.settings_panel,
+                                        xpWidgetClass_Button);
+  XPSetWidgetProperty(g_state.close_button, xpProperty_ButtonType, xpPushButton);
+  XPSetWidgetProperty(g_state.close_button, xpProperty_ButtonBehavior,
+                      xpButtonBehaviorPushButton);
 
-  const config::Config& cfg = g_state.config_manager->getConfig();
-  std::string status = g_state.enabled ? "Broadcasting: ON"
-                                       : "Broadcasting: OFF";
-  status += " (" + cfg.target_ip + ":" + std::to_string(cfg.target_port) + ")";
-  XPLMDrawString(color_white, left + 20, bottom + 42,
-                 const_cast<char*>(status.c_str()), nullptr,
-                 xplmFont_Proportional);
+  const int status_top = panel_bottom + 25;
+  const int status_bottom = status_top - 18;
+  g_state.status_caption =
+      XPCreateWidget(panel_left + 10, status_top, panel_right, status_bottom, 1,
+                     "", 0, g_state.settings_panel, xpWidgetClass_Caption);
+
+  XPLMWindowID window = XPGetWidgetUnderlyingWindow(g_state.settings_widget);
+  if (window) {
+    XPLMSetWindowPositioningMode(window, xplm_WindowPositionFree, -1);
+  }
+
+  SyncFieldsFromConfig();
 }
 
-int HandleSettingsMouseClick(XPLMWindowID in_window_id,
-                             int x,
-                             int y,
-                             XPLMMouseStatus status,
-                             void* in_refcon) {
-  (void)in_window_id;
-  (void)in_refcon;
-
-  if (status != xplm_MouseDown) {
-    return 1;
+void DestroySettingsWindow() {
+  if (!g_state.settings_widget) {
+    return;
   }
+  XPDestroyWidget(g_state.settings_widget, 1);
+  g_state.settings_widget = nullptr;
+  g_state.settings_panel = nullptr;
+  g_state.status_caption = nullptr;
+  g_state.apply_button = nullptr;
+  g_state.save_button = nullptr;
+  g_state.close_button = nullptr;
+  g_state.field_widgets.fill(nullptr);
+}
 
-  int left = 0;
-  int top = 0;
-  int right = 0;
-  int bottom = 0;
-  XPLMGetWindowGeometry(g_state.window_id, &left, &top, &right, &bottom);
+int SettingsWidgetCallback(XPWidgetMessage in_message,
+                           XPWidgetID in_widget,
+                           intptr_t in_param1,
+                           intptr_t in_param2) {
+  (void)in_widget;
+  (void)in_param2;
 
-  const Rect apply_rect = GetButtonRect(0, left, bottom);
-  const Rect save_rect = GetButtonRect(1, left, bottom);
-  const Rect close_rect = GetButtonRect(2, left, bottom);
-
-  if (apply_rect.Contains(x, y)) {
-    if (g_state.active_field >= 0) {
-      g_state.field_values[static_cast<size_t>(g_state.active_field)] =
-          g_state.edit_buffer;
-      g_state.active_field = -1;
-      g_state.edit_buffer.clear();
-    }
-    if (ApplyFieldsToConfig()) {
-      SyncFieldsFromConfig();
-    }
-    return 1;
-  }
-  if (save_rect.Contains(x, y)) {
-    if (g_state.active_field >= 0) {
-      g_state.field_values[static_cast<size_t>(g_state.active_field)] =
-          g_state.edit_buffer;
-      g_state.active_field = -1;
-      g_state.edit_buffer.clear();
-    }
-    if (ApplyFieldsToConfig()) {
-      SyncFieldsFromConfig();
-      SaveConfig();
-    }
-    return 1;
-  }
-  if (close_rect.Contains(x, y)) {
+  if (in_message == xpMessage_CloseButtonPushed) {
     ShowSettingsWindow(false);
     return 1;
   }
 
-  for (size_t i = 0; i < kFieldDefs.size(); ++i) {
-    const Rect rect = GetFieldRect(static_cast<int>(i), left, top);
-    if (rect.Contains(x, y)) {
-      g_state.active_field = static_cast<int>(i);
-      g_state.edit_buffer = g_state.field_values[i];
-      XPLMTakeKeyboardFocus(g_state.window_id);
+  if (in_message == xpMsg_PushButtonPressed) {
+    XPWidgetID pressed = reinterpret_cast<XPWidgetID>(in_param1);
+    if (pressed == g_state.apply_button) {
+      ReadFieldsFromWidgets();
+      if (ApplyFieldsToConfig()) {
+        SyncFieldsFromConfig();
+      }
+      return 1;
+    }
+    if (pressed == g_state.save_button) {
+      ReadFieldsFromWidgets();
+      if (ApplyFieldsToConfig()) {
+        SyncFieldsFromConfig();
+        SaveConfig();
+      }
+      return 1;
+    }
+    if (pressed == g_state.close_button) {
+      ShowSettingsWindow(false);
       return 1;
     }
   }
 
-  g_state.active_field = -1;
-  g_state.edit_buffer.clear();
-  return 1;
-}
-
-void HandleSettingsKey(XPLMWindowID in_window_id,
-                       char in_key,
-                       XPLMKeyFlags in_flags,
-                       char in_virtual_key,
-                       void* in_refcon,
-                       int losing_focus) {
-  (void)in_window_id;
-  (void)in_flags;
-  (void)in_virtual_key;
-  (void)in_refcon;
-
-  if (losing_focus) {
-    return;
-  }
-
-  if ((in_flags & xplm_DownFlag) == 0) {
-    return;
-  }
-
-  if (g_state.active_field < 0) {
-    return;
-  }
-
-  if (in_virtual_key == XPLM_VK_BACK) {
-    if (!g_state.edit_buffer.empty()) {
-      g_state.edit_buffer.pop_back();
-    }
-    return;
-  }
-
-  if (in_virtual_key == XPLM_VK_RETURN || in_key == '\r') {
-    g_state.field_values[static_cast<size_t>(g_state.active_field)] =
-        g_state.edit_buffer;
-    g_state.active_field = -1;
-    g_state.edit_buffer.clear();
-    return;
-  }
-
-  if (in_virtual_key == XPLM_VK_TAB) {
-    g_state.field_values[static_cast<size_t>(g_state.active_field)] =
-        g_state.edit_buffer;
-    g_state.active_field =
-        (g_state.active_field + 1) % static_cast<int>(FieldId::Count);
-    g_state.edit_buffer =
-        g_state.field_values[static_cast<size_t>(g_state.active_field)];
-    return;
-  }
-
-  if (in_virtual_key == XPLM_VK_ESCAPE) {
-    g_state.active_field = -1;
-    g_state.edit_buffer.clear();
-    return;
-  }
-
-  if (in_key >= 32 && in_key <= 126) {
-    if (g_state.edit_buffer.size() < 64) {
-      g_state.edit_buffer.push_back(in_key);
+  if (in_message == xpMsg_ButtonStateChanged) {
+    XPWidgetID changed = reinterpret_cast<XPWidgetID>(in_param1);
+    if (changed == g_state.field_widgets[static_cast<size_t>(FieldId::DebugLogging)] ||
+        changed == g_state.field_widgets[static_cast<size_t>(FieldId::LogMessages)]) {
+      ReadFieldsFromWidgets();
+      return 1;
     }
   }
-}
 
-XPLMCursorStatus HandleSettingsCursor(XPLMWindowID in_window_id,
-                                      int x,
-                                      int y,
-                                      void* in_refcon) {
-  (void)in_window_id;
-  (void)x;
-  (void)y;
-  (void)in_refcon;
-  return xplm_CursorDefault;
-}
-
-int HandleSettingsMouseWheel(XPLMWindowID in_window_id,
-                             int x,
-                             int y,
-                             int wheel,
-                             int clicks,
-                             void* in_refcon) {
-  (void)in_window_id;
-  (void)x;
-  (void)y;
-  (void)wheel;
-  (void)clicks;
-  (void)in_refcon;
-  return 0;
-}
-
-int HandleSettingsRightClick(XPLMWindowID in_window_id,
-                             int x,
-                             int y,
-                             XPLMMouseStatus status,
-                             void* in_refcon) {
-  (void)in_window_id;
-  (void)x;
-  (void)y;
-  (void)status;
-  (void)in_refcon;
   return 0;
 }
 
@@ -793,44 +786,7 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
   XPLMAppendMenuItem(g_state.menu_id, "Reload Config",
                      reinterpret_cast<void*>(3), 0);
 
-  int screen_left = 0;
-  int screen_top = 0;
-  int screen_right = 0;
-  int screen_bottom = 0;
-  XPLMGetScreenBoundsGlobal(&screen_left, &screen_top, &screen_right,
-                            &screen_bottom);
-  const int window_width = 420;
-  const int window_height = 340;
-  const int window_left =
-      screen_left + (screen_right - screen_left - window_width) / 2;
-  const int window_top =
-      screen_top - (screen_top - screen_bottom - window_height) / 2;
-  const int window_right = window_left + window_width;
-  const int window_bottom = window_top - window_height;
-
-  XPLMCreateWindow_t window_params = {};
-  window_params.structSize = sizeof(window_params);
-  window_params.left = window_left;
-  window_params.top = window_top;
-  window_params.right = window_right;
-  window_params.bottom = window_bottom;
-  window_params.visible = 0;
-  window_params.drawWindowFunc = DrawSettingsWindow;
-  window_params.handleMouseClickFunc = HandleSettingsMouseClick;
-  window_params.handleKeyFunc = HandleSettingsKey;
-  window_params.handleCursorFunc = HandleSettingsCursor;
-  window_params.handleMouseWheelFunc = HandleSettingsMouseWheel;
-  window_params.handleRightClickFunc = HandleSettingsRightClick;
-  window_params.refcon = nullptr;
-  window_params.layer = xplm_WindowLayerFloatingWindows;
-#if defined(XPLM301)
-  window_params.decorateAsFloatingWindow = xplm_WindowDecorationRoundRectangle;
-#endif
-  g_state.window_id = XPLMCreateWindowEx(&window_params);
-  XPLMSetWindowTitle(g_state.window_id, "XP2GDL90 Settings");
-  XPLMSetWindowPositioningMode(g_state.window_id, xplm_WindowPositionFree, -1);
-  XPLMSetWindowResizingLimits(g_state.window_id, window_width, window_height,
-                              window_width, window_height);
+  CreateSettingsWindow();
 
   g_state.initialized = true;
   LogMessage("Plugin initialized successfully");
@@ -848,10 +804,7 @@ PLUGIN_API void XPluginStop(void) {
   g_state.broadcaster.reset();
   g_state.encoder.reset();
   g_state.config_manager.reset();
-  if (g_state.window_id) {
-    XPLMDestroyWindow(g_state.window_id);
-    g_state.window_id = nullptr;
-  }
+  DestroySettingsWindow();
 
   LogMessage("Plugin stopped");
 }
@@ -868,6 +821,7 @@ PLUGIN_API int XPluginEnable(void) {
   g_state.enabled = true;
   XPLMCheckMenuItem(g_state.menu_id, g_state.menu_item_enable,
                     xplm_Menu_Checked);
+  UpdateStatusCaption();
 
   LogMessage("Plugin enabled - Broadcasting GDL90 data");
   return 1;
@@ -881,6 +835,7 @@ PLUGIN_API void XPluginDisable(void) {
   g_state.enabled = false;
   XPLMCheckMenuItem(g_state.menu_id, g_state.menu_item_enable,
                     xplm_Menu_Unchecked);
+  UpdateStatusCaption();
 
   LogMessage("Plugin disabled");
 }
@@ -934,7 +889,9 @@ void MenuHandlerCallback(void* in_menu_ref, void* in_item_ref) {
   const intptr_t item = reinterpret_cast<intptr_t>(in_item_ref);
   if (item != 1) {
     if (item == 2) {
-      ShowSettingsWindow(!g_state.window_visible);
+      const bool visible = g_state.settings_widget &&
+                           XPIsWidgetVisible(g_state.settings_widget);
+      ShowSettingsWindow(!visible);
     } else if (item == 3) {
       ReloadConfigFromDisk();
     }
