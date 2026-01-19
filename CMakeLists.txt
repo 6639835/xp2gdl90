@@ -7,7 +7,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 if(MSVC)
     # Keep a consistent dynamic CRT across all targets/libraries.
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL$<$<CONFIG:Debug>:Debug>")
+    function(set_msvc_runtime target_name)
+        set_property(TARGET ${target_name} PROPERTY
+            MSVC_RUNTIME_LIBRARY "MultiThreadedDLL$<$<CONFIG:Debug>:Debug>"
+        )
+    endfunction()
 endif()
 
 # Plugin name
@@ -36,6 +40,9 @@ set(HEADERS
 # Core library (shared between plugin and tests)
 add_library(xp2gdl90_core STATIC ${CORE_SOURCES} ${HEADERS})
 target_include_directories(xp2gdl90_core PUBLIC ${CMAKE_SOURCE_DIR}/include)
+if(MSVC)
+    set_msvc_runtime(xp2gdl90_core)
+endif()
 if(APPLE)
     set_target_properties(xp2gdl90_core PROPERTIES
         OSX_ARCHITECTURES "x86_64;arm64"
@@ -123,6 +130,9 @@ elseif(WIN32)
     
     # Create plugin library
     add_library(${PLUGIN_NAME} MODULE ${PLUGIN_SOURCES})
+    if(MSVC)
+        set_msvc_runtime(${PLUGIN_NAME})
+    endif()
     
     # Set output name
     set_target_properties(${PLUGIN_NAME} PROPERTIES
@@ -134,7 +144,7 @@ elseif(WIN32)
         RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_CURRENT_BINARY_DIR}"
     )
     
-    # Runtime library set globally for MSVC; no per-target override.
+    # Runtime library set per-target for MSVC.
     
     # Link against XPLM library
     target_link_libraries(${PLUGIN_NAME} PRIVATE
@@ -228,6 +238,9 @@ if(XP2GDL90_BUILD_TESTS)
         tests/test_udp_broadcaster.cpp
     )
     target_link_libraries(xp2gdl90_tests PRIVATE xp2gdl90_core)
+    if(MSVC)
+        set_msvc_runtime(xp2gdl90_tests)
+    endif()
     add_test(NAME xp2gdl90_tests COMMAND xp2gdl90_tests)
 endif()
 
