@@ -20,9 +20,9 @@ set(SOURCES
 )
 
 set(HEADERS
-    src/gdl90_encoder.h
-    src/udp_broadcaster.h
-    src/config.h
+    include/xp2gdl90/gdl90_encoder.h
+    include/xp2gdl90/udp_broadcaster.h
+    include/xp2gdl90/config.h
 )
 
 # Platform-specific configurations
@@ -52,7 +52,7 @@ if(APPLE)
     include_directories(
         ${SDK_PATH}/CHeaders/XPLM
         ${SDK_PATH}/CHeaders/Widgets
-        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/include
     )
     
     # Create plugin library
@@ -99,7 +99,7 @@ elseif(WIN32)
     include_directories(
         ${SDK_PATH}/CHeaders/XPLM
         ${SDK_PATH}/CHeaders/Widgets
-        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/include
     )
     
     # Create plugin library
@@ -152,7 +152,7 @@ elseif(UNIX AND NOT APPLE)
     include_directories(
         ${SDK_PATH}/CHeaders/XPLM
         ${SDK_PATH}/CHeaders/Widgets
-        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/include
     )
     
     # Create plugin library
