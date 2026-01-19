@@ -5,6 +5,11 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+if(MSVC)
+    # Keep a consistent dynamic CRT across all targets/libraries.
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL$<$<CONFIG:Debug>:Debug>")
+endif()
+
 # Plugin name
 set(PLUGIN_NAME "xp2gdl90")
 
@@ -129,10 +134,7 @@ elseif(WIN32)
         RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_CURRENT_BINARY_DIR}"
     )
     
-    # Runtime library (must be set after target is created)
-    if(MSVC)
-        set_property(TARGET ${PLUGIN_NAME} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-    endif()
+    # Runtime library set globally for MSVC; no per-target override.
     
     # Link against XPLM library
     target_link_libraries(${PLUGIN_NAME} PRIVATE
