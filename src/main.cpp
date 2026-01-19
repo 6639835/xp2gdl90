@@ -208,8 +208,42 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     g_state.sim_time_ref = XPLMFindDataRef("sim/time/total_flight_time_sec");
     g_state.tailnum_ref = XPLMFindDataRef("sim/aircraft/view/acf_tailnum");  // Aircraft tail number
     
-    // Verify critical datarefs
-    if (!g_state.lat_ref || !g_state.lon_ref || !g_state.alt_ref) {
+    // Verify required datarefs
+    bool datarefs_ok = true;
+    if (!g_state.lat_ref) {
+        LogMessage("ERROR: Missing dataref sim/flightmodel/position/latitude");
+        datarefs_ok = false;
+    }
+    if (!g_state.lon_ref) {
+        LogMessage("ERROR: Missing dataref sim/flightmodel/position/longitude");
+        datarefs_ok = false;
+    }
+    if (!g_state.alt_ref) {
+        LogMessage("ERROR: Missing dataref sim/flightmodel/position/elevation");
+        datarefs_ok = false;
+    }
+    if (!g_state.speed_ref) {
+        LogMessage("ERROR: Missing dataref sim/flightmodel/position/groundspeed");
+        datarefs_ok = false;
+    }
+    if (!g_state.track_ref) {
+        LogMessage("ERROR: Missing dataref sim/flightmodel/position/true_psi");
+        datarefs_ok = false;
+    }
+    if (!g_state.vs_ref) {
+        LogMessage("ERROR: Missing dataref sim/flightmodel/position/vh_ind_fpm");
+        datarefs_ok = false;
+    }
+    if (!g_state.airborne_ref) {
+        LogMessage("ERROR: Missing dataref sim/flightmodel/failures/onground_any");
+        datarefs_ok = false;
+    }
+    if (!g_state.sim_time_ref) {
+        LogMessage("ERROR: Missing dataref sim/time/total_flight_time_sec");
+        datarefs_ok = false;
+    }
+
+    if (!datarefs_ok) {
         LogMessage("ERROR: Failed to find required datarefs");
         return 0;
     }
@@ -295,14 +329,16 @@ static float FlightLoopCallback(float inElapsedSinceLastCall,
     const config::Config& cfg = g_state.config_manager->getConfig();
     
     // Send heartbeat
-    if (sim_time - g_state.last_heartbeat >= (1.0f / cfg.heartbeat_rate)) {
+    if (cfg.heartbeat_rate > 0.0f &&
+        sim_time - g_state.last_heartbeat >= (1.0f / cfg.heartbeat_rate)) {
         auto heartbeat = g_state.encoder->createHeartbeat(true, true);
         g_state.broadcaster->send(heartbeat);
         g_state.last_heartbeat = sim_time;
     }
     
     // Send ownship position
-    if (sim_time - g_state.last_position >= (1.0f / cfg.position_rate)) {
+    if (cfg.position_rate > 0.0f &&
+        sim_time - g_state.last_position >= (1.0f / cfg.position_rate)) {
         gdl90::PositionData ownship = GetOwnshipData(cfg);
         auto position_msg = g_state.encoder->createOwnshipReport(ownship);
         g_state.broadcaster->send(position_msg);
@@ -328,4 +364,3 @@ static void MenuHandlerCallback(void* inMenuRef, void* inItemRef) {
         }
     }
 }
-

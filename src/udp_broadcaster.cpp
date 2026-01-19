@@ -107,7 +107,10 @@ int UDPBroadcaster::send(const uint8_t* data, size_t size) {
     target_addr.sin_port = htons(target_port_);
     
 #ifdef _WIN32
-    target_addr.sin_addr.S_un.S_addr = inet_addr(target_ip_.c_str());
+    if (inet_pton(AF_INET, target_ip_.c_str(), &target_addr.sin_addr) != 1) {
+        last_error_ = "Invalid IP address: " + target_ip_;
+        return -1;
+    }
 #else
     if (inet_pton(AF_INET, target_ip_.c_str(), &target_addr.sin_addr) <= 0) {
         last_error_ = "Invalid IP address: " + target_ip_;
@@ -161,4 +164,3 @@ void UDPBroadcaster::close() {
 }
 
 } // namespace udp
-

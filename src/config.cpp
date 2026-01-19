@@ -38,7 +38,9 @@ std::string ConfigManager::trim(const std::string& str) {
 
 bool ConfigManager::parseBool(const std::string& value) {
     std::string lower = value;
-    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
     return (lower == "true" || lower == "yes" || lower == "1" || lower == "on");
 }
 
@@ -75,7 +77,11 @@ void ConfigManager::parseLine(const std::string& line) {
     if (key == "target_ip") {
         config_.target_ip = value;
     } else if (key == "target_port") {
-        config_.target_port = static_cast<uint16_t>(std::stoi(value));
+        unsigned long port = std::stoul(value);
+        if (port == 0 || port > 65535) {
+            throw std::out_of_range("target_port must be 1-65535");
+        }
+        config_.target_port = static_cast<uint16_t>(port);
     } else if (key == "icao_address") {
         // Support both decimal and hex (0xABCDEF)
         if (value.substr(0, 2) == "0x" || value.substr(0, 2) == "0X") {
@@ -89,9 +95,17 @@ void ConfigManager::parseLine(const std::string& line) {
     } else if (key == "emitter_category") {
         config_.emitter_category = static_cast<uint8_t>(std::stoi(value));
     } else if (key == "heartbeat_rate") {
-        config_.heartbeat_rate = std::stof(value);
+        float rate = std::stof(value);
+        if (rate <= 0.0f) {
+            throw std::out_of_range("heartbeat_rate must be > 0");
+        }
+        config_.heartbeat_rate = rate;
     } else if (key == "position_rate") {
-        config_.position_rate = std::stof(value);
+        float rate = std::stof(value);
+        if (rate <= 0.0f) {
+            throw std::out_of_range("position_rate must be > 0");
+        }
+        config_.position_rate = rate;
     } else if (key == "nic") {
         config_.nic = static_cast<uint8_t>(std::stoi(value));
     } else if (key == "nacp") {
@@ -110,6 +124,8 @@ bool ConfigManager::load(const std::string& filename) {
         return false;
     }
     
+    Config original = config_;
+    bool had_error = false;
     std::string line;
     while (std::getline(file, line)) {
         try {
@@ -117,10 +133,16 @@ bool ConfigManager::load(const std::string& filename) {
         } catch (const std::exception& e) {
             last_error_ = "Error parsing line: " + line + " (" + e.what() + ")";
             // Continue parsing other lines
+            had_error = true;
         }
     }
     
     file.close();
+    if (had_error) {
+        config_ = original;
+        return false;
+    }
+    
     last_error_ = "";
     return true;
 }
@@ -162,4 +184,3 @@ bool ConfigManager::save(const std::string& filename) {
 }
 
 } // namespace config
-
