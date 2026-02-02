@@ -15,6 +15,7 @@
 #include <XPLMProcessing.h>
 #include <XPLMUtilities.h>
 
+#include <algorithm>
 #include <array>
 #include <cfloat>
 #include <cctype>
@@ -34,6 +35,17 @@
 
 #include "xp2gdl90/gdl90_encoder.h"
 #include "xp2gdl90/udp_broadcaster.h"
+
+#ifdef _WIN32
+// X-Plane SDK headers may include Windows headers that define min/max macros.
+// Undefine them so std::min/std::max and std::numeric_limits<>::min/max work.
+#ifdef min
+#undef min
+#endif
+#ifdef max
+#undef max
+#endif
+#endif
 
 PLUGIN_API int XPluginEnable(void);
 PLUGIN_API void XPluginDisable(void);
@@ -172,7 +184,7 @@ int16_t ClampFpmToInt16OrInvalid(float fpm) {
   // INT16_MIN is reserved as invalid sentinel in the encoder; avoid producing it.
   constexpr float kMin = static_cast<float>(std::numeric_limits<int16_t>::min() + 1);
   constexpr float kMax = static_cast<float>(std::numeric_limits<int16_t>::max());
-  const float clamped = std::max(kMin, std::min(kMax, fpm));
+  const float clamped = (std::max)(kMin, (std::min)(kMax, fpm));
   return static_cast<int16_t>(clamped);
 }
 
