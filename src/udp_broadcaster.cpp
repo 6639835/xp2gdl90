@@ -80,7 +80,11 @@ class DefaultSocketOpsImpl final : public SocketOps {
   }
 
   int InetPton(int af, const char* src, void* dst) override {
+#ifdef _WIN32
+    return ::InetPtonA(af, src, dst);
+#else
     return ::inet_pton(af, src, dst);
+#endif
   }
 
   intptr_t SendTo(uintptr_t socket_handle, const void* buf, size_t len,
