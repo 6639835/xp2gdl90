@@ -241,6 +241,7 @@ int UDPBroadcaster::send(const uint8_t* data, size_t size) {
     return -1;
   }
 
+  last_error_.clear();
   return static_cast<int>(sent);
 }
 

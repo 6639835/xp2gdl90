@@ -18,13 +18,16 @@
 #include <array>
 #include <cfloat>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
 #include <iomanip>
+#include <limits>
 #include <memory>
 #include <sstream>
 #include <string>
+#include <string_view>
 
 #include "backends/imgui_impl_opengl2.h"
 #include "imgui.h"
@@ -144,6 +147,44 @@ std::string Trim(const std::string& input) {
   return input.substr(start, end - start + 1);
 }
 
+template <typename Int, typename Float>
+Int ClampFloatToInt(Float value) {
+  static_assert(std::numeric_limits<Int>::is_integer, "Int must be integral");
+
+  if (!std::isfinite(static_cast<double>(value))) {
+    return Int{0};
+  }
+
+  const double v = static_cast<double>(value);
+  const double lo = static_cast<double>(std::numeric_limits<Int>::min());
+  const double hi = static_cast<double>(std::numeric_limits<Int>::max());
+
+  if (v <= lo) return std::numeric_limits<Int>::min();
+  if (v >= hi) return std::numeric_limits<Int>::max();
+  return static_cast<Int>(value);
+}
+
+int16_t ClampFpmToInt16OrInvalid(float fpm) {
+  if (!std::isfinite(static_cast<double>(fpm))) {
+    return std::numeric_limits<int16_t>::min();  // INT16_MIN sentinel => invalid.
+  }
+
+  // INT16_MIN is reserved as invalid sentinel in the encoder; avoid producing it.
+  constexpr float kMin = static_cast<float>(std::numeric_limits<int16_t>::min() + 1);
+  constexpr float kMax = static_cast<float>(std::numeric_limits<int16_t>::max());
+  const float clamped = std::max(kMin, std::min(kMax, fpm));
+  return static_cast<int16_t>(clamped);
+}
+
+uint16_t NormalizeDegreesToUint16(float degrees) {
+  if (!std::isfinite(static_cast<double>(degrees))) {
+    return 0;
+  }
+  double d = std::fmod(static_cast<double>(degrees), 360.0);
+  if (d < 0.0) d += 360.0;
+  return ClampFloatToInt<uint16_t>(d);
+}
+
 std::string ReadTailNumber() {
   if (!g_state.tailnum_ref) {
     return "";
@@ -208,14 +249,14 @@ gdl90::PositionData GetOwnshipData(const Settings& cfg) {
   data.longitude = XPLMGetDatad(g_state.lon_ref);
 
   const double altitude_meters = XPLMGetDatad(g_state.alt_ref);
-  data.altitude = static_cast<int32_t>(altitude_meters * kMetersToFeet);
+  data.altitude = ClampFloatToInt<int32_t>(altitude_meters * kMetersToFeet);
 
   const float speed_ms = XPLMGetDataf(g_state.speed_ref);
-  data.h_velocity = static_cast<uint16_t>(speed_ms * kMetersPerSecondToKnots);
+  data.h_velocity = ClampFloatToInt<uint16_t>(speed_ms * kMetersPerSecondToKnots);
 
-  data.v_velocity = static_cast<int16_t>(XPLMGetDataf(g_state.vs_ref));
+  data.v_velocity = ClampFpmToInt16OrInvalid(XPLMGetDataf(g_state.vs_ref));
 
-  data.track = static_cast<uint16_t>(XPLMGetDataf(g_state.track_ref));
+  data.track = NormalizeDegreesToUint16(XPLMGetDataf(g_state.track_ref));
   data.track_type = gdl90::TrackType::TRUE_TRACK;
 
   const int on_ground = XPLMGetDatai(g_state.airborne_ref);
@@ -246,41 +287,55 @@ bool SaveSettingsToDisk(std::string* out_error) {
     return false;
   }
 
-  auto json_escape = [](const std::string& input) -> std::string {
-    std::string out;
-    out.reserve(input.size());
-    for (char ch : input) {
+  auto write_json_string = [&file](std::string_view input) {
+    file << '"';
+    for (unsigned char ch : input) {
       switch (ch) {
         case '\\':
-          out += "\\\\";
+          file << "\\\\";
           break;
         case '"':
-          out += "\\\"";
+          file << "\\\"";
+          break;
+        case '\b':
+          file << "\\b";
+          break;
+        case '\f':
+          file << "\\f";
           break;
         case '\n':
-          out += "\\n";
+          file << "\\n";
           break;
         case '\r':
-          out += "\\r";
+          file << "\\r";
           break;
         case '\t':
-          out += "\\t";
+          file << "\\t";
           break;
         default:
-          out += ch;
+          if (ch < 0x20) {
+            static const char kHex[] = "0123456789ABCDEF";
+            file << "\\u00" << kHex[(ch >> 4) & 0xF] << kHex[ch & 0xF];
+          } else {
+            file << static_cast<char>(ch);
+          }
           break;
       }
     }
-    return out;
+    file << '"';
   };
 
   // Minimal JSON (no external deps).
   const Settings& s = g_state.settings;
   file << "{\n";
-  file << "  \"target_ip\": \"" << json_escape(s.target_ip) << "\",\n";
+  file << "  \"target_ip\": ";
+  write_json_string(s.target_ip);
+  file << ",\n";
   file << "  \"target_port\": " << static_cast<unsigned int>(s.target_port) << ",\n";
   file << "  \"icao_address\": " << static_cast<unsigned int>(s.icao_address & 0xFFFFFFu) << ",\n";
-  file << "  \"callsign\": \"" << json_escape(s.callsign) << "\",\n";
+  file << "  \"callsign\": ";
+  write_json_string(s.callsign);
+  file << ",\n";
   file << "  \"emitter_category\": " << static_cast<unsigned int>(s.emitter_category) << ",\n";
   file << "  \"heartbeat_rate\": " << s.heartbeat_rate << ",\n";
   file << "  \"position_rate\": " << s.position_rate << ",\n";
@@ -297,65 +352,202 @@ bool SaveSettingsToDisk(std::string* out_error) {
   return true;
 }
 
-std::string ExtractJsonString(const std::string& text, const char* key) {
-  const std::string needle = std::string("\"") + key + "\"";
-  const size_t pos = text.find(needle);
-  if (pos == std::string::npos) return "";
-  const size_t colon = text.find(':', pos + needle.size());
-  if (colon == std::string::npos) return "";
-  const size_t first_quote = text.find('"', colon + 1);
-  if (first_quote == std::string::npos) return "";
-  const size_t second_quote = text.find('"', first_quote + 1);
-  if (second_quote == std::string::npos) return "";
-  return text.substr(first_quote + 1, second_quote - first_quote - 1);
-}
+namespace json_detail {
 
-bool ExtractJsonNumber(const std::string& text, const char* key, double* out_value) {
-  if (!out_value) return false;
-  const std::string needle = std::string("\"") + key + "\"";
-  const size_t pos = text.find(needle);
-  if (pos == std::string::npos) return false;
-  const size_t colon = text.find(':', pos + needle.size());
-  if (colon == std::string::npos) return false;
-  size_t start = text.find_first_not_of(" \t\r\n", colon + 1);
-  if (start == std::string::npos) return false;
-  size_t end = start;
-  while (end < text.size()) {
-    const char c = text[end];
-    if (!(std::isdigit(static_cast<unsigned char>(c)) || c == '.' || c == '-' || c == '+'
-          || c == 'e' || c == 'E')) {
+struct Cursor {
+  const char* p;
+  const char* end;
+};
+
+void SkipWs(Cursor* c) {
+  while (c->p < c->end) {
+    const unsigned char ch = static_cast<unsigned char>(*c->p);
+    if (ch != ' ' && ch != '\t' && ch != '\r' && ch != '\n') {
       break;
     }
-    ++end;
-  }
-  if (end == start) return false;
-  try {
-    *out_value = std::stod(text.substr(start, end - start));
-    return true;
-  } catch (...) {
-    return false;
+    ++c->p;
   }
 }
 
-bool ExtractJsonBool(const std::string& text, const char* key, bool* out_value) {
-  if (!out_value) return false;
-  const std::string needle = std::string("\"") + key + "\"";
-  const size_t pos = text.find(needle);
-  if (pos == std::string::npos) return false;
-  const size_t colon = text.find(':', pos + needle.size());
-  if (colon == std::string::npos) return false;
-  const size_t start = text.find_first_not_of(" \t\r\n", colon + 1);
-  if (start == std::string::npos) return false;
-  if (text.compare(start, 4, "true") == 0) {
-    *out_value = true;
+bool Consume(Cursor* c, char expected) {
+  SkipWs(c);
+  if (c->p >= c->end || *c->p != expected) {
+    return false;
+  }
+  ++c->p;
+  return true;
+}
+
+bool ParseHexNibble(char ch, uint8_t* out) {
+  if (!out) return false;
+  if (ch >= '0' && ch <= '9') {
+    *out = static_cast<uint8_t>(ch - '0');
     return true;
   }
-  if (text.compare(start, 5, "false") == 0) {
-    *out_value = false;
+  if (ch >= 'a' && ch <= 'f') {
+    *out = static_cast<uint8_t>(10 + (ch - 'a'));
+    return true;
+  }
+  if (ch >= 'A' && ch <= 'F') {
+    *out = static_cast<uint8_t>(10 + (ch - 'A'));
     return true;
   }
   return false;
 }
+
+void AppendUtf8(std::string* out, uint32_t codepoint) {
+  if (!out) return;
+  if (codepoint <= 0x7F) {
+    out->push_back(static_cast<char>(codepoint));
+  } else if (codepoint <= 0x7FF) {
+    out->push_back(static_cast<char>(0xC0 | ((codepoint >> 6) & 0x1F)));
+    out->push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+  } else if (codepoint <= 0xFFFF) {
+    out->push_back(static_cast<char>(0xE0 | ((codepoint >> 12) & 0x0F)));
+    out->push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
+    out->push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+  } else {
+    out->push_back(static_cast<char>(0xF0 | ((codepoint >> 18) & 0x07)));
+    out->push_back(static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F)));
+    out->push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
+    out->push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+  }
+}
+
+bool ParseString(Cursor* c, std::string* out) {
+  if (!Consume(c, '"')) {
+    return false;
+  }
+
+  std::string result;
+  while (c->p < c->end) {
+    const char ch = *c->p++;
+    if (ch == '"') {
+      *out = std::move(result);
+      return true;
+    }
+    if (static_cast<unsigned char>(ch) < 0x20) {
+      return false;
+    }
+    if (ch != '\\') {
+      result.push_back(ch);
+      continue;
+    }
+
+    if (c->p >= c->end) {
+      return false;
+    }
+    const char esc = *c->p++;
+    switch (esc) {
+      case '"':
+      case '\\':
+      case '/':
+        result.push_back(esc);
+        break;
+      case 'b':
+        result.push_back('\b');
+        break;
+      case 'f':
+        result.push_back('\f');
+        break;
+      case 'n':
+        result.push_back('\n');
+        break;
+      case 'r':
+        result.push_back('\r');
+        break;
+      case 't':
+        result.push_back('\t');
+        break;
+      case 'u': {
+        if (c->end - c->p < 4) {
+          return false;
+        }
+        uint8_t n0 = 0, n1 = 0, n2 = 0, n3 = 0;
+        if (!ParseHexNibble(c->p[0], &n0) || !ParseHexNibble(c->p[1], &n1) ||
+            !ParseHexNibble(c->p[2], &n2) || !ParseHexNibble(c->p[3], &n3)) {
+          return false;
+        }
+        c->p += 4;
+        const uint32_t codepoint =
+            (static_cast<uint32_t>(n0) << 12) | (static_cast<uint32_t>(n1) << 8) |
+            (static_cast<uint32_t>(n2) << 4) | static_cast<uint32_t>(n3);
+        AppendUtf8(&result, codepoint);
+        break;
+      }
+      default:
+        return false;
+    }
+  }
+  return false;
+}
+
+bool ParseBool(Cursor* c, bool* out) {
+  SkipWs(c);
+  const size_t remaining = static_cast<size_t>(c->end - c->p);
+  if (remaining >= 4 && std::strncmp(c->p, "true", 4) == 0) {
+    c->p += 4;
+    *out = true;
+    return true;
+  }
+  if (remaining >= 5 && std::strncmp(c->p, "false", 5) == 0) {
+    c->p += 5;
+    *out = false;
+    return true;
+  }
+  return false;
+}
+
+bool ParseNumber(Cursor* c, double* out) {
+  SkipWs(c);
+  const char* start = c->p;
+  if (start >= c->end) {
+    return false;
+  }
+  const char* p = start;
+  if (*p == '-' || *p == '+') {
+    ++p;
+  }
+  bool saw_digit = false;
+  while (p < c->end && std::isdigit(static_cast<unsigned char>(*p))) {
+    saw_digit = true;
+    ++p;
+  }
+  if (p < c->end && *p == '.') {
+    ++p;
+    while (p < c->end && std::isdigit(static_cast<unsigned char>(*p))) {
+      saw_digit = true;
+      ++p;
+    }
+  }
+  if (!saw_digit) {
+    return false;
+  }
+  if (p < c->end && (*p == 'e' || *p == 'E')) {
+    ++p;
+    if (p < c->end && (*p == '-' || *p == '+')) {
+      ++p;
+    }
+    bool exp_digit = false;
+    while (p < c->end && std::isdigit(static_cast<unsigned char>(*p))) {
+      exp_digit = true;
+      ++p;
+    }
+    if (!exp_digit) {
+      return false;
+    }
+  }
+
+  try {
+    *out = std::stod(std::string(start, p));
+  } catch (...) {
+    return false;
+  }
+  c->p = p;
+  return true;
+}
+
+}  // namespace json_detail
 
 bool LoadSettingsFromDisk(Settings* out_settings, std::string* out_error) {
   if (!out_settings) return false;
@@ -371,40 +563,132 @@ bool LoadSettingsFromDisk(Settings* out_settings, std::string* out_error) {
 
   Settings s = *out_settings;
 
-  const std::string ip = ExtractJsonString(text, "target_ip");
-  if (!ip.empty()) s.target_ip = ip;
+  json_detail::Cursor c{text.data(), text.data() + text.size()};
+  if (!json_detail::Consume(&c, '{')) {
+    if (out_error) *out_error = "Invalid settings JSON: expected '{'";
+    return false;
+  }
 
-  const std::string callsign = ExtractJsonString(text, "callsign");
-  if (!callsign.empty()) s.callsign = callsign.substr(0, 8);
-
-  double number = 0.0;
-  if (ExtractJsonNumber(text, "target_port", &number)) {
-    if (number >= 1.0 && number <= 65535.0) {
-      s.target_port = static_cast<uint16_t>(static_cast<unsigned int>(number));
+  while (true) {
+    json_detail::SkipWs(&c);
+    if (c.p >= c.end) {
+      if (out_error) *out_error = "Invalid settings JSON: unexpected EOF";
+      return false;
     }
-  }
-  if (ExtractJsonNumber(text, "icao_address", &number)) {
-    s.icao_address = static_cast<uint32_t>(static_cast<unsigned int>(number)) & 0xFFFFFFu;
-  }
-  if (ExtractJsonNumber(text, "emitter_category", &number)) {
-    s.emitter_category = static_cast<uint8_t>(static_cast<unsigned int>(number) & 0xFFu);
-  }
-  if (ExtractJsonNumber(text, "heartbeat_rate", &number)) {
-    if (number > 0.0) s.heartbeat_rate = static_cast<float>(number);
-  }
-  if (ExtractJsonNumber(text, "position_rate", &number)) {
-    if (number > 0.0) s.position_rate = static_cast<float>(number);
-  }
-  if (ExtractJsonNumber(text, "nic", &number)) {
-    s.nic = static_cast<uint8_t>(static_cast<unsigned int>(number) & 0xFFu);
-  }
-  if (ExtractJsonNumber(text, "nacp", &number)) {
-    s.nacp = static_cast<uint8_t>(static_cast<unsigned int>(number) & 0xFFu);
-  }
+    if (*c.p == '}') {
+      ++c.p;
+      break;
+    }
 
-  bool flag = false;
-  if (ExtractJsonBool(text, "debug_logging", &flag)) s.debug_logging = flag;
-  if (ExtractJsonBool(text, "log_messages", &flag)) s.log_messages = flag;
+    std::string key;
+    if (!json_detail::ParseString(&c, &key)) {
+      if (out_error) *out_error = "Invalid settings JSON: expected string key";
+      return false;
+    }
+    if (!json_detail::Consume(&c, ':')) {
+      if (out_error) *out_error = "Invalid settings JSON: expected ':'";
+      return false;
+    }
+
+    if (key == "target_ip" || key == "callsign") {
+      std::string value;
+      if (!json_detail::ParseString(&c, &value)) {
+        if (out_error) *out_error = "Invalid settings JSON: expected string";
+        return false;
+      }
+      if (key == "target_ip") {
+        if (!value.empty()) s.target_ip = value;
+      } else {
+        if (!value.empty()) s.callsign = value.substr(0, 8);
+      }
+    } else if (key == "debug_logging" || key == "log_messages") {
+      bool flag = false;
+      if (!json_detail::ParseBool(&c, &flag)) {
+        if (out_error) *out_error = "Invalid settings JSON: expected boolean";
+        return false;
+      }
+      if (key == "debug_logging") s.debug_logging = flag;
+      if (key == "log_messages") s.log_messages = flag;
+    } else if (key == "target_port" || key == "icao_address" ||
+               key == "emitter_category" || key == "heartbeat_rate" ||
+               key == "position_rate" || key == "nic" || key == "nacp") {
+      double number = 0.0;
+      if (!json_detail::ParseNumber(&c, &number)) {
+        if (out_error) *out_error = "Invalid settings JSON: expected number for key '" + key + "'";
+        return false;
+      }
+
+      if (key == "target_port") {
+        if (number >= 1.0 && number <= 65535.0) {
+          s.target_port = static_cast<uint16_t>(static_cast<unsigned int>(number));
+        }
+      } else if (key == "icao_address") {
+        s.icao_address =
+            static_cast<uint32_t>(static_cast<unsigned int>(number)) & 0xFFFFFFu;
+      } else if (key == "emitter_category") {
+        s.emitter_category =
+            static_cast<uint8_t>(static_cast<unsigned int>(number) & 0xFFu);
+      } else if (key == "heartbeat_rate") {
+        if (number > 0.0) s.heartbeat_rate = static_cast<float>(number);
+      } else if (key == "position_rate") {
+        if (number > 0.0) s.position_rate = static_cast<float>(number);
+      } else if (key == "nic") {
+        s.nic = static_cast<uint8_t>(static_cast<unsigned int>(number) & 0xFFu);
+      } else if (key == "nacp") {
+        s.nacp = static_cast<uint8_t>(static_cast<unsigned int>(number) & 0xFFu);
+      }
+    } else {
+      // Forward-compat: ignore unknown keys (any primitive JSON value).
+      json_detail::SkipWs(&c);
+      if (c.p >= c.end) {
+        if (out_error) *out_error = "Invalid settings JSON: unexpected EOF";
+        return false;
+      }
+      if (*c.p == '"') {
+        std::string ignored;
+        if (!json_detail::ParseString(&c, &ignored)) {
+          if (out_error) *out_error = "Invalid settings JSON: expected string";
+          return false;
+        }
+      } else if (*c.p == 't' || *c.p == 'f') {
+        bool ignored = false;
+        if (!json_detail::ParseBool(&c, &ignored)) {
+          if (out_error) *out_error = "Invalid settings JSON: expected boolean";
+          return false;
+        }
+      } else if (*c.p == 'n') {
+        if (static_cast<size_t>(c.end - c.p) >= 4 &&
+            std::strncmp(c.p, "null", 4) == 0) {
+          c.p += 4;
+        } else {
+          if (out_error) *out_error = "Invalid settings JSON: expected 'null'";
+          return false;
+        }
+      } else {
+        double ignored = 0.0;
+        if (!json_detail::ParseNumber(&c, &ignored)) {
+          if (out_error) *out_error = "Invalid settings JSON: expected number";
+          return false;
+        }
+      }
+    }
+
+    json_detail::SkipWs(&c);
+    if (c.p >= c.end) {
+      if (out_error) *out_error = "Invalid settings JSON: unexpected EOF";
+      return false;
+    }
+    if (*c.p == ',') {
+      ++c.p;
+      continue;
+    }
+    if (*c.p == '}') {
+      ++c.p;
+      break;
+    }
+    if (out_error) *out_error = "Invalid settings JSON: expected ',' or '}'";
+    return false;
+  }
 
   *out_settings = s;
   if (out_error) out_error->clear();
@@ -816,8 +1100,8 @@ void DrawSettingsWindowUI() {
       g_state.settings_last_error = "Failed to reload settings from disk";
     } else {
       SyncSettingsUiFromConfig();
-        }
-      }
+    }
+  }
 }
 
 void SettingsDrawCallback(XPLMWindowID in_window_id, void* in_refcon) {

@@ -118,7 +118,7 @@ uint32_t GDL90Encoder::encodeLongitude(double longitude) const {
 }
 
 uint16_t GDL90Encoder::encodeAltitude(int32_t altitude) const {
-  int32_t encoded = (altitude + 1000) / 25;
+  int64_t encoded = (static_cast<int64_t>(altitude) + 1000) / 25;
 
   if (encoded < 0) {
     encoded = 0;
