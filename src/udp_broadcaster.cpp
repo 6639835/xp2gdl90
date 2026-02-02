@@ -6,6 +6,12 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #pragma comment(lib, "ws2_32.lib")
+// ws2tcpip.h may define InetPton as a macro (e.g. mapping to inet_pton/InetPtonA),
+// which would break our SocketOps::InetPton virtual override (header is included
+// before the macro exists). Ensure we keep the identifier stable.
+#ifdef InetPton
+#undef InetPton
+#endif
 #else
 #include <arpa/inet.h>
 #include <errno.h>
