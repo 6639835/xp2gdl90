@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 #if defined(_WIN32)
 #include <time.h>
@@ -44,6 +45,9 @@ const uint16_t GDL90Encoder::crc16_table_[256] = {
     0x6e17, 0x7e36, 0x4e55, 0x5e74, 0x2e93, 0x3eb2, 0x0ed1, 0x1ef0};
 
 GDL90Encoder::GDL90Encoder() = default;
+
+GDL90Encoder::GDL90Encoder(std::function<uint32_t()> utc_time_provider)
+    : utc_time_provider_(std::move(utc_time_provider)) {}
 
 uint16_t GDL90Encoder::calculateCRC(const std::vector<uint8_t>& data) const {
   uint16_t crc = 0;
@@ -158,6 +162,10 @@ void GDL90Encoder::pack24bit(std::vector<uint8_t>& buffer,
 }
 
 uint32_t GDL90Encoder::getUTCTime() const {
+  if (utc_time_provider_) {
+    return utc_time_provider_();
+  }
+
   std::time_t now = std::time(nullptr);
   std::tm utc{};
 #if defined(_WIN32)

@@ -24,23 +24,17 @@ A high-performance X-Plane 12 plugin that broadcasts real-time flight data in GD
    ```
    X-Plane 12/Resources/plugins/xp2gdl90/
    ```
-4. **Configure** your settings by editing `xp2gdl90.ini`
+4. **Configure** your settings in-sim: **Plugins → XP2GDL90 → Settings...**
 5. **Start** X-Plane 12
 
 ### Basic Configuration
 
-Edit `X-Plane 12/Resources/plugins/xp2gdl90/xp2gdl90.ini`:
+Open **Plugins → XP2GDL90 → Settings...** and set:
+- Target IP / Port
+- ICAO address, callsign fallback, emitter category
+- Update rates and accuracy values
 
-```ini
-[Network]
-target_ip = 192.168.1.100    # Your iPad/tablet IP address
-target_port = 4000           # GDL90 default port
-
-[Ownship]
-icao_address = 0xABCDEF      # Your aircraft's ICAO address
-callsign = N12345            # Fallback callsign (auto-reads from aircraft)
-emitter_category = 1         # 1 = Light aircraft
-```
+Settings are saved to X‑Plane’s preferences folder as `Output/preferences/xp2gdl90.json`.
 
 ### Finding Your iPad's IP Address
 
@@ -168,7 +162,7 @@ nacp = 11                    # Navigation Accuracy Category
    ```
    xp2gdl90/
    ├── mac.xpl (macOS)
-   └── xp2gdl90.ini
+   └── xp2gdl90.json (created after first Save)
    ```
    Or for Windows/Linux:
    ```
@@ -176,7 +170,7 @@ nacp = 11                    # Navigation Accuracy Category
    ├── 64/
    │   ├── win.xpl (Windows)
    │   └── lin.xpl (Linux)
-   └── xp2gdl90.ini
+   └── xp2gdl90.json (created after first Save)
    ```
 
 ### Aircraft not showing up in EFB
@@ -184,7 +178,7 @@ nacp = 11                    # Navigation Accuracy Category
 **Important:** Many EFB applications (especially ForeFlight and Garmin Pilot) **filter out low-accuracy GPS reports**. The default configuration uses `nic=11` and `nacp=11` (highest accuracy) to ensure compatibility with all EFB apps.
 
 **Checklist:**
-1. Verify `nic = 11` and `nacp = 11` in `xp2gdl90.ini`
+1. Verify `NIC = 11` and `NACp = 11` in **Plugins → XP2GDL90 → Settings...**
 2. Confirm plugin is enabled (check Plugins menu → XP2GDL90)
 3. Ensure GPS is available in X-Plane (not in a hangar, GPS panel powered on)
 4. Check X-Plane's `Log.txt` for `[XP2GDL90] Plugin enabled` message

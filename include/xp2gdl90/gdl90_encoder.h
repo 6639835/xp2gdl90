@@ -1,6 +1,7 @@
 #ifndef GDL90_ENCODER_H
 #define GDL90_ENCODER_H
 
+#include <functional>
 #include <cstdint>
 #include <ctime>
 #include <string>
@@ -77,6 +78,7 @@ struct PositionData {
 class GDL90Encoder {
  public:
   GDL90Encoder();
+  explicit GDL90Encoder(std::function<uint32_t()> utc_time_provider);
   ~GDL90Encoder() = default;
 
   std::vector<uint8_t> createHeartbeat(bool gps_valid = true,
@@ -86,6 +88,7 @@ class GDL90Encoder {
 
  private:
   static const uint16_t crc16_table_[256];
+  std::function<uint32_t()> utc_time_provider_;
 
   uint16_t calculateCRC(const std::vector<uint8_t>& data) const;
   std::vector<uint8_t> escapeMessage(const std::vector<uint8_t>& data) const;

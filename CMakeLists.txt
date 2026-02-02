@@ -5,6 +5,33 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+option(XP2GDL90_ENABLE_COVERAGE "Enable coverage instrumentation (tests only)" OFF)
+option(XP2GDL90_ENABLE_SOCKET_OPS_TESTS "Expose socket ops helpers for tests" ON)
+
+function(xp2gdl90_enable_coverage target_name)
+    if(NOT XP2GDL90_ENABLE_COVERAGE)
+        return()
+    endif()
+
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(${target_name} PRIVATE
+            -O0 -g -fprofile-instr-generate -fcoverage-mapping
+        )
+        get_target_property(_target_type ${target_name} TYPE)
+        if(NOT _target_type STREQUAL "STATIC_LIBRARY")
+            target_link_options(${target_name} PRIVATE -fprofile-instr-generate)
+        endif()
+    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        target_compile_options(${target_name} PRIVATE -O0 -g --coverage)
+        get_target_property(_target_type ${target_name} TYPE)
+        if(NOT _target_type STREQUAL "STATIC_LIBRARY")
+            target_link_options(${target_name} PRIVATE --coverage)
+        endif()
+    else()
+        message(WARNING "Coverage requested but compiler '${CMAKE_CXX_COMPILER_ID}' is not supported.")
+    endif()
+endfunction()
+
 if(MSVC)
     # Keep a consistent dynamic CRT across all targets/libraries.
     function(set_msvc_runtime target_name)
@@ -24,22 +51,30 @@ set(SDK_PATH "${CMAKE_SOURCE_DIR}/SDK")
 set(CORE_SOURCES
     src/gdl90_encoder.cpp
     src/udp_broadcaster.cpp
-    src/config.cpp
 )
 
 set(PLUGIN_SOURCES
     src/main.cpp
 )
 
+set(IMGUI_DIR "${CMAKE_SOURCE_DIR}/third_party/imgui")
+set(IMGUI_SOURCES
+    ${IMGUI_DIR}/imgui.cpp
+    ${IMGUI_DIR}/imgui_draw.cpp
+    ${IMGUI_DIR}/imgui_tables.cpp
+    ${IMGUI_DIR}/imgui_widgets.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_opengl2.cpp
+)
+
 set(HEADERS
     include/xp2gdl90/gdl90_encoder.h
     include/xp2gdl90/udp_broadcaster.h
-    include/xp2gdl90/config.h
 )
 
 # Core library (shared between plugin and tests)
 add_library(xp2gdl90_core STATIC ${CORE_SOURCES} ${HEADERS})
 target_include_directories(xp2gdl90_core PUBLIC ${CMAKE_SOURCE_DIR}/include)
+xp2gdl90_enable_coverage(xp2gdl90_core)
 if(MSVC)
     set_msvc_runtime(xp2gdl90_core)
 endif()
@@ -47,6 +82,10 @@ if(APPLE)
     set_target_properties(xp2gdl90_core PROPERTIES
         OSX_ARCHITECTURES "x86_64;arm64"
     )
+endif()
+
+if(XP2GDL90_ENABLE_SOCKET_OPS_TESTS)
+    target_compile_definitions(xp2gdl90_core PRIVATE XP2GDL90_ENABLE_SOCKET_OPS_TESTS=1)
 endif()
 
 # Platform-specific configurations
@@ -70,17 +109,18 @@ if(APPLE)
     
     # X-Plane specific definitions
     add_definitions(-DAPL=1 -DIBM=0 -DLIN=0)
-    add_definitions(-DXPLM200=1 -DXPLM300=1 -DXPLM400=1 -DXPLM410=1 -DXPLM411=1)
+    add_definitions(-DXPLM200=1 -DXPLM300=1 -DXPLM301=1 -DXPLM400=1 -DXPLM410=1 -DXPLM411=1)
     
     # Include directories
     include_directories(
         ${SDK_PATH}/CHeaders/XPLM
-        ${SDK_PATH}/CHeaders/Widgets
         ${CMAKE_SOURCE_DIR}/include
+        ${IMGUI_DIR}
+        ${IMGUI_DIR}/backends
     )
     
     # Create plugin library
-    add_library(${PLUGIN_NAME} MODULE ${PLUGIN_SOURCES})
+    add_library(${PLUGIN_NAME} MODULE ${PLUGIN_SOURCES} ${IMGUI_SOURCES})
     
     # Set output name
     set_target_properties(${PLUGIN_NAME} PROPERTIES
@@ -94,8 +134,8 @@ if(APPLE)
         xp2gdl90_core
         "-F${SDK_PATH}/Libraries/Mac"
         "-framework XPLM"
-        "-framework XPWidgets"
         "-framework CoreFoundation"
+        "-framework OpenGL"
     )
     
     # Export symbols
@@ -118,18 +158,19 @@ elseif(WIN32)
     
     # X-Plane specific definitions
     add_definitions(-DAPL=0 -DIBM=1 -DLIN=0)
-    add_definitions(-DXPLM200=1 -DXPLM300=1 -DXPLM400=1 -DXPLM410=1 -DXPLM411=1)
+    add_definitions(-DXPLM200=1 -DXPLM300=1 -DXPLM301=1 -DXPLM400=1 -DXPLM410=1 -DXPLM411=1)
     add_definitions(-D_CRT_SECURE_NO_WARNINGS)
     
     # Include directories
     include_directories(
         ${SDK_PATH}/CHeaders/XPLM
-        ${SDK_PATH}/CHeaders/Widgets
         ${CMAKE_SOURCE_DIR}/include
+        ${IMGUI_DIR}
+        ${IMGUI_DIR}/backends
     )
     
     # Create plugin library
-    add_library(${PLUGIN_NAME} MODULE ${PLUGIN_SOURCES})
+    add_library(${PLUGIN_NAME} MODULE ${PLUGIN_SOURCES} ${IMGUI_SOURCES})
     if(MSVC)
         set_msvc_runtime(${PLUGIN_NAME})
     endif()
@@ -150,8 +191,8 @@ elseif(WIN32)
     target_link_libraries(${PLUGIN_NAME} PRIVATE
         xp2gdl90_core
         ${SDK_PATH}/Libraries/Win/XPLM_64.lib
-        ${SDK_PATH}/Libraries/Win/XPWidgets_64.lib
         ws2_32  # Windows sockets
+        opengl32
     )
     
     # Export symbols
@@ -174,17 +215,18 @@ elseif(UNIX AND NOT APPLE)
     
     # X-Plane specific definitions
     add_definitions(-DAPL=0 -DIBM=0 -DLIN=1)
-    add_definitions(-DXPLM200=1 -DXPLM300=1 -DXPLM400=1 -DXPLM410=1 -DXPLM411=1)
+    add_definitions(-DXPLM200=1 -DXPLM300=1 -DXPLM301=1 -DXPLM400=1 -DXPLM410=1 -DXPLM411=1)
     
     # Include directories
     include_directories(
         ${SDK_PATH}/CHeaders/XPLM
-        ${SDK_PATH}/CHeaders/Widgets
         ${CMAKE_SOURCE_DIR}/include
+        ${IMGUI_DIR}
+        ${IMGUI_DIR}/backends
     )
     
     # Create plugin library
-    add_library(${PLUGIN_NAME} MODULE ${PLUGIN_SOURCES})
+    add_library(${PLUGIN_NAME} MODULE ${PLUGIN_SOURCES} ${IMGUI_SOURCES})
     
     # Set output name
     set_target_properties(${PLUGIN_NAME} PROPERTIES
@@ -197,8 +239,8 @@ elseif(UNIX AND NOT APPLE)
     target_link_libraries(${PLUGIN_NAME} PRIVATE
         xp2gdl90_core
         ${SDK_PATH}/Libraries/Lin/XPLM_64.so
-        ${SDK_PATH}/Libraries/Lin/XPWidgets_64.so
         dl  # Dynamic link library
+        GL
     )
     
     # Export symbols
@@ -211,11 +253,6 @@ endif()
 install(TARGETS ${PLUGIN_NAME}
     LIBRARY DESTINATION "${CMAKE_SOURCE_DIR}/build/xp2gdl90"
     RUNTIME DESTINATION "${CMAKE_SOURCE_DIR}/build/xp2gdl90"
-)
-
-# Copy config file
-install(FILES "${CMAKE_SOURCE_DIR}/xp2gdl90.ini"
-    DESTINATION "${CMAKE_SOURCE_DIR}/build/xp2gdl90"
 )
 
 # Output compilation information
@@ -233,11 +270,14 @@ if(XP2GDL90_BUILD_TESTS)
     enable_testing()
     add_executable(xp2gdl90_tests
         tests/test_main.cpp
-        tests/test_config.cpp
         tests/test_gdl90_encoder.cpp
         tests/test_udp_broadcaster.cpp
     )
     target_link_libraries(xp2gdl90_tests PRIVATE xp2gdl90_core)
+    xp2gdl90_enable_coverage(xp2gdl90_tests)
+    if(XP2GDL90_ENABLE_SOCKET_OPS_TESTS)
+        target_compile_definitions(xp2gdl90_tests PRIVATE XP2GDL90_ENABLE_SOCKET_OPS_TESTS=1)
+    endif()
     if(MSVC)
         set_msvc_runtime(xp2gdl90_tests)
     endif()

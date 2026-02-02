@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -165,6 +166,18 @@ TEST_CASE("Heartbeat encoding sets gps and utc bits") {
   ASSERT_EQ(static_cast<uint8_t>(0x01), payload[2] & 0x01);
 }
 
+TEST_CASE("Heartbeat encoding sets timestamp high-bit flag") {
+  gdl90::GDL90Encoder encoder([] { return 0x10000u; });
+  const auto message = encoder.createHeartbeat(false, false);
+  const auto payload = ExtractPayload(message);
+
+  ASSERT_EQ(static_cast<uint8_t>(gdl90::MSG_ID_HEARTBEAT), payload[0]);
+  ASSERT_EQ(static_cast<uint8_t>(0x00), payload[2] & 0x01);
+  ASSERT_EQ(static_cast<uint8_t>(0x80), payload[2] & 0x80);
+  ASSERT_EQ(static_cast<uint8_t>(0x00), payload[3]);
+  ASSERT_EQ(static_cast<uint8_t>(0x00), payload[4]);
+}
+
 TEST_CASE("Ownship report encodes fields and clamps values") {
   gdl90::GDL90Encoder encoder;
   gdl90::PositionData data{};
@@ -215,6 +228,42 @@ TEST_CASE("Ownship report encodes fields and clamps values") {
   ASSERT_EQ(std::string("CALLSIGN"), callsign);
 
   ASSERT_EQ(static_cast<uint8_t>(data.emergency_code << 4), payload[27]);
+}
+
+TEST_CASE("Ownship report clamps vertical velocity bounds") {
+  gdl90::GDL90Encoder encoder;
+  gdl90::PositionData data{};
+  data.latitude = 0.0;
+  data.longitude = 0.0;
+  data.altitude = 0;
+  data.h_velocity = 0;
+  data.v_velocity = std::numeric_limits<int16_t>::max();
+  data.track = 0;
+  data.track_type = gdl90::TrackType::TRUE_TRACK;
+  data.airborne = true;
+  data.nic = 0;
+  data.nacp = 0;
+  data.icao_address = 0x000001;
+  data.callsign = "TEST";
+  data.emitter_category = gdl90::EmitterCategory::LIGHT;
+  data.address_type = gdl90::AddressType::ADSB_ICAO;
+  data.alert_status = 0;
+  data.emergency_code = 0;
+
+  {
+    const auto message = encoder.createOwnshipReport(data);
+    const auto payload = ExtractPayload(message);
+    ASSERT_EQ(static_cast<uint8_t>(0x01), payload[15] & 0x0F);
+    ASSERT_EQ(static_cast<uint8_t>(0xFE), payload[16]);
+  }
+
+  data.v_velocity = static_cast<int16_t>(-32600);
+  {
+    const auto message = encoder.createTrafficReport(data);
+    const auto payload = ExtractPayload(message);
+    ASSERT_EQ(static_cast<uint8_t>(0x0E), payload[15] & 0x0F);
+    ASSERT_EQ(static_cast<uint8_t>(0x02), payload[16]);
+  }
 }
 
 TEST_CASE("Traffic report escapes special bytes") {

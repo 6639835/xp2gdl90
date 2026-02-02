@@ -46,8 +46,7 @@ echo Output: build\Release\win.xpl
 echo.
 echo To install the plugin, copy the following to your X-Plane\Resources\plugins\ directory:
 echo   - build\Release\win.xpl
-echo   - xp2gdl90.ini
+echo   - (settings saved at runtime to Output\preferences\xp2gdl90.json)
 echo =========================================
 
 pause
-
