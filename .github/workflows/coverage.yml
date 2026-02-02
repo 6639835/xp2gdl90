@@ -10,6 +10,9 @@ jobs:
   coverage-linux:
     name: Coverage (Linux)
     runs-on: ubuntu-latest
+    env:
+      CC: clang
+      CXX: clang++
 
     steps:
       - uses: actions/checkout@v4
@@ -23,4 +26,3 @@ jobs:
 
       - name: Run coverage
         run: bash scripts/coverage.sh
-

@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   BUILD_TYPE: Release
@@ -36,22 +36,30 @@ jobs:
     
     - name: Verify Build
       run: |
-        if (Test-Path "build/${{env.BUILD_TYPE}}/win.xpl") {
-          Write-Host "✓ Build successful: win.xpl"
-          Get-Item "build/${{env.BUILD_TYPE}}/win.xpl" | Format-List
-        } else {
-          Write-Error "✗ Build failed: win.xpl not found"
+        $candidatePaths = @(
+          "build/win.xpl",
+          "build/${{env.BUILD_TYPE}}/win.xpl"
+        )
+        $plugin = $candidatePaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+        if (-not $plugin) {
+          Write-Error "✗ Build failed: win.xpl not found (checked: $($candidatePaths -join ', '))"
           exit 1
         }
+        Write-Host "✓ Build successful: $plugin"
+        Get-Item $plugin | Format-List
       shell: pwsh
     
     - name: Package
       run: |
         mkdir -p package/xp2gdl90/64
-        cp build/${{env.BUILD_TYPE}}/win.xpl package/xp2gdl90/64/
-        cp xp2gdl90.ini package/xp2gdl90/
+        if [ -f "build/win.xpl" ]; then
+          cp build/win.xpl package/xp2gdl90/64/
+        else
+          cp "build/${{env.BUILD_TYPE}}/win.xpl" package/xp2gdl90/64/
+        fi
         cp README.md package/xp2gdl90/
         cp LICENSE package/xp2gdl90/
+      shell: bash
     
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
@@ -90,7 +98,6 @@ jobs:
       run: |
         mkdir -p package/xp2gdl90
         cp build/mac.xpl package/xp2gdl90/
-        cp xp2gdl90.ini package/xp2gdl90/
         cp README.md package/xp2gdl90/
         cp LICENSE package/xp2gdl90/
     
@@ -135,7 +142,6 @@ jobs:
       run: |
         mkdir -p package/xp2gdl90/64
         cp build/lin.xpl package/xp2gdl90/64/
-        cp xp2gdl90.ini package/xp2gdl90/
         cp README.md package/xp2gdl90/
         cp LICENSE package/xp2gdl90/
     
@@ -150,6 +156,8 @@ jobs:
     needs: [build-windows, build-macos, build-linux]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
     
     steps:
     - name: Download Windows Artifact
@@ -180,7 +188,6 @@ jobs:
         cp windows/xp2gdl90/64/win.xpl xp2gdl90/64/
         cp linux/xp2gdl90/64/lin.xpl xp2gdl90/64/
         # Copy common files (using Windows as source)
-        cp windows/xp2gdl90/xp2gdl90.ini xp2gdl90/
         cp windows/xp2gdl90/README.md xp2gdl90/
         cp windows/xp2gdl90/LICENSE xp2gdl90/
         # Create ZIP
@@ -191,7 +198,7 @@ jobs:
         sha256sum xp2gdl90-${{github.ref_name}}.zip > xp2gdl90-${{github.ref_name}}.zip.sha256
     
     - name: Create Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         files: |
           xp2gdl90-${{github.ref_name}}.zip

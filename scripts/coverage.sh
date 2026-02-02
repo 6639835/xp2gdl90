@@ -22,13 +22,23 @@ cmake -S "$ROOT_DIR" -B "$BUILD_DIR" \
   -DXP2GDL90_ENABLE_COVERAGE=ON \
   -DCMAKE_BUILD_TYPE=Debug
 
-cmake --build "$BUILD_DIR" --target xp2gdl90_tests -j
+cmake --build "$BUILD_DIR" --target xp2gdl90_tests --parallel
 
 mkdir -p "$BUILD_DIR/profraw"
 LLVM_PROFILE_FILE="$BUILD_DIR/profraw/%m-%p.profraw" \
   ctest --test-dir "$BUILD_DIR" --output-on-failure
 
-"$LLVM_PROFDATA" merge -sparse "$BUILD_DIR"/profraw/*.profraw \
+shopt -s nullglob
+PROFRAW_FILES=("$BUILD_DIR"/profraw/*.profraw)
+shopt -u nullglob
+
+if [[ ${#PROFRAW_FILES[@]} -eq 0 ]]; then
+  echo "error: no .profraw files were produced under '$BUILD_DIR/profraw/'." >&2
+  echo "This coverage script expects Clang's profiling runtime (e.g. build with clang/clang++ and -fprofile-instr-generate)." >&2
+  exit 1
+fi
+
+"$LLVM_PROFDATA" merge -sparse "${PROFRAW_FILES[@]}" \
   -o "$BUILD_DIR/coverage.profdata"
 
 SUMMARY_JSON="$("$LLVM_COV" export "$BUILD_DIR/xp2gdl90_tests" \
