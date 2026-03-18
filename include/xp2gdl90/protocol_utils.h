@@ -16,9 +16,6 @@ bool IsValidEmitterCategory(uint8_t value);
 
 bool HasValidOwnshipPosition(double latitude, double longitude);
 
-bool ParseForeFlightDiscoveryBroadcast(const std::vector<uint8_t>& packet,
-                                       uint16_t* out_port);
-
 }  // namespace xp2gdl90::protocol
 
 #endif  // XP2GDL90_PROTOCOL_UTILS_H

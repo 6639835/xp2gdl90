@@ -8,7 +8,8 @@ A high-performance X-Plane 12 plugin that broadcasts real-time flight data in GD
 ## Features
 
 - **Real-time Position Broadcasting**: Ownship position, altitude, speed, and heading
-- **ForeFlight Extended Spec Support**: Device ID, AHRS, Ownship Geometric Altitude, and ForeFlight auto-discovery
+- **ForeFlight Extended Spec Support**: Device ID, AHRS, and ForeFlight auto-discovery
+- **Standard GDL90 Support**: Heartbeat, Ownship Report, Ownship Geometric Altitude, and Traffic Report
 - **Traffic Report Broadcasting**: Remote multiplayer / xPilot traffic as GDL90 `0x14` reports with TCAS-derived address, emergency, and transponder-state handling
 - **High Performance**: Native C++ plugin, minimal CPU overhead
 - **Cross-Platform**: Windows, macOS (Universal), and Linux support
@@ -38,7 +39,7 @@ Open **Plugins → XP2GDL90 → Settings...** and set:
 - Device name / internet policy / AHRS heading mode
 - Update rates and accuracy values
 
-ForeFlight device-ID broadcasts run automatically at 1 Hz, AHRS broadcasts run automatically at 5 Hz, Ownship Geometric Altitude is sent at 1 Hz, and the plugin can auto-switch to ForeFlight unicast when it sees ForeFlight's discovery broadcast.
+ForeFlight device-ID broadcasts run automatically at 1 Hz, AHRS broadcasts run automatically at 5 Hz, standard GDL90 Ownship Geometric Altitude is sent at 1 Hz, and the plugin can auto-switch to ForeFlight unicast when it sees ForeFlight's discovery broadcast.
 
 Settings are saved to X‑Plane’s preferences folder as `Output/preferences/xp2gdl90.json`.
 
@@ -236,12 +237,12 @@ This plugin currently transmits a subset of GDL90 messages:
 |------------|------|-------------|
 | 0x00 | Heartbeat | Status and timing information (1 Hz) |
 | 0x0A | Ownship Report | Own aircraft position and status |
-| 0x0B | Ownship Geometric Altitude | Geometric altitude (MSL capability advertised) |
+| 0x0B | Ownship Geometric Altitude | Standard GDL90 geometric altitude message (MSL capability advertised via ForeFlight ID mask) |
 | 0x14 | Traffic Report | Multiplayer / TCAS traffic targets (1 Hz) |
 | 0x65 / 0x00 | ForeFlight ID | Device name / capabilities extension |
 | 0x65 / 0x01 | ForeFlight AHRS | Roll, pitch, and configurable true/magnetic heading at 5 Hz |
 
-Weather / `Uplink Data (0x07)` is intentionally not transmitted, because this plugin does not have a complete native UAT weather source. Ownship geometric altitude is sent as MSL and advertised that way in the ForeFlight ID capabilities mask.
+Weather / `Uplink Data (0x07)` is intentionally not transmitted, because this plugin does not have a complete native UAT weather source. Ownship geometric altitude remains a standard GDL90 message; this plugin advertises its MSL datum through the ForeFlight ID capabilities mask as described in the ForeFlight extension spec.
 
 ### Message Format
 

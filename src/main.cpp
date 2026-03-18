@@ -36,6 +36,8 @@
 #include "backends/imgui_impl_opengl2.h"
 #include "imgui.h"
 
+#include "xp2gdl90/foreflight_encoder.h"
+#include "xp2gdl90/foreflight_protocol.h"
 #include "xp2gdl90/gdl90_encoder.h"
 #include "xp2gdl90/protocol_utils.h"
 #include "xp2gdl90/udp_receiver.h"
@@ -149,6 +151,7 @@ struct TrafficTextRefs {
 
 struct PluginState {
   std::unique_ptr<gdl90::GDL90Encoder> encoder;
+  std::unique_ptr<gdl90::foreflight::ForeFlightEncoder> foreflight_encoder;
   std::unique_ptr<udp::UDPBroadcaster> broadcaster;
   std::unique_ptr<udp::UDPReceiver> foreflight_receiver;
   Settings settings;
@@ -414,18 +417,17 @@ void ResolveTrafficTrack(float vx,
 
 uint16_t ClampKnotsToUint16OrInvalid(float knots) {
   if (!std::isfinite(static_cast<double>(knots)) || knots < 0.0f) {
-    return gdl90::AHRS_AIRSPEED_INVALID;
+    return gdl90::foreflight::AHRS_AIRSPEED_INVALID;
   }
   const float clamped =
       (std::min)(knots,
-                 static_cast<float>(gdl90::AHRS_AIRSPEED_INVALID - 1u));
+                 static_cast<float>(gdl90::foreflight::AHRS_AIRSPEED_INVALID - 1u));
   return static_cast<uint16_t>(clamped);
 }
 
 bool ParseForeFlightBroadcastPacket(const std::vector<uint8_t>& packet,
                                     uint16_t* out_port) {
-  return xp2gdl90::protocol::ParseForeFlightDiscoveryBroadcast(packet,
-                                                               out_port);
+  return xp2gdl90::foreflight::ParseDiscoveryBroadcast(packet, out_port);
 }
 
 std::string ReadTailNumber() {
@@ -864,9 +866,9 @@ gdl90::PositionData GetOwnshipData(const Settings& cfg) {
   return data;
 }
 
-gdl90::DeviceInfo GetForeFlightDeviceInfo() {
-  gdl90::DeviceInfo data;
-  data.serial_number = gdl90::DEVICE_SERIAL_INVALID;
+gdl90::foreflight::DeviceInfo GetForeFlightDeviceInfo() {
+  gdl90::foreflight::DeviceInfo data;
+  data.serial_number = gdl90::foreflight::DEVICE_SERIAL_INVALID;
   data.device_name = g_state.settings.device_name;
   data.device_long_name = g_state.settings.device_long_name;
   data.capabilities_mask =
@@ -874,8 +876,8 @@ gdl90::DeviceInfo GetForeFlightDeviceInfo() {
   return data;
 }
 
-gdl90::AhrsData GetOwnshipAhrsData() {
-  gdl90::AhrsData data;
+gdl90::foreflight::AhrsData GetOwnshipAhrsData() {
+  gdl90::foreflight::AhrsData data;
   data.roll_deg = g_state.roll_ref ? XPLMGetDataf(g_state.roll_ref) : NAN;
   data.pitch_deg = g_state.pitch_ref ? XPLMGetDataf(g_state.pitch_ref) : NAN;
   if (g_state.heading_ref) {
@@ -893,11 +895,11 @@ gdl90::AhrsData GetOwnshipAhrsData() {
   data.indicated_airspeed =
       g_state.indicated_airspeed_ref
           ? ClampKnotsToUint16OrInvalid(XPLMGetDataf(g_state.indicated_airspeed_ref))
-          : gdl90::AHRS_AIRSPEED_INVALID;
+          : gdl90::foreflight::AHRS_AIRSPEED_INVALID;
   data.true_airspeed =
       g_state.true_airspeed_ref
           ? ClampKnotsToUint16OrInvalid(XPLMGetDataf(g_state.true_airspeed_ref))
-          : gdl90::AHRS_AIRSPEED_INVALID;
+          : gdl90::foreflight::AHRS_AIRSPEED_INVALID;
   return data;
 }
 
@@ -2404,6 +2406,8 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
   g_state.last_receiver_error.clear();
 
   g_state.encoder = std::make_unique<gdl90::GDL90Encoder>();
+  g_state.foreflight_encoder =
+      std::make_unique<gdl90::foreflight::ForeFlightEncoder>();
 
   char prefs_path[512] = {};
   XPLMGetPrefsPath(prefs_path);
@@ -2529,6 +2533,7 @@ PLUGIN_API void XPluginStop(void) {
 
   g_state.broadcaster.reset();
   g_state.foreflight_receiver.reset();
+  g_state.foreflight_encoder.reset();
   g_state.encoder.reset();
   DestroySettingsWindow();
 
@@ -2642,7 +2647,7 @@ float FlightLoopCallback(float in_elapsed_since_last_call,
   }
 
   if (sim_time - g_state.last_device_info >= (1.0f / kForeFlightDeviceInfoRate)) {
-    const auto device_info = g_state.encoder->createForeFlightIdMessage(
+    const auto device_info = g_state.foreflight_encoder->createIdMessage(
         GetForeFlightDeviceInfo());
     const int sent = g_state.broadcaster->send(device_info);
     g_state.last_device_info_send_bytes = sent;
@@ -2657,7 +2662,7 @@ float FlightLoopCallback(float in_elapsed_since_last_call,
   }
 
   if (sim_time - g_state.last_ahrs >= (1.0f / kForeFlightAhrsRate)) {
-    const auto ahrs_msg = g_state.encoder->createForeFlightAhrsMessage(
+    const auto ahrs_msg = g_state.foreflight_encoder->createAhrsMessage(
         GetOwnshipAhrsData());
     const int sent = g_state.broadcaster->send(ahrs_msg);
     g_state.last_ahrs_send_bytes = sent;

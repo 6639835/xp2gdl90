@@ -53,6 +53,9 @@ set(SDK_PATH "${CMAKE_SOURCE_DIR}/SDK")
 
 # Source files
 set(CORE_SOURCES
+    src/encoder_support.cpp
+    src/foreflight_encoder.cpp
+    src/foreflight_protocol.cpp
     src/gdl90_encoder.cpp
     src/protocol_utils.cpp
     src/udp_receiver.cpp
@@ -73,6 +76,8 @@ set(IMGUI_SOURCES
 )
 
 set(HEADERS
+    include/xp2gdl90/foreflight_encoder.h
+    include/xp2gdl90/foreflight_protocol.h
     include/xp2gdl90/gdl90_encoder.h
     include/xp2gdl90/protocol_utils.h
     include/xp2gdl90/udp_receiver.h
@@ -274,6 +279,8 @@ option(XP2GDL90_BUILD_TESTS "Build XP2GDL90 tests" OFF)
 if(XP2GDL90_BUILD_TESTS)
     enable_testing()
     add_executable(xp2gdl90_tests
+        tests/test_foreflight_encoder.cpp
+        tests/test_foreflight_protocol.cpp
         tests/test_main.cpp
         tests/test_gdl90_encoder.cpp
         tests/test_protocol_utils.cpp

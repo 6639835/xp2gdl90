@@ -1,7 +1,10 @@
 #include "xp2gdl90/gdl90_encoder.h"
 
+#include "encoder_support.h"
+
 #include <algorithm>
 #include <cmath>
+#include <ctime>
 #include <utility>
 
 #if defined(_WIN32)
@@ -10,91 +13,20 @@
 
 namespace gdl90 {
 
-const uint16_t GDL90Encoder::crc16_table_[256] = {
-    0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50a5, 0x60c6, 0x70e7,
-    0x8108, 0x9129, 0xa14a, 0xb16b, 0xc18c, 0xd1ad, 0xe1ce, 0xf1ef,
-    0x1231, 0x0210, 0x3273, 0x2252, 0x52b5, 0x4294, 0x72f7, 0x62d6,
-    0x9339, 0x8318, 0xb37b, 0xa35a, 0xd3bd, 0xc39c, 0xf3ff, 0xe3de,
-    0x2462, 0x3443, 0x0420, 0x1401, 0x64e6, 0x74c7, 0x44a4, 0x5485,
-    0xa56a, 0xb54b, 0x8528, 0x9509, 0xe5ee, 0xf5cf, 0xc5ac, 0xd58d,
-    0x3653, 0x2672, 0x1611, 0x0630, 0x76d7, 0x66f6, 0x5695, 0x46b4,
-    0xb75b, 0xa77a, 0x9719, 0x8738, 0xf7df, 0xe7fe, 0xd79d, 0xc7bc,
-    0x48c4, 0x58e5, 0x6886, 0x78a7, 0x0840, 0x1861, 0x2802, 0x3823,
-    0xc9cc, 0xd9ed, 0xe98e, 0xf9af, 0x8948, 0x9969, 0xa90a, 0xb92b,
-    0x5af5, 0x4ad4, 0x7ab7, 0x6a96, 0x1a71, 0x0a50, 0x3a33, 0x2a12,
-    0xdbfd, 0xcbdc, 0xfbbf, 0xeb9e, 0x9b79, 0x8b58, 0xbb3b, 0xab1a,
-    0x6ca6, 0x7c87, 0x4ce4, 0x5cc5, 0x2c22, 0x3c03, 0x0c60, 0x1c41,
-    0xedae, 0xfd8f, 0xcdec, 0xddcd, 0xad2a, 0xbd0b, 0x8d68, 0x9d49,
-    0x7e97, 0x6eb6, 0x5ed5, 0x4ef4, 0x3e13, 0x2e32, 0x1e51, 0x0e70,
-    0xff9f, 0xefbe, 0xdfdd, 0xcffc, 0xbf1b, 0xaf3a, 0x9f59, 0x8f78,
-    0x9188, 0x81a9, 0xb1ca, 0xa1eb, 0xd10c, 0xc12d, 0xf14e, 0xe16f,
-    0x1080, 0x00a1, 0x30c2, 0x20e3, 0x5004, 0x4025, 0x7046, 0x6067,
-    0x83b9, 0x9398, 0xa3fb, 0xb3da, 0xc33d, 0xd31c, 0xe37f, 0xf35e,
-    0x02b1, 0x1290, 0x22f3, 0x32d2, 0x4235, 0x5214, 0x6277, 0x7256,
-    0xb5ea, 0xa5cb, 0x95a8, 0x8589, 0xf56e, 0xe54f, 0xd52c, 0xc50d,
-    0x34e2, 0x24c3, 0x14a0, 0x0481, 0x7466, 0x6447, 0x5424, 0x4405,
-    0xa7db, 0xb7fa, 0x8799, 0x97b8, 0xe75f, 0xf77e, 0xc71d, 0xd73c,
-    0x26d3, 0x36f2, 0x0691, 0x16b0, 0x6657, 0x7676, 0x4615, 0x5634,
-    0xd94c, 0xc96d, 0xf90e, 0xe92f, 0x99c8, 0x89e9, 0xb98a, 0xa9ab,
-    0x5844, 0x4865, 0x7806, 0x6827, 0x18c0, 0x08e1, 0x3882, 0x28a3,
-    0xcb7d, 0xdb5c, 0xeb3f, 0xfb1e, 0x8bf9, 0x9bd8, 0xabbb, 0xbb9a,
-    0x4a75, 0x5a54, 0x6a37, 0x7a16, 0x0af1, 0x1ad0, 0x2ab3, 0x3a92,
-    0xfd2e, 0xed0f, 0xdd6c, 0xcd4d, 0xbdaa, 0xad8b, 0x9de8, 0x8dc9,
-    0x7c26, 0x6c07, 0x5c64, 0x4c45, 0x3ca2, 0x2c83, 0x1ce0, 0x0cc1,
-    0xef1f, 0xff3e, 0xcf5d, 0xdf7c, 0xaf9b, 0xbfba, 0x8fd9, 0x9ff8,
-    0x6e17, 0x7e36, 0x4e55, 0x5e74, 0x2e93, 0x3eb2, 0x0ed1, 0x1ef0};
-
 GDL90Encoder::GDL90Encoder() = default;
 
-GDL90Encoder::GDL90Encoder(std::function<uint32_t()> utc_time_provider)
+GDL90Encoder::GDL90Encoder(UtcTimeProvider utc_time_provider)
+    : utc_time_provider_(
+          [provider = std::move(utc_time_provider)](uint32_t* out_time) {
+            if (!out_time || !provider) {
+              return false;
+            }
+            *out_time = provider();
+            return true;
+          }) {}
+
+GDL90Encoder::GDL90Encoder(CheckedUtcTimeProvider utc_time_provider)
     : utc_time_provider_(std::move(utc_time_provider)) {}
-
-GDL90Encoder::GDL90Encoder(std::function<bool(uint32_t*)> utc_time_provider)
-    : checked_utc_time_provider_(std::move(utc_time_provider)) {}
-
-uint16_t GDL90Encoder::calculateCRC(const std::vector<uint8_t>& data) const {
-  uint16_t crc = 0;
-  for (const uint8_t byte : data) {
-    crc = crc16_table_[crc >> 8] ^ static_cast<uint16_t>(crc << 8) ^ byte;
-  }
-  return crc;
-}
-
-std::vector<uint8_t> GDL90Encoder::escapeMessage(
-    const std::vector<uint8_t>& data) const {
-  std::vector<uint8_t> escaped;
-  escaped.reserve(data.size() + 10);
-
-  for (const uint8_t byte : data) {
-    if (byte == 0x7D || byte == 0x7E) {
-      escaped.push_back(0x7D);
-      escaped.push_back(static_cast<uint8_t>(byte ^ 0x20));
-    } else {
-      escaped.push_back(byte);
-    }
-  }
-
-  return escaped;
-}
-
-std::vector<uint8_t> GDL90Encoder::prepareMessage(
-    const std::vector<uint8_t>& payload) const {
-  const uint16_t crc = calculateCRC(payload);
-
-  std::vector<uint8_t> message = payload;
-  message.push_back(static_cast<uint8_t>(crc & 0xFF));
-  message.push_back(static_cast<uint8_t>((crc >> 8) & 0xFF));
-
-  std::vector<uint8_t> escaped = escapeMessage(message);
-
-  std::vector<uint8_t> final_message;
-  final_message.reserve(escaped.size() + 2);
-  final_message.push_back(0x7E);
-  final_message.insert(final_message.end(), escaped.begin(), escaped.end());
-  final_message.push_back(0x7E);
-
-  return final_message;
-}
 
 uint32_t GDL90Encoder::encodeLatitude(double latitude) const {
   latitude = std::max(-90.0, std::min(90.0, latitude));
@@ -188,98 +120,13 @@ uint16_t GDL90Encoder::encodeGeoVerticalMetrics(bool vertical_warning,
   return encoded_vfom;
 }
 
-int16_t GDL90Encoder::encodeAhrsAttitude(double degrees) const {
-  if (!std::isfinite(degrees)) {
-    return AHRS_ATTITUDE_INVALID;
-  }
-
-  const long value = std::lround(degrees * 10.0);
-  if (value < -1800 || value > 1800) {
-    return AHRS_ATTITUDE_INVALID;
-  }
-
-  return static_cast<int16_t>(value);
-}
-
-uint16_t GDL90Encoder::encodeAhrsHeading(double degrees,
-                                         bool magnetic_heading) const {
-  if (!std::isfinite(degrees)) {
-    return AHRS_HEADING_INVALID;
-  }
-
-  double normalized = std::fmod(degrees, 360.0);
-  if (normalized < 0.0) {
-    normalized += 360.0;
-  }
-
-  long value = std::lround(normalized * 10.0);
-  if (value == 3600) {
-    value = 0;
-  }
-  if (value < 0 || value > 3600) {
-    return AHRS_HEADING_INVALID;
-  }
-
-  uint16_t encoded = static_cast<uint16_t>(value) & 0x7FFF;
-  if (magnetic_heading) {
-    encoded |= 0x8000;
-  }
-  return encoded;
-}
-
-void GDL90Encoder::appendBigEndian16(std::vector<uint8_t>& buffer,
-                                     uint16_t value) const {
-  buffer.push_back(static_cast<uint8_t>((value >> 8) & 0xFF));
-  buffer.push_back(static_cast<uint8_t>(value & 0xFF));
-}
-
-void GDL90Encoder::appendBigEndian32(std::vector<uint8_t>& buffer,
-                                     uint32_t value) const {
-  buffer.push_back(static_cast<uint8_t>((value >> 24) & 0xFF));
-  buffer.push_back(static_cast<uint8_t>((value >> 16) & 0xFF));
-  buffer.push_back(static_cast<uint8_t>((value >> 8) & 0xFF));
-  buffer.push_back(static_cast<uint8_t>(value & 0xFF));
-}
-
-void GDL90Encoder::appendBigEndian64(std::vector<uint8_t>& buffer,
-                                     uint64_t value) const {
-  buffer.push_back(static_cast<uint8_t>((value >> 56) & 0xFF));
-  buffer.push_back(static_cast<uint8_t>((value >> 48) & 0xFF));
-  buffer.push_back(static_cast<uint8_t>((value >> 40) & 0xFF));
-  buffer.push_back(static_cast<uint8_t>((value >> 32) & 0xFF));
-  buffer.push_back(static_cast<uint8_t>((value >> 24) & 0xFF));
-  buffer.push_back(static_cast<uint8_t>((value >> 16) & 0xFF));
-  buffer.push_back(static_cast<uint8_t>((value >> 8) & 0xFF));
-  buffer.push_back(static_cast<uint8_t>(value & 0xFF));
-}
-
-void GDL90Encoder::appendFixedText(std::vector<uint8_t>& buffer,
-                                   const std::string& value,
-                                   size_t width) const {
-  const size_t count = std::min(value.size(), width);
-  buffer.insert(buffer.end(), value.begin(), value.begin() + count);
-  buffer.insert(buffer.end(), width - count, 0x00);
-}
-
-void GDL90Encoder::pack24bit(std::vector<uint8_t>& buffer,
-                             uint32_t value) const {
-  buffer.push_back(static_cast<uint8_t>((value >> 16) & 0xFF));
-  buffer.push_back(static_cast<uint8_t>((value >> 8) & 0xFF));
-  buffer.push_back(static_cast<uint8_t>(value & 0xFF));
-}
-
 bool GDL90Encoder::getUTCTime(uint32_t* out_time) const {
   if (!out_time) {
     return false;
   }
 
-  if (checked_utc_time_provider_) {
-    return checked_utc_time_provider_(out_time);
-  }
-
   if (utc_time_provider_) {
-    *out_time = utc_time_provider_();
-    return true;
+    return utc_time_provider_(out_time);
   }
 
   std::time_t now = std::time(nullptr);
@@ -300,7 +147,7 @@ bool GDL90Encoder::getUTCTime(uint32_t* out_time) const {
 }
 
 std::vector<uint8_t> GDL90Encoder::createHeartbeat(bool gps_valid,
-                                                   bool utc_ok) {
+                                                   bool utc_ok) const {
   std::vector<uint8_t> payload;
   payload.reserve(7);
 
@@ -329,11 +176,11 @@ std::vector<uint8_t> GDL90Encoder::createHeartbeat(bool gps_valid,
   payload.push_back(0x00);
   payload.push_back(0x00);
 
-  return prepareMessage(payload);
+  return internal::PrepareMessage(payload);
 }
 
 std::vector<uint8_t> GDL90Encoder::createPositionReport(
-    uint8_t msg_id, const PositionData& data) {
+    uint8_t msg_id, const PositionData& data) const {
   std::vector<uint8_t> payload;
   payload.reserve(28);
 
@@ -344,9 +191,9 @@ std::vector<uint8_t> GDL90Encoder::createPositionReport(
                            (static_cast<uint8_t>(data.address_type) & 0x0F));
   payload.push_back(st);
 
-  pack24bit(payload, data.icao_address);
-  pack24bit(payload, encodeLatitude(data.latitude));
-  pack24bit(payload, encodeLongitude(data.longitude));
+  internal::Pack24Bit(payload, data.icao_address);
+  internal::Pack24Bit(payload, encodeLatitude(data.latitude));
+  internal::Pack24Bit(payload, encodeLongitude(data.longitude));
 
   const uint16_t altitude = encodeAltitude(data.altitude);
   const uint8_t misc =
@@ -382,67 +229,31 @@ std::vector<uint8_t> GDL90Encoder::createPositionReport(
 
   payload.push_back(static_cast<uint8_t>((data.emergency_code & 0x0F) << 4));
 
-  return prepareMessage(payload);
+  return internal::PrepareMessage(payload);
 }
 
 std::vector<uint8_t> GDL90Encoder::createOwnshipReport(
-    const PositionData& data) {
+    const PositionData& data) const {
   return createPositionReport(MSG_ID_OWNSHIP_REPORT, data);
 }
 
 std::vector<uint8_t> GDL90Encoder::createOwnshipGeometricAltitude(
-    const GeoAltitudeData& data) {
+    const GeoAltitudeData& data) const {
   std::vector<uint8_t> payload;
   payload.reserve(5);
 
   payload.push_back(MSG_ID_OWNSHIP_GEO_ALTITUDE);
-  appendBigEndian16(payload,
-                    static_cast<uint16_t>(encodeGeoAltitude(data.altitude_feet)));
-  appendBigEndian16(payload,
-                    encodeGeoVerticalMetrics(data.vertical_warning,
-                                             data.vfom_meters));
+  internal::AppendBigEndian16(
+      payload, static_cast<uint16_t>(encodeGeoAltitude(data.altitude_feet)));
+  internal::AppendBigEndian16(
+      payload, encodeGeoVerticalMetrics(data.vertical_warning, data.vfom_meters));
 
-  return prepareMessage(payload);
+  return internal::PrepareMessage(payload);
 }
 
 std::vector<uint8_t> GDL90Encoder::createTrafficReport(
-    const PositionData& data) {
+    const PositionData& data) const {
   return createPositionReport(MSG_ID_TRAFFIC_REPORT, data);
-}
-
-std::vector<uint8_t> GDL90Encoder::createForeFlightIdMessage(
-    const DeviceInfo& data) {
-  std::vector<uint8_t> payload;
-  payload.reserve(39);
-
-  payload.push_back(MSG_ID_FORE_FLIGHT);
-  payload.push_back(FORE_FLIGHT_SUB_ID_DEVICE_INFO);
-  payload.push_back(0x01);
-  appendBigEndian64(payload, data.serial_number);
-  appendFixedText(payload, data.device_name, 8);
-  appendFixedText(payload, data.device_long_name, 16);
-  appendBigEndian32(payload, data.capabilities_mask);
-
-  return prepareMessage(payload);
-}
-
-std::vector<uint8_t> GDL90Encoder::createForeFlightAhrsMessage(
-    const AhrsData& data) {
-  std::vector<uint8_t> payload;
-  payload.reserve(12);
-
-  payload.push_back(MSG_ID_FORE_FLIGHT);
-  payload.push_back(FORE_FLIGHT_SUB_ID_AHRS);
-  appendBigEndian16(payload,
-                    static_cast<uint16_t>(encodeAhrsAttitude(data.roll_deg)));
-  appendBigEndian16(payload,
-                    static_cast<uint16_t>(encodeAhrsAttitude(data.pitch_deg)));
-  appendBigEndian16(payload,
-                    encodeAhrsHeading(data.heading_deg, data.magnetic_heading));
-  appendBigEndian16(payload, data.indicated_airspeed);
-  appendBigEndian16(payload, data.true_airspeed);
-
-  return prepareMessage(payload);
 }
 
 }  // namespace gdl90

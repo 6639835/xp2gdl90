@@ -1,116 +1,13 @@
-#include "test_harness.h"
-
 #include <algorithm>
 #include <cstdint>
 #include <limits>
 #include <string>
 #include <vector>
 
+#include "frame_test_utils.h"
 #include "xp2gdl90/gdl90_encoder.h"
 
 namespace {
-
-const uint16_t kCrcTable[256] = {
-    0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50a5, 0x60c6, 0x70e7,
-    0x8108, 0x9129, 0xa14a, 0xb16b, 0xc18c, 0xd1ad, 0xe1ce, 0xf1ef,
-    0x1231, 0x0210, 0x3273, 0x2252, 0x52b5, 0x4294, 0x72f7, 0x62d6,
-    0x9339, 0x8318, 0xb37b, 0xa35a, 0xd3bd, 0xc39c, 0xf3ff, 0xe3de,
-    0x2462, 0x3443, 0x0420, 0x1401, 0x64e6, 0x74c7, 0x44a4, 0x5485,
-    0xa56a, 0xb54b, 0x8528, 0x9509, 0xe5ee, 0xf5cf, 0xc5ac, 0xd58d,
-    0x3653, 0x2672, 0x1611, 0x0630, 0x76d7, 0x66f6, 0x5695, 0x46b4,
-    0xb75b, 0xa77a, 0x9719, 0x8738, 0xf7df, 0xe7fe, 0xd79d, 0xc7bc,
-    0x48c4, 0x58e5, 0x6886, 0x78a7, 0x0840, 0x1861, 0x2802, 0x3823,
-    0xc9cc, 0xd9ed, 0xe98e, 0xf9af, 0x8948, 0x9969, 0xa90a, 0xb92b,
-    0x5af5, 0x4ad4, 0x7ab7, 0x6a96, 0x1a71, 0x0a50, 0x3a33, 0x2a12,
-    0xdbfd, 0xcbdc, 0xfbbf, 0xeb9e, 0x9b79, 0x8b58, 0xbb3b, 0xab1a,
-    0x6ca6, 0x7c87, 0x4ce4, 0x5cc5, 0x2c22, 0x3c03, 0x0c60, 0x1c41,
-    0xedae, 0xfd8f, 0xcdec, 0xddcd, 0xad2a, 0xbd0b, 0x8d68, 0x9d49,
-    0x7e97, 0x6eb6, 0x5ed5, 0x4ef4, 0x3e13, 0x2e32, 0x1e51, 0x0e70,
-    0xff9f, 0xefbe, 0xdfdd, 0xcffc, 0xbf1b, 0xaf3a, 0x9f59, 0x8f78,
-    0x9188, 0x81a9, 0xb1ca, 0xa1eb, 0xd10c, 0xc12d, 0xf14e, 0xe16f,
-    0x1080, 0x00a1, 0x30c2, 0x20e3, 0x5004, 0x4025, 0x7046, 0x6067,
-    0x83b9, 0x9398, 0xa3fb, 0xb3da, 0xc33d, 0xd31c, 0xe37f, 0xf35e,
-    0x02b1, 0x1290, 0x22f3, 0x32d2, 0x4235, 0x5214, 0x6277, 0x7256,
-    0xb5ea, 0xa5cb, 0x95a8, 0x8589, 0xf56e, 0xe54f, 0xd52c, 0xc50d,
-    0x34e2, 0x24c3, 0x14a0, 0x0481, 0x7466, 0x6447, 0x5424, 0x4405,
-    0xa7db, 0xb7fa, 0x8799, 0x97b8, 0xe75f, 0xf77e, 0xc71d, 0xd73c,
-    0x26d3, 0x36f2, 0x0691, 0x16b0, 0x6657, 0x7676, 0x4615, 0x5634,
-    0xd94c, 0xc96d, 0xf90e, 0xe92f, 0x99c8, 0x89e9, 0xb98a, 0xa9ab,
-    0x5844, 0x4865, 0x7806, 0x6827, 0x18c0, 0x08e1, 0x3882, 0x28a3,
-    0xcb7d, 0xdb5c, 0xeb3f, 0xfb1e, 0x8bf9, 0x9bd8, 0xabbb, 0xbb9a,
-    0x4a75, 0x5a54, 0x6a37, 0x7a16, 0x0af1, 0x1ad0, 0x2ab3, 0x3a92,
-    0xfd2e, 0xed0f, 0xdd6c, 0xcd4d, 0xbdaa, 0xad8b, 0x9de8, 0x8dc9,
-    0x7c26, 0x6c07, 0x5c64, 0x4c45, 0x3ca2, 0x2c83, 0x1ce0, 0x0cc1,
-    0xef1f, 0xff3e, 0xcf5d, 0xdf7c, 0xaf9b, 0xbfba, 0x8fd9, 0x9ff8,
-    0x6e17, 0x7e36, 0x4e55, 0x5e74, 0x2e93, 0x3eb2, 0x0ed1, 0x1ef0};
-
-uint16_t ComputeCrc(const std::vector<uint8_t>& data) {
-  uint16_t crc = 0;
-  for (uint8_t byte : data) {
-    crc = kCrcTable[crc >> 8] ^ static_cast<uint16_t>(crc << 8) ^ byte;
-  }
-  return crc;
-}
-
-std::vector<uint8_t> UnescapeFrame(const std::vector<uint8_t>& message) {
-  ASSERT_TRUE(message.size() >= 3);
-  ASSERT_EQ(static_cast<uint8_t>(0x7E), message.front());
-  ASSERT_EQ(static_cast<uint8_t>(0x7E), message.back());
-
-  std::vector<uint8_t> unescaped;
-  for (size_t i = 1; i + 1 < message.size(); ++i) {
-    const uint8_t byte = message[i];
-    if (byte == 0x7D) {
-      ASSERT_TRUE(i + 1 < message.size() - 1);
-      const uint8_t next = message[++i];
-      unescaped.push_back(static_cast<uint8_t>(next ^ 0x20));
-    } else {
-      unescaped.push_back(byte);
-    }
-  }
-  return unescaped;
-}
-
-std::vector<uint8_t> ExtractPayload(const std::vector<uint8_t>& message) {
-  const std::vector<uint8_t> unescaped = UnescapeFrame(message);
-  ASSERT_TRUE(unescaped.size() >= 3);
-  const size_t payload_len = unescaped.size() - 2;
-  std::vector<uint8_t> payload(unescaped.begin(), unescaped.begin() + payload_len);
-
-  const uint16_t crc = static_cast<uint16_t>(unescaped[payload_len]) |
-                       static_cast<uint16_t>(unescaped[payload_len + 1] << 8);
-  ASSERT_EQ(ComputeCrc(payload), crc);
-  return payload;
-}
-
-uint32_t Decode24(const std::vector<uint8_t>& payload, size_t offset) {
-  return (static_cast<uint32_t>(payload[offset]) << 16) |
-         (static_cast<uint32_t>(payload[offset + 1]) << 8) |
-         static_cast<uint32_t>(payload[offset + 2]);
-}
-
-uint16_t Decode16BE(const std::vector<uint8_t>& payload, size_t offset) {
-  return static_cast<uint16_t>((static_cast<uint16_t>(payload[offset]) << 8) |
-                               static_cast<uint16_t>(payload[offset + 1]));
-}
-
-uint32_t Decode32BE(const std::vector<uint8_t>& payload, size_t offset) {
-  return (static_cast<uint32_t>(payload[offset]) << 24) |
-         (static_cast<uint32_t>(payload[offset + 1]) << 16) |
-         (static_cast<uint32_t>(payload[offset + 2]) << 8) |
-         static_cast<uint32_t>(payload[offset + 3]);
-}
-
-uint64_t Decode64BE(const std::vector<uint8_t>& payload, size_t offset) {
-  return (static_cast<uint64_t>(payload[offset]) << 56) |
-         (static_cast<uint64_t>(payload[offset + 1]) << 48) |
-         (static_cast<uint64_t>(payload[offset + 2]) << 40) |
-         (static_cast<uint64_t>(payload[offset + 3]) << 32) |
-         (static_cast<uint64_t>(payload[offset + 4]) << 24) |
-         (static_cast<uint64_t>(payload[offset + 5]) << 16) |
-         (static_cast<uint64_t>(payload[offset + 6]) << 8) |
-         static_cast<uint64_t>(payload[offset + 7]);
-}
 
 uint32_t EncodeLat(double latitude) {
   const double clamped = std::max(-90.0, std::min(90.0, latitude));
@@ -167,7 +64,7 @@ uint8_t EncodeTrack(uint16_t track) {
 TEST_CASE("Heartbeat encoding sets flags and CRC") {
   gdl90::GDL90Encoder encoder;
   const auto message = encoder.createHeartbeat(false, false);
-  const auto payload = ExtractPayload(message);
+  const auto payload = xp2gdl90::test::ExtractPayload(message);
 
   ASSERT_EQ(static_cast<uint8_t>(gdl90::MSG_ID_HEARTBEAT), payload[0]);
   ASSERT_EQ(static_cast<uint8_t>(0x01), payload[1]);
@@ -182,7 +79,7 @@ TEST_CASE("Heartbeat encoding sets flags and CRC") {
 TEST_CASE("Heartbeat encoding sets gps and utc bits") {
   gdl90::GDL90Encoder encoder;
   const auto message = encoder.createHeartbeat(true, true);
-  const auto payload = ExtractPayload(message);
+  const auto payload = xp2gdl90::test::ExtractPayload(message);
 
   ASSERT_EQ(static_cast<uint8_t>(gdl90::MSG_ID_HEARTBEAT), payload[0]);
   ASSERT_EQ(static_cast<uint8_t>(0x81), payload[1]);
@@ -192,7 +89,7 @@ TEST_CASE("Heartbeat encoding sets gps and utc bits") {
 TEST_CASE("Heartbeat encoding sets timestamp high-bit flag") {
   gdl90::GDL90Encoder encoder([] { return 0x10000u; });
   const auto message = encoder.createHeartbeat(false, false);
-  const auto payload = ExtractPayload(message);
+  const auto payload = xp2gdl90::test::ExtractPayload(message);
 
   ASSERT_EQ(static_cast<uint8_t>(gdl90::MSG_ID_HEARTBEAT), payload[0]);
   ASSERT_EQ(static_cast<uint8_t>(0x00), payload[2] & 0x01);
@@ -209,7 +106,7 @@ TEST_CASE("Heartbeat clears UTC OK when time provider reports failure") {
     return false;
   });
   const auto message = encoder.createHeartbeat(true, true);
-  const auto payload = ExtractPayload(message);
+  const auto payload = xp2gdl90::test::ExtractPayload(message);
 
   ASSERT_EQ(static_cast<uint8_t>(gdl90::MSG_ID_HEARTBEAT), payload[0]);
   ASSERT_EQ(static_cast<uint8_t>(0x00), payload[2] & 0x01);
@@ -236,13 +133,13 @@ TEST_CASE("Ownship report encodes fields and clamps values") {
   data.emergency_code = 3;
 
   const auto message = encoder.createOwnshipReport(data);
-  const auto payload = ExtractPayload(message);
+  const auto payload = xp2gdl90::test::ExtractPayload(message);
 
   ASSERT_EQ(static_cast<uint8_t>(gdl90::MSG_ID_OWNSHIP_REPORT), payload[0]);
   ASSERT_EQ(static_cast<uint8_t>(0x20), payload[1]);
 
-  ASSERT_EQ(EncodeLat(100.0), Decode24(payload, 5));
-  ASSERT_EQ(EncodeLon(-200.0), Decode24(payload, 8));
+  ASSERT_EQ(EncodeLat(100.0), xp2gdl90::test::Decode24(payload, 5));
+  ASSERT_EQ(EncodeLon(-200.0), xp2gdl90::test::Decode24(payload, 8));
 
   const uint16_t altitude = EncodeAltitude(1000000);
   ASSERT_EQ(static_cast<uint8_t>((altitude >> 4) & 0xFF), payload[11]);
@@ -288,7 +185,7 @@ TEST_CASE("Ownship report encodes invalid altitude sentinel") {
   data.emergency_code = 0;
 
   const auto message = encoder.createOwnshipReport(data);
-  const auto payload = ExtractPayload(message);
+  const auto payload = xp2gdl90::test::ExtractPayload(message);
 
   ASSERT_EQ(static_cast<uint8_t>(0xFF), payload[11]);
   ASSERT_EQ(static_cast<uint8_t>(0xF9), payload[12]);
@@ -315,7 +212,7 @@ TEST_CASE("Ownship report encodes invalid horizontal velocity sentinel") {
   data.emergency_code = 0;
 
   const auto message = encoder.createOwnshipReport(data);
-  const auto payload = ExtractPayload(message);
+  const auto payload = xp2gdl90::test::ExtractPayload(message);
 
   ASSERT_EQ(static_cast<uint8_t>(0xFF), payload[14]);
   ASSERT_EQ(static_cast<uint8_t>(0xF0), payload[15]);
@@ -330,12 +227,12 @@ TEST_CASE("Ownship geometric altitude encodes altitude and vertical metrics") {
   data.vfom_meters = 50;
 
   const auto message = encoder.createOwnshipGeometricAltitude(data);
-  const auto payload = ExtractPayload(message);
+  const auto payload = xp2gdl90::test::ExtractPayload(message);
 
   ASSERT_EQ(static_cast<size_t>(5), payload.size());
   ASSERT_EQ(static_cast<uint8_t>(gdl90::MSG_ID_OWNSHIP_GEO_ALTITUDE), payload[0]);
-  ASSERT_EQ(static_cast<uint16_t>(0x00C8), Decode16BE(payload, 1));
-  ASSERT_EQ(static_cast<uint16_t>(0x8032), Decode16BE(payload, 3));
+  ASSERT_EQ(static_cast<uint16_t>(0x00C8), xp2gdl90::test::Decode16BE(payload, 1));
+  ASSERT_EQ(static_cast<uint16_t>(0x8032), xp2gdl90::test::Decode16BE(payload, 3));
 }
 
 TEST_CASE("Ownship geometric altitude clamps VFOM and altitude bounds") {
@@ -346,11 +243,11 @@ TEST_CASE("Ownship geometric altitude clamps VFOM and altitude bounds") {
   data.vfom_meters = 0xFFFFu;
 
   const auto message = encoder.createOwnshipGeometricAltitude(data);
-  const auto payload = ExtractPayload(message);
+  const auto payload = xp2gdl90::test::ExtractPayload(message);
 
-  ASSERT_EQ(static_cast<uint16_t>(0x7FFF), Decode16BE(payload, 1));
+  ASSERT_EQ(static_cast<uint16_t>(0x7FFF), xp2gdl90::test::Decode16BE(payload, 1));
   ASSERT_EQ(static_cast<uint16_t>(gdl90::GEO_ALTITUDE_VFOM_EXCESSIVE),
-            Decode16BE(payload, 3));
+            xp2gdl90::test::Decode16BE(payload, 3));
 }
 
 TEST_CASE("Ownship report clamps vertical velocity bounds") {
@@ -375,7 +272,7 @@ TEST_CASE("Ownship report clamps vertical velocity bounds") {
 
   {
     const auto message = encoder.createOwnshipReport(data);
-    const auto payload = ExtractPayload(message);
+    const auto payload = xp2gdl90::test::ExtractPayload(message);
     ASSERT_EQ(static_cast<uint8_t>(0x01), payload[15] & 0x0F);
     ASSERT_EQ(static_cast<uint8_t>(0xFE), payload[16]);
   }
@@ -383,7 +280,7 @@ TEST_CASE("Ownship report clamps vertical velocity bounds") {
   data.v_velocity = static_cast<int16_t>(-32600);
   {
     const auto message = encoder.createTrafficReport(data);
-    const auto payload = ExtractPayload(message);
+    const auto payload = xp2gdl90::test::ExtractPayload(message);
     ASSERT_EQ(static_cast<uint8_t>(0x0E), payload[15] & 0x0F);
     ASSERT_EQ(static_cast<uint8_t>(0x02), payload[16]);
   }
@@ -410,7 +307,7 @@ TEST_CASE("Traffic report escapes special bytes") {
   data.emergency_code = 0;
 
   const auto message = encoder.createTrafficReport(data);
-  const auto payload = ExtractPayload(message);
+  const auto payload = xp2gdl90::test::ExtractPayload(message);
 
   bool found_escape = false;
   for (size_t i = 0; i + 1 < message.size(); ++i) {
@@ -428,76 +325,4 @@ TEST_CASE("Traffic report escapes special bytes") {
   const uint16_t altitude = EncodeAltitude(-5000);
   ASSERT_EQ(static_cast<uint8_t>((altitude >> 4) & 0xFF), payload[11]);
   ASSERT_EQ(EncodeTrack(180), payload[17]);
-}
-
-TEST_CASE("ForeFlight ID message encodes metadata in big-endian order") {
-  gdl90::GDL90Encoder encoder;
-  gdl90::DeviceInfo info{};
-  info.serial_number = 0x0123456789ABCDEFull;
-  info.device_name = "XP2GDL90";
-  info.device_long_name = "XP2GDL90 AHRS";
-  info.capabilities_mask = 0x00000005u;
-
-  const auto message = encoder.createForeFlightIdMessage(info);
-  const auto payload = ExtractPayload(message);
-
-  ASSERT_EQ(static_cast<size_t>(39), payload.size());
-  ASSERT_EQ(static_cast<uint8_t>(gdl90::MSG_ID_FORE_FLIGHT), payload[0]);
-  ASSERT_EQ(static_cast<uint8_t>(gdl90::FORE_FLIGHT_SUB_ID_DEVICE_INFO),
-            payload[1]);
-  ASSERT_EQ(static_cast<uint8_t>(0x01), payload[2]);
-  ASSERT_EQ(static_cast<uint64_t>(0x0123456789ABCDEFull), Decode64BE(payload, 3));
-
-  std::string device_name(payload.begin() + 11, payload.begin() + 19);
-  ASSERT_EQ(std::string("XP2GDL90"), device_name);
-
-  std::string device_long_name(payload.begin() + 19, payload.begin() + 32);
-  ASSERT_EQ(std::string("XP2GDL90 AHRS"), device_long_name);
-  ASSERT_EQ(static_cast<uint8_t>(0x00), payload[32]);
-  ASSERT_EQ(static_cast<uint32_t>(0x00000005u), Decode32BE(payload, 35));
-}
-
-TEST_CASE("ForeFlight AHRS message encodes attitude and heading fields") {
-  gdl90::GDL90Encoder encoder;
-  gdl90::AhrsData data{};
-  data.roll_deg = 12.3;
-  data.pitch_deg = -4.5;
-  data.heading_deg = 271.2;
-
-  const auto message = encoder.createForeFlightAhrsMessage(data);
-  const auto payload = ExtractPayload(message);
-
-  ASSERT_EQ(static_cast<size_t>(12), payload.size());
-  ASSERT_EQ(static_cast<uint8_t>(gdl90::MSG_ID_FORE_FLIGHT), payload[0]);
-  ASSERT_EQ(static_cast<uint8_t>(gdl90::FORE_FLIGHT_SUB_ID_AHRS), payload[1]);
-  ASSERT_EQ(static_cast<uint16_t>(123), Decode16BE(payload, 2));
-  ASSERT_EQ(static_cast<uint16_t>(static_cast<int16_t>(-45)),
-            Decode16BE(payload, 4));
-  ASSERT_EQ(static_cast<uint16_t>(2712), Decode16BE(payload, 6));
-  ASSERT_EQ(static_cast<uint16_t>(gdl90::AHRS_AIRSPEED_INVALID),
-            Decode16BE(payload, 8));
-  ASSERT_EQ(static_cast<uint16_t>(gdl90::AHRS_AIRSPEED_INVALID),
-            Decode16BE(payload, 10));
-}
-
-TEST_CASE("ForeFlight AHRS message invalidates out-of-range attitude") {
-  gdl90::GDL90Encoder encoder;
-  gdl90::AhrsData data{};
-  data.roll_deg = 181.0;
-  data.pitch_deg = std::numeric_limits<double>::quiet_NaN();
-  data.heading_deg = 360.0;
-  data.magnetic_heading = true;
-  data.indicated_airspeed = 120;
-  data.true_airspeed = 135;
-
-  const auto message = encoder.createForeFlightAhrsMessage(data);
-  const auto payload = ExtractPayload(message);
-
-  ASSERT_EQ(static_cast<uint16_t>(gdl90::AHRS_ATTITUDE_INVALID),
-            Decode16BE(payload, 2));
-  ASSERT_EQ(static_cast<uint16_t>(gdl90::AHRS_ATTITUDE_INVALID),
-            Decode16BE(payload, 4));
-  ASSERT_EQ(static_cast<uint16_t>(0x8000), Decode16BE(payload, 6));
-  ASSERT_EQ(static_cast<uint16_t>(120), Decode16BE(payload, 8));
-  ASSERT_EQ(static_cast<uint16_t>(135), Decode16BE(payload, 10));
 }
