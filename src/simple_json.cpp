@@ -1,6 +1,7 @@
 #include "xp2gdl90/simple_json.h"
 
 #include <cctype>
+#include <cstdint>
 #include <cmath>
 #include <cstdlib>
 #include <limits>
