@@ -10,6 +10,7 @@
 
 #include <XPLMDataAccess.h>
 #include <XPLMDisplay.h>
+#include <XPLMGraphics.h>
 #include <XPLMMenus.h>
 #include <XPLMPlugin.h>
 #include <XPLMProcessing.h>
@@ -29,6 +30,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "backends/imgui_impl_opengl2.h"
 #include "imgui.h"
@@ -54,6 +56,10 @@ namespace {
 
 constexpr double kMetersToFeet = 3.28084;
 constexpr float kMetersPerSecondToKnots = 1.94384f;
+constexpr float kMetersPerSecondToFeetPerMinute = 196.8504f;
+constexpr float kTrafficReportRate = 1.0f;
+constexpr int kTrafficFlightIdSize = 8;
+constexpr int kTrafficTailnumSize = 10;
 
 struct Settings {
   std::string target_ip = "192.168.1.100";
@@ -73,6 +79,46 @@ struct Settings {
   bool log_messages = false;
 };
 
+struct TrafficTcasRefs {
+  XPLMDataRef mode_s_ref = nullptr;
+  XPLMDataRef flight_id_ref = nullptr;
+  XPLMDataRef x_ref = nullptr;
+  XPLMDataRef y_ref = nullptr;
+  XPLMDataRef z_ref = nullptr;
+  XPLMDataRef vx_ref = nullptr;
+  XPLMDataRef vy_ref = nullptr;
+  XPLMDataRef vz_ref = nullptr;
+  XPLMDataRef vertical_speed_ref = nullptr;
+  XPLMDataRef heading_ref = nullptr;
+  XPLMDataRef weight_on_wheels_ref = nullptr;
+  XPLMDataRef wake_cat_ref = nullptr;
+  size_t slot_count = 0;
+
+  bool IsUsable() const {
+    return mode_s_ref && x_ref && y_ref && z_ref && heading_ref &&
+           slot_count > 0;
+  }
+};
+
+struct LegacyTrafficRefs {
+  XPLMDataRef x_ref = nullptr;
+  XPLMDataRef y_ref = nullptr;
+  XPLMDataRef z_ref = nullptr;
+  XPLMDataRef vx_ref = nullptr;
+  XPLMDataRef vy_ref = nullptr;
+  XPLMDataRef vz_ref = nullptr;
+  XPLMDataRef heading_ref = nullptr;
+
+  bool IsUsable() const {
+    return x_ref && y_ref && z_ref && vx_ref && vy_ref && vz_ref &&
+           heading_ref;
+  }
+};
+
+struct TrafficTextRefs {
+  XPLMDataRef tailnum_ref = nullptr;
+};
+
 struct PluginState {
   std::unique_ptr<gdl90::GDL90Encoder> encoder;
   std::unique_ptr<udp::UDPBroadcaster> broadcaster;
@@ -87,9 +133,13 @@ struct PluginState {
   XPLMDataRef airborne_ref = nullptr;
   XPLMDataRef sim_time_ref = nullptr;
   XPLMDataRef tailnum_ref = nullptr;
+  TrafficTcasRefs traffic_tcas_refs;
+  std::vector<LegacyTrafficRefs> legacy_traffic_refs;
+  std::vector<TrafficTextRefs> traffic_text_refs;
 
   float last_heartbeat = 0.0f;
   float last_position = 0.0f;
+  float last_traffic = 0.0f;
 
   bool initialized = false;
   bool enabled = false;
@@ -124,9 +174,12 @@ struct PluginState {
 
   uint64_t heartbeat_packets_sent = 0;
   uint64_t position_packets_sent = 0;
+  uint64_t traffic_packets_sent = 0;
   uint64_t bytes_sent = 0;
   int last_heartbeat_send_bytes = 0;
   int last_position_send_bytes = 0;
+  int last_traffic_send_bytes = 0;
+  int last_traffic_target_count = 0;
   std::string last_send_error;
 };
 
@@ -144,6 +197,10 @@ void CreateSettingsWindow();
 void DestroySettingsWindow();
 bool ReloadSettingsFromDisk();
 void SyncSettingsUiFromConfig();
+void InitializeTrafficDataRefs();
+size_t CollectTrafficData(const Settings& cfg,
+                          std::vector<gdl90::PositionData>* out_reports);
+void SendTrafficReports(float sim_time, const Settings& cfg);
 
 
 void LogMessage(const std::string& message) {
@@ -211,6 +268,304 @@ std::string ReadTailNumber() {
 
   buffer[bytes_read] = '\0';
   return Trim(std::string(buffer));
+}
+
+std::string ReadDataRefText(XPLMDataRef ref, int max_bytes) {
+  if (!ref || max_bytes <= 0) {
+    return "";
+  }
+
+  std::string buffer(static_cast<size_t>(max_bytes), '\0');
+  const int bytes_read = XPLMGetDatab(ref, buffer.data(), 0, max_bytes);
+  if (bytes_read <= 0) {
+    return "";
+  }
+
+  buffer.resize(static_cast<size_t>(bytes_read));
+  const size_t nul = buffer.find('\0');
+  if (nul != std::string::npos) {
+    buffer.resize(nul);
+  }
+  return Trim(buffer);
+}
+
+std::string SanitizeCallsign(std::string_view input) {
+  std::string out;
+  out.reserve(8);
+
+  for (const char ch : input) {
+    const unsigned char uch = static_cast<unsigned char>(ch);
+    if (std::isalnum(uch)) {
+      out.push_back(static_cast<char>(std::toupper(uch)));
+    } else if (ch == ' ' || ch == '-' || ch == '_') {
+      out.push_back(' ');
+    }
+    if (out.size() >= 8) {
+      break;
+    }
+  }
+
+  return Trim(out);
+}
+
+float ReadFloatArrayValue(XPLMDataRef ref, int index, float fallback) {
+  if (!ref || index < 0) {
+    return fallback;
+  }
+
+  float value = fallback;
+  const int values_read = XPLMGetDatavf(ref, &value, index, 1);
+  return values_read == 1 ? value : fallback;
+}
+
+int ReadIntArrayValue(XPLMDataRef ref, int index, int fallback) {
+  if (!ref || index < 0) {
+    return fallback;
+  }
+
+  int value = fallback;
+  const int values_read = XPLMGetDatavi(ref, &value, index, 1);
+  return values_read == 1 ? value : fallback;
+}
+
+bool LocalPositionToWorld(double x,
+                          double y,
+                          double z,
+                          double* out_latitude,
+                          double* out_longitude,
+                          int32_t* out_altitude_feet) {
+  if (!out_latitude || !out_longitude || !out_altitude_feet ||
+      !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
+    return false;
+  }
+
+  double latitude = 0.0;
+  double longitude = 0.0;
+  double altitude_meters = 0.0;
+  XPLMLocalToWorld(x, y, z, &latitude, &longitude, &altitude_meters);
+
+  if (!std::isfinite(latitude) || !std::isfinite(longitude) ||
+      !std::isfinite(altitude_meters)) {
+    return false;
+  }
+
+  *out_latitude = latitude;
+  *out_longitude = longitude;
+  *out_altitude_feet =
+      ClampFloatToInt<int32_t>(altitude_meters * kMetersToFeet);
+  return true;
+}
+
+gdl90::EmitterCategory WakeCategoryToEmitterCategory(int wake_category) {
+  switch (wake_category) {
+    case 0:
+      return gdl90::EmitterCategory::LIGHT;
+    case 1:
+      return gdl90::EmitterCategory::LARGE;
+    case 2:
+      return gdl90::EmitterCategory::HEAVY;
+    case 3:
+      return gdl90::EmitterCategory::HIGH_VORTEX_LARGE;
+    default:
+      return gdl90::EmitterCategory::NO_INFO;
+  }
+}
+
+std::string FormatTrafficFallbackCallsign(uint32_t address) {
+  char buffer[9] = {};
+  std::snprintf(buffer, sizeof(buffer), "V%06X",
+                static_cast<unsigned int>(address & 0xFFFFFFu));
+  return buffer;
+}
+
+std::string ReadTrafficFlightId(size_t slot) {
+  if (!g_state.traffic_tcas_refs.flight_id_ref) {
+    return "";
+  }
+
+  char buffer[kTrafficFlightIdSize + 1] = {};
+  const int offset =
+      ClampFloatToInt<int>(slot * static_cast<size_t>(kTrafficFlightIdSize));
+  const int bytes_read = XPLMGetDatab(g_state.traffic_tcas_refs.flight_id_ref,
+                                      buffer, offset, kTrafficFlightIdSize);
+  if (bytes_read <= 0) {
+    return "";
+  }
+  buffer[(std::min)(bytes_read, kTrafficFlightIdSize)] = '\0';
+  return Trim(std::string(buffer));
+}
+
+std::string ReadTrafficCallsign(size_t slot, uint32_t address) {
+  std::string callsign = SanitizeCallsign(ReadTrafficFlightId(slot));
+  if (callsign.empty() && slot >= 1 && slot <= g_state.traffic_text_refs.size()) {
+    callsign = SanitizeCallsign(ReadDataRefText(
+        g_state.traffic_text_refs[slot - 1].tailnum_ref, kTrafficTailnumSize));
+  }
+  if (!callsign.empty()) {
+    return callsign;
+  }
+  return FormatTrafficFallbackCallsign(address);
+}
+
+gdl90::TrackType ResolveTrafficTrackType(float heading) {
+  return std::isfinite(static_cast<double>(heading))
+             ? gdl90::TrackType::TRUE_HEADING
+             : gdl90::TrackType::INVALID;
+}
+
+uint16_t CalculateHorizontalSpeedKnots(float vx, float vz) {
+  if (!std::isfinite(static_cast<double>(vx)) ||
+      !std::isfinite(static_cast<double>(vz))) {
+    return 0;
+  }
+  const float speed = std::sqrt(vx * vx + vz * vz);
+  return ClampFloatToInt<uint16_t>(speed * kMetersPerSecondToKnots);
+}
+
+int16_t CalculateVerticalSpeedFpm(float vy_mps) {
+  if (!std::isfinite(static_cast<double>(vy_mps))) {
+    return std::numeric_limits<int16_t>::min();
+  }
+  return ClampFpmToInt16OrInvalid(vy_mps * kMetersPerSecondToFeetPerMinute);
+}
+
+bool BuildTrafficReportFromTcasSlot(const Settings& cfg,
+                                    size_t slot,
+                                    gdl90::PositionData* out_report) {
+  if (!out_report || !g_state.traffic_tcas_refs.IsUsable()) {
+    return false;
+  }
+
+  const int slot_index = ClampFloatToInt<int>(slot);
+  const int raw_address =
+      ReadIntArrayValue(g_state.traffic_tcas_refs.mode_s_ref, slot_index, 0);
+  if (raw_address <= 0) {
+    return false;
+  }
+
+  const float local_x =
+      ReadFloatArrayValue(g_state.traffic_tcas_refs.x_ref, slot_index, NAN);
+  const float local_y =
+      ReadFloatArrayValue(g_state.traffic_tcas_refs.y_ref, slot_index, NAN);
+  const float local_z =
+      ReadFloatArrayValue(g_state.traffic_tcas_refs.z_ref, slot_index, NAN);
+
+  gdl90::PositionData report{};
+  if (!LocalPositionToWorld(local_x, local_y, local_z, &report.latitude,
+                            &report.longitude, &report.altitude)) {
+    return false;
+  }
+
+  const float vx =
+      ReadFloatArrayValue(g_state.traffic_tcas_refs.vx_ref, slot_index, NAN);
+  const float vy =
+      ReadFloatArrayValue(g_state.traffic_tcas_refs.vy_ref, slot_index, NAN);
+  const float vz =
+      ReadFloatArrayValue(g_state.traffic_tcas_refs.vz_ref, slot_index, NAN);
+  const float vertical_speed =
+      ReadFloatArrayValue(g_state.traffic_tcas_refs.vertical_speed_ref,
+                          slot_index, NAN);
+  const float heading = ReadFloatArrayValue(g_state.traffic_tcas_refs.heading_ref,
+                                            slot_index, NAN);
+  const int weight_on_wheels = ReadIntArrayValue(
+      g_state.traffic_tcas_refs.weight_on_wheels_ref, slot_index, 0);
+  const int wake_category =
+      ReadIntArrayValue(g_state.traffic_tcas_refs.wake_cat_ref, slot_index, -1);
+
+  report.h_velocity = CalculateHorizontalSpeedKnots(vx, vz);
+  report.v_velocity = std::isfinite(static_cast<double>(vertical_speed))
+                          ? ClampFpmToInt16OrInvalid(vertical_speed)
+                          : CalculateVerticalSpeedFpm(vy);
+  report.track = NormalizeDegreesToUint16(heading);
+  report.track_type = ResolveTrafficTrackType(heading);
+  report.airborne = (weight_on_wheels == 0);
+  report.nic = cfg.nic;
+  report.nacp = cfg.nacp;
+  report.icao_address = static_cast<uint32_t>(raw_address) & 0xFFFFFFu;
+  report.callsign = ReadTrafficCallsign(slot, report.icao_address);
+  report.emitter_category = WakeCategoryToEmitterCategory(wake_category);
+  report.address_type = gdl90::AddressType::ADSB_SELF_ASSIGNED;
+  report.alert_status = 0;
+  report.emergency_code = 0;
+
+  *out_report = report;
+  return true;
+}
+
+bool BuildTrafficReportFromLegacySlot(const Settings& cfg,
+                                      size_t slot,
+                                      gdl90::PositionData* out_report) {
+  if (!out_report || slot < 1 || slot > g_state.legacy_traffic_refs.size()) {
+    return false;
+  }
+
+  const LegacyTrafficRefs& refs = g_state.legacy_traffic_refs[slot - 1];
+  if (!refs.IsUsable()) {
+    return false;
+  }
+
+  const float local_x = XPLMGetDataf(refs.x_ref);
+  const float local_y = XPLMGetDataf(refs.y_ref);
+  const float local_z = XPLMGetDataf(refs.z_ref);
+  const float vx = XPLMGetDataf(refs.vx_ref);
+  const float vy = XPLMGetDataf(refs.vy_ref);
+  const float vz = XPLMGetDataf(refs.vz_ref);
+  const float heading = XPLMGetDataf(refs.heading_ref);
+
+  const uint32_t synthetic_address =
+      static_cast<uint32_t>(0xF00000u | (static_cast<uint32_t>(slot) & 0xFFFFu));
+  const std::string callsign = ReadTrafficCallsign(slot, synthetic_address);
+
+  if (!std::isfinite(static_cast<double>(local_x)) ||
+      !std::isfinite(static_cast<double>(local_y)) ||
+      !std::isfinite(static_cast<double>(local_z))) {
+    return false;
+  }
+  if (local_x == 0.0f && local_y == 0.0f && local_z == 0.0f &&
+      callsign == FormatTrafficFallbackCallsign(synthetic_address)) {
+    return false;
+  }
+
+  gdl90::PositionData report{};
+  if (!LocalPositionToWorld(local_x, local_y, local_z, &report.latitude,
+                            &report.longitude, &report.altitude)) {
+    return false;
+  }
+
+  report.h_velocity = CalculateHorizontalSpeedKnots(vx, vz);
+  report.v_velocity = CalculateVerticalSpeedFpm(vy);
+  report.track = NormalizeDegreesToUint16(heading);
+  report.track_type = ResolveTrafficTrackType(heading);
+  report.airborne =
+      report.h_velocity >= 35 || std::abs(static_cast<double>(vy)) >= 0.5;
+  report.nic = cfg.nic;
+  report.nacp = cfg.nacp;
+  report.icao_address = synthetic_address;
+  report.callsign = callsign;
+  report.emitter_category = gdl90::EmitterCategory::NO_INFO;
+  report.address_type = gdl90::AddressType::ADSB_SELF_ASSIGNED;
+  report.alert_status = 0;
+  report.emergency_code = 0;
+
+  *out_report = report;
+  return true;
+}
+
+const char* GetTrafficSourceName() {
+  if (g_state.traffic_tcas_refs.IsUsable()) {
+    return "TCAS targets";
+  }
+  if (!g_state.legacy_traffic_refs.empty()) {
+    return "Legacy multiplayer";
+  }
+  return "Unavailable";
+}
+
+size_t GetTrafficSourceSlotCount() {
+  if (g_state.traffic_tcas_refs.IsUsable()) {
+    return g_state.traffic_tcas_refs.slot_count;
+  }
+  return g_state.legacy_traffic_refs.size();
 }
 
 bool VerifyDataRef(XPLMDataRef ref, const char* name) {
@@ -288,6 +643,164 @@ gdl90::PositionData GetOwnshipData(const Settings& cfg) {
   data.emergency_code = 0;
 
   return data;
+}
+
+void InitializeTrafficDataRefs() {
+  g_state.traffic_tcas_refs = {};
+  g_state.legacy_traffic_refs.clear();
+  g_state.traffic_text_refs.clear();
+
+  g_state.traffic_tcas_refs.mode_s_ref =
+      XPLMFindDataRef("sim/cockpit2/tcas/targets/modeS_id");
+  if (g_state.traffic_tcas_refs.mode_s_ref) {
+    const int array_size =
+        XPLMGetDatavi(g_state.traffic_tcas_refs.mode_s_ref, nullptr, 0, 0);
+    if (array_size > 1) {
+      g_state.traffic_tcas_refs.slot_count =
+          static_cast<size_t>(array_size - 1);
+    }
+  }
+
+  if (g_state.traffic_tcas_refs.slot_count > 0) {
+    g_state.traffic_tcas_refs.flight_id_ref =
+        XPLMFindDataRef("sim/cockpit2/tcas/targets/flight_id");
+    g_state.traffic_tcas_refs.x_ref =
+        XPLMFindDataRef("sim/cockpit2/tcas/targets/position/x");
+    g_state.traffic_tcas_refs.y_ref =
+        XPLMFindDataRef("sim/cockpit2/tcas/targets/position/y");
+    g_state.traffic_tcas_refs.z_ref =
+        XPLMFindDataRef("sim/cockpit2/tcas/targets/position/z");
+    g_state.traffic_tcas_refs.vx_ref =
+        XPLMFindDataRef("sim/cockpit2/tcas/targets/position/vx");
+    g_state.traffic_tcas_refs.vy_ref =
+        XPLMFindDataRef("sim/cockpit2/tcas/targets/position/vy");
+    g_state.traffic_tcas_refs.vz_ref =
+        XPLMFindDataRef("sim/cockpit2/tcas/targets/position/vz");
+    g_state.traffic_tcas_refs.vertical_speed_ref =
+        XPLMFindDataRef("sim/cockpit2/tcas/targets/position/vertical_speed");
+    g_state.traffic_tcas_refs.heading_ref =
+        XPLMFindDataRef("sim/cockpit2/tcas/targets/position/psi");
+    g_state.traffic_tcas_refs.weight_on_wheels_ref =
+        XPLMFindDataRef("sim/cockpit2/tcas/targets/position/weight_on_wheels");
+    g_state.traffic_tcas_refs.wake_cat_ref =
+        XPLMFindDataRef("sim/cockpit2/tcas/targets/wake/wake_cat");
+  }
+
+  for (size_t slot = 1;; ++slot) {
+    char buffer[128] = {};
+    LegacyTrafficRefs refs;
+
+    std::snprintf(buffer, sizeof(buffer),
+                  "sim/multiplayer/position/plane%zu_x", slot);
+    refs.x_ref = XPLMFindDataRef(buffer);
+    if (!refs.x_ref) {
+      break;
+    }
+
+    std::snprintf(buffer, sizeof(buffer),
+                  "sim/multiplayer/position/plane%zu_y", slot);
+    refs.y_ref = XPLMFindDataRef(buffer);
+    std::snprintf(buffer, sizeof(buffer),
+                  "sim/multiplayer/position/plane%zu_z", slot);
+    refs.z_ref = XPLMFindDataRef(buffer);
+    std::snprintf(buffer, sizeof(buffer),
+                  "sim/multiplayer/position/plane%zu_v_x", slot);
+    refs.vx_ref = XPLMFindDataRef(buffer);
+    std::snprintf(buffer, sizeof(buffer),
+                  "sim/multiplayer/position/plane%zu_v_y", slot);
+    refs.vy_ref = XPLMFindDataRef(buffer);
+    std::snprintf(buffer, sizeof(buffer),
+                  "sim/multiplayer/position/plane%zu_v_z", slot);
+    refs.vz_ref = XPLMFindDataRef(buffer);
+    std::snprintf(buffer, sizeof(buffer),
+                  "sim/multiplayer/position/plane%zu_psi", slot);
+    refs.heading_ref = XPLMFindDataRef(buffer);
+
+    if (!refs.IsUsable()) {
+      break;
+    }
+    g_state.legacy_traffic_refs.push_back(refs);
+  }
+
+  const size_t text_slots = (std::max)(g_state.traffic_tcas_refs.slot_count,
+                                       g_state.legacy_traffic_refs.size());
+  g_state.traffic_text_refs.resize(text_slots);
+  for (size_t slot = 1; slot <= text_slots; ++slot) {
+    char buffer[128] = {};
+    std::snprintf(buffer, sizeof(buffer),
+                  "sim/multiplayer/position/plane%zu_tailnum", slot);
+    g_state.traffic_text_refs[slot - 1].tailnum_ref = XPLMFindDataRef(buffer);
+  }
+
+  std::ostringstream message;
+  message << "Traffic input initialized: source=" << GetTrafficSourceName()
+          << ", slots=" << GetTrafficSourceSlotCount()
+          << ", text_slots=" << g_state.traffic_text_refs.size();
+  LogMessage(message.str());
+}
+
+size_t CollectTrafficData(const Settings& cfg,
+                          std::vector<gdl90::PositionData>* out_reports) {
+  if (!out_reports) {
+    return 0;
+  }
+
+  out_reports->clear();
+
+  if (g_state.traffic_tcas_refs.IsUsable()) {
+    out_reports->reserve(g_state.traffic_tcas_refs.slot_count);
+    for (size_t slot = 1; slot <= g_state.traffic_tcas_refs.slot_count; ++slot) {
+      gdl90::PositionData report{};
+      if (BuildTrafficReportFromTcasSlot(cfg, slot, &report)) {
+        out_reports->push_back(report);
+      }
+    }
+  }
+
+  if (!out_reports->empty() || g_state.legacy_traffic_refs.empty()) {
+    return out_reports->size();
+  }
+
+  out_reports->reserve(g_state.legacy_traffic_refs.size());
+  for (size_t slot = 1; slot <= g_state.legacy_traffic_refs.size(); ++slot) {
+    gdl90::PositionData report{};
+    if (BuildTrafficReportFromLegacySlot(cfg, slot, &report)) {
+      out_reports->push_back(report);
+    }
+  }
+
+  return out_reports->size();
+}
+
+void SendTrafficReports(float sim_time, const Settings& cfg) {
+  if (sim_time - g_state.last_traffic < (1.0f / kTrafficReportRate)) {
+    return;
+  }
+
+  std::vector<gdl90::PositionData> reports;
+  const size_t report_count = CollectTrafficData(cfg, &reports);
+
+  int total_bytes = 0;
+  bool saw_error = false;
+  for (const gdl90::PositionData& report : reports) {
+    const auto message = g_state.encoder->createTrafficReport(report);
+    const int sent = g_state.broadcaster->send(message);
+    if (sent >= 0) {
+      total_bytes += sent;
+      g_state.bytes_sent += static_cast<uint64_t>(sent);
+      g_state.traffic_packets_sent++;
+    } else {
+      saw_error = true;
+      g_state.last_send_error = g_state.broadcaster->getLastError();
+    }
+  }
+
+  g_state.last_traffic_send_bytes = total_bytes;
+  g_state.last_traffic_target_count = static_cast<int>(report_count);
+  if (!saw_error) {
+    g_state.last_send_error.clear();
+  }
+  g_state.last_traffic = sim_time;
 }
 
 bool SaveSettingsToDisk(std::string* out_error) {
@@ -959,6 +1472,8 @@ void DrawSettingsWindowUI() {
       (g_state.last_heartbeat > 0.0f) ? (sim_time - g_state.last_heartbeat) : 0.0f;
   const float since_position =
       (g_state.last_position > 0.0f) ? (sim_time - g_state.last_position) : 0.0f;
+  const float since_traffic =
+      (g_state.last_traffic > 0.0f) ? (sim_time - g_state.last_traffic) : 0.0f;
 
   const std::string tail = ReadTailNumber();
   const std::string effective_callsign = !tail.empty() ? tail : cfg.callsign;
@@ -980,6 +1495,12 @@ void DrawSettingsWindowUI() {
       ImGui::Text("Position packets: %llu (%d bytes last)",
                   static_cast<unsigned long long>(g_state.position_packets_sent),
                   g_state.last_position_send_bytes);
+      ImGui::Text("Traffic source: %s (%zu slots)",
+                  GetTrafficSourceName(), GetTrafficSourceSlotCount());
+      ImGui::Text("Traffic reports: %llu (%d targets, %d bytes last, %.2fs ago)",
+                  static_cast<unsigned long long>(g_state.traffic_packets_sent),
+                  g_state.last_traffic_target_count,
+                  g_state.last_traffic_send_bytes, since_traffic);
       ImGui::Text("Bytes sent: %llu",
                   static_cast<unsigned long long>(g_state.bytes_sent));
 
@@ -1417,6 +1938,7 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
   g_state.enabled = false;
   g_state.last_heartbeat = 0.0f;
   g_state.last_position = 0.0f;
+  g_state.last_traffic = 0.0f;
 
   g_state.encoder = std::make_unique<gdl90::GDL90Encoder>();
 
@@ -1481,6 +2003,8 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     LogMessage("ERROR: Failed to find required datarefs");
     return 0;
   }
+
+  InitializeTrafficDataRefs();
 
   const int menu_container =
       XPLMAppendMenuItem(XPLMFindPluginsMenu(), "XP2GDL90", nullptr, 0);
@@ -1600,6 +2124,8 @@ float FlightLoopCallback(float in_elapsed_since_last_call,
     }
     g_state.last_position = sim_time;
   }
+
+  SendTrafficReports(sim_time, cfg);
 
   return -1.0f;
 }

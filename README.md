@@ -8,6 +8,7 @@ A high-performance X-Plane 12 plugin that broadcasts real-time flight data in GD
 ## Features
 
 - **Real-time Position Broadcasting**: Ownship position, altitude, speed, and heading
+- **Traffic Report Broadcasting**: Remote multiplayer / xPilot traffic as GDL90 `0x14` reports
 - **High Performance**: Native C++ plugin, minimal CPU overhead
 - **Cross-Platform**: Windows, macOS (Universal), and Linux support
 - **Fully Configurable**: INI-based configuration for all settings
@@ -222,8 +223,9 @@ This plugin currently transmits a subset of GDL90 messages:
 |------------|------|-------------|
 | 0x00 | Heartbeat | Status and timing information (1 Hz) |
 | 0x0A | Ownship Report | Own aircraft position and status |
+| 0x14 | Traffic Report | Multiplayer / TCAS traffic targets (1 Hz) |
 
-Other GDL90 message types (e.g., Traffic, Uplink Data, Ownship Geometric Altitude) are not transmitted yet.
+Other GDL90 message types (e.g., Uplink Data, Ownship Geometric Altitude) are not transmitted yet.
 
 ### Message Format
 
@@ -266,6 +268,9 @@ EFB Application
 | `sim/flightmodel/position/vh_ind_fpm` | Vertical speed (fpm) |
 | `sim/flightmodel/failures/onground_any` | Airborne status |
 | `sim/aircraft/view/acf_tailnum` | Aircraft tail number (callsign) |
+| `sim/cockpit2/tcas/targets/*` | Remote traffic position / velocity / state (preferred) |
+| `sim/multiplayer/position/planeN_*` | Legacy multiplayer traffic fallback |
+| `sim/multiplayer/position/planeN_tailnum` | Shared remote traffic callsign / tail number |
 
 ## Contributing
 
@@ -302,7 +307,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - [ ] Geometric altitude support (XPLM 4.1 feature)
 - [ ] GUI configuration panel
-- [ ] Traffic Report support (AI/multiplayer aircraft)
 - [ ] FIS-B weather data integration
 - [ ] Multiple EFB simultaneous broadcasting
 
