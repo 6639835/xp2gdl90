@@ -259,6 +259,12 @@ int UDPBroadcaster::send(const std::vector<uint8_t>& data) {
   return send(data.data(), data.size());
 }
 
+void UDPBroadcaster::setTarget(const std::string& target_ip,
+                               uint16_t target_port) {
+  target_ip_ = target_ip;
+  target_port_ = target_port;
+}
+
 void UDPBroadcaster::close() {
   if (!initialized_) {
     return;

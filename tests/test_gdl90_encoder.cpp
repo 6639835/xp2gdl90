@@ -89,6 +89,29 @@ uint32_t Decode24(const std::vector<uint8_t>& payload, size_t offset) {
          static_cast<uint32_t>(payload[offset + 2]);
 }
 
+uint16_t Decode16BE(const std::vector<uint8_t>& payload, size_t offset) {
+  return static_cast<uint16_t>((static_cast<uint16_t>(payload[offset]) << 8) |
+                               static_cast<uint16_t>(payload[offset + 1]));
+}
+
+uint32_t Decode32BE(const std::vector<uint8_t>& payload, size_t offset) {
+  return (static_cast<uint32_t>(payload[offset]) << 24) |
+         (static_cast<uint32_t>(payload[offset + 1]) << 16) |
+         (static_cast<uint32_t>(payload[offset + 2]) << 8) |
+         static_cast<uint32_t>(payload[offset + 3]);
+}
+
+uint64_t Decode64BE(const std::vector<uint8_t>& payload, size_t offset) {
+  return (static_cast<uint64_t>(payload[offset]) << 56) |
+         (static_cast<uint64_t>(payload[offset + 1]) << 48) |
+         (static_cast<uint64_t>(payload[offset + 2]) << 40) |
+         (static_cast<uint64_t>(payload[offset + 3]) << 32) |
+         (static_cast<uint64_t>(payload[offset + 4]) << 24) |
+         (static_cast<uint64_t>(payload[offset + 5]) << 16) |
+         (static_cast<uint64_t>(payload[offset + 6]) << 8) |
+         static_cast<uint64_t>(payload[offset + 7]);
+}
+
 uint32_t EncodeLat(double latitude) {
   const double clamped = std::max(-90.0, std::min(90.0, latitude));
   int32_t value = static_cast<int32_t>(clamped * (0x800000 / 180.0));
@@ -230,6 +253,64 @@ TEST_CASE("Ownship report encodes fields and clamps values") {
   ASSERT_EQ(static_cast<uint8_t>(data.emergency_code << 4), payload[27]);
 }
 
+TEST_CASE("Ownship report encodes invalid altitude sentinel") {
+  gdl90::GDL90Encoder encoder;
+  gdl90::PositionData data{};
+  data.latitude = 0.0;
+  data.longitude = 0.0;
+  data.altitude = std::numeric_limits<int32_t>::min();
+  data.h_velocity = 0;
+  data.v_velocity = 0;
+  data.track = 0;
+  data.track_type = gdl90::TrackType::TRUE_TRACK;
+  data.airborne = true;
+  data.nic = 11;
+  data.nacp = 11;
+  data.icao_address = 1;
+  data.callsign = "TEST";
+  data.emitter_category = gdl90::EmitterCategory::LIGHT;
+  data.address_type = gdl90::AddressType::ADSB_ICAO;
+  data.alert_status = 0;
+  data.emergency_code = 0;
+
+  const auto message = encoder.createOwnshipReport(data);
+  const auto payload = ExtractPayload(message);
+
+  ASSERT_EQ(static_cast<uint8_t>(0xFF), payload[11]);
+  ASSERT_EQ(static_cast<uint8_t>(0xF9), payload[12]);
+}
+
+TEST_CASE("Ownship geometric altitude encodes altitude and vertical metrics") {
+  gdl90::GDL90Encoder encoder;
+  gdl90::GeoAltitudeData data{};
+  data.altitude_feet = 1000;
+  data.vertical_warning = true;
+  data.vfom_meters = 50;
+
+  const auto message = encoder.createOwnshipGeometricAltitude(data);
+  const auto payload = ExtractPayload(message);
+
+  ASSERT_EQ(static_cast<size_t>(5), payload.size());
+  ASSERT_EQ(static_cast<uint8_t>(gdl90::MSG_ID_OWNSHIP_GEO_ALTITUDE), payload[0]);
+  ASSERT_EQ(static_cast<uint16_t>(0x00C8), Decode16BE(payload, 1));
+  ASSERT_EQ(static_cast<uint16_t>(0x8032), Decode16BE(payload, 3));
+}
+
+TEST_CASE("Ownship geometric altitude clamps VFOM and altitude bounds") {
+  gdl90::GDL90Encoder encoder;
+  gdl90::GeoAltitudeData data{};
+  data.altitude_feet = std::numeric_limits<int32_t>::max();
+  data.vertical_warning = false;
+  data.vfom_meters = 0xFFFFu;
+
+  const auto message = encoder.createOwnshipGeometricAltitude(data);
+  const auto payload = ExtractPayload(message);
+
+  ASSERT_EQ(static_cast<uint16_t>(0x7FFF), Decode16BE(payload, 1));
+  ASSERT_EQ(static_cast<uint16_t>(gdl90::GEO_ALTITUDE_VFOM_EXCESSIVE),
+            Decode16BE(payload, 3));
+}
+
 TEST_CASE("Ownship report clamps vertical velocity bounds") {
   gdl90::GDL90Encoder encoder;
   gdl90::PositionData data{};
@@ -305,4 +386,76 @@ TEST_CASE("Traffic report escapes special bytes") {
   const uint16_t altitude = EncodeAltitude(-5000);
   ASSERT_EQ(static_cast<uint8_t>((altitude >> 4) & 0xFF), payload[11]);
   ASSERT_EQ(EncodeTrack(180), payload[17]);
+}
+
+TEST_CASE("ForeFlight ID message encodes metadata in big-endian order") {
+  gdl90::GDL90Encoder encoder;
+  gdl90::DeviceInfo info{};
+  info.serial_number = 0x0123456789ABCDEFull;
+  info.device_name = "XP2GDL90";
+  info.device_long_name = "XP2GDL90 AHRS";
+  info.capabilities_mask = 0x00000005u;
+
+  const auto message = encoder.createForeFlightIdMessage(info);
+  const auto payload = ExtractPayload(message);
+
+  ASSERT_EQ(static_cast<size_t>(39), payload.size());
+  ASSERT_EQ(static_cast<uint8_t>(gdl90::MSG_ID_FORE_FLIGHT), payload[0]);
+  ASSERT_EQ(static_cast<uint8_t>(gdl90::FORE_FLIGHT_SUB_ID_DEVICE_INFO),
+            payload[1]);
+  ASSERT_EQ(static_cast<uint8_t>(0x01), payload[2]);
+  ASSERT_EQ(static_cast<uint64_t>(0x0123456789ABCDEFull), Decode64BE(payload, 3));
+
+  std::string device_name(payload.begin() + 11, payload.begin() + 19);
+  ASSERT_EQ(std::string("XP2GDL90"), device_name);
+
+  std::string device_long_name(payload.begin() + 19, payload.begin() + 32);
+  ASSERT_EQ(std::string("XP2GDL90 AHRS"), device_long_name);
+  ASSERT_EQ(static_cast<uint8_t>(0x00), payload[32]);
+  ASSERT_EQ(static_cast<uint32_t>(0x00000005u), Decode32BE(payload, 35));
+}
+
+TEST_CASE("ForeFlight AHRS message encodes attitude and heading fields") {
+  gdl90::GDL90Encoder encoder;
+  gdl90::AhrsData data{};
+  data.roll_deg = 12.3;
+  data.pitch_deg = -4.5;
+  data.heading_deg = 271.2;
+
+  const auto message = encoder.createForeFlightAhrsMessage(data);
+  const auto payload = ExtractPayload(message);
+
+  ASSERT_EQ(static_cast<size_t>(12), payload.size());
+  ASSERT_EQ(static_cast<uint8_t>(gdl90::MSG_ID_FORE_FLIGHT), payload[0]);
+  ASSERT_EQ(static_cast<uint8_t>(gdl90::FORE_FLIGHT_SUB_ID_AHRS), payload[1]);
+  ASSERT_EQ(static_cast<uint16_t>(123), Decode16BE(payload, 2));
+  ASSERT_EQ(static_cast<uint16_t>(static_cast<int16_t>(-45)),
+            Decode16BE(payload, 4));
+  ASSERT_EQ(static_cast<uint16_t>(2712), Decode16BE(payload, 6));
+  ASSERT_EQ(static_cast<uint16_t>(gdl90::AHRS_AIRSPEED_INVALID),
+            Decode16BE(payload, 8));
+  ASSERT_EQ(static_cast<uint16_t>(gdl90::AHRS_AIRSPEED_INVALID),
+            Decode16BE(payload, 10));
+}
+
+TEST_CASE("ForeFlight AHRS message invalidates out-of-range attitude") {
+  gdl90::GDL90Encoder encoder;
+  gdl90::AhrsData data{};
+  data.roll_deg = 181.0;
+  data.pitch_deg = std::numeric_limits<double>::quiet_NaN();
+  data.heading_deg = 360.0;
+  data.magnetic_heading = true;
+  data.indicated_airspeed = 120;
+  data.true_airspeed = 135;
+
+  const auto message = encoder.createForeFlightAhrsMessage(data);
+  const auto payload = ExtractPayload(message);
+
+  ASSERT_EQ(static_cast<uint16_t>(gdl90::AHRS_ATTITUDE_INVALID),
+            Decode16BE(payload, 2));
+  ASSERT_EQ(static_cast<uint16_t>(gdl90::AHRS_ATTITUDE_INVALID),
+            Decode16BE(payload, 4));
+  ASSERT_EQ(static_cast<uint16_t>(0x8000), Decode16BE(payload, 6));
+  ASSERT_EQ(static_cast<uint16_t>(120), Decode16BE(payload, 8));
+  ASSERT_EQ(static_cast<uint16_t>(135), Decode16BE(payload, 10));
 }

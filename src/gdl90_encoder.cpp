@@ -118,6 +118,10 @@ uint32_t GDL90Encoder::encodeLongitude(double longitude) const {
 }
 
 uint16_t GDL90Encoder::encodeAltitude(int32_t altitude) const {
+  if (altitude == std::numeric_limits<int32_t>::min()) {
+    return ALTITUDE_INVALID;
+  }
+
   int64_t encoded = (static_cast<int64_t>(altitude) + 1000) / 25;
 
   if (encoded < 0) {
@@ -152,6 +156,106 @@ uint16_t GDL90Encoder::encodeVerticalVelocity(int16_t vv_fpm) const {
 
 uint8_t GDL90Encoder::encodeTrack(uint16_t track) const {
   return static_cast<uint8_t>((track % 360) * 256 / 360);
+}
+
+int16_t GDL90Encoder::encodeGeoAltitude(int32_t altitude_feet) const {
+  int64_t value = std::llround(static_cast<double>(altitude_feet) / 5.0);
+  if (value < std::numeric_limits<int16_t>::min()) {
+    value = std::numeric_limits<int16_t>::min();
+  }
+  if (value > std::numeric_limits<int16_t>::max()) {
+    value = std::numeric_limits<int16_t>::max();
+  }
+  return static_cast<int16_t>(value);
+}
+
+uint16_t GDL90Encoder::encodeGeoVerticalMetrics(bool vertical_warning,
+                                                uint16_t vfom_meters) const {
+  uint16_t encoded_vfom = vfom_meters;
+  if (encoded_vfom != GEO_ALTITUDE_VFOM_INVALID &&
+      encoded_vfom != GEO_ALTITUDE_VFOM_EXCESSIVE &&
+      encoded_vfom >= GEO_ALTITUDE_VFOM_INVALID) {
+    encoded_vfom = GEO_ALTITUDE_VFOM_EXCESSIVE;
+  }
+
+  encoded_vfom &= 0x7FFFu;
+  if (vertical_warning) {
+    encoded_vfom |= 0x8000u;
+  }
+  return encoded_vfom;
+}
+
+int16_t GDL90Encoder::encodeAhrsAttitude(double degrees) const {
+  if (!std::isfinite(degrees)) {
+    return AHRS_ATTITUDE_INVALID;
+  }
+
+  const long value = std::lround(degrees * 10.0);
+  if (value < -1800 || value > 1800) {
+    return AHRS_ATTITUDE_INVALID;
+  }
+
+  return static_cast<int16_t>(value);
+}
+
+uint16_t GDL90Encoder::encodeAhrsHeading(double degrees,
+                                         bool magnetic_heading) const {
+  if (!std::isfinite(degrees)) {
+    return AHRS_HEADING_INVALID;
+  }
+
+  double normalized = std::fmod(degrees, 360.0);
+  if (normalized < 0.0) {
+    normalized += 360.0;
+  }
+
+  long value = std::lround(normalized * 10.0);
+  if (value == 3600) {
+    value = 0;
+  }
+  if (value < 0 || value > 3600) {
+    return AHRS_HEADING_INVALID;
+  }
+
+  uint16_t encoded = static_cast<uint16_t>(value) & 0x7FFF;
+  if (magnetic_heading) {
+    encoded |= 0x8000;
+  }
+  return encoded;
+}
+
+void GDL90Encoder::appendBigEndian16(std::vector<uint8_t>& buffer,
+                                     uint16_t value) const {
+  buffer.push_back(static_cast<uint8_t>((value >> 8) & 0xFF));
+  buffer.push_back(static_cast<uint8_t>(value & 0xFF));
+}
+
+void GDL90Encoder::appendBigEndian32(std::vector<uint8_t>& buffer,
+                                     uint32_t value) const {
+  buffer.push_back(static_cast<uint8_t>((value >> 24) & 0xFF));
+  buffer.push_back(static_cast<uint8_t>((value >> 16) & 0xFF));
+  buffer.push_back(static_cast<uint8_t>((value >> 8) & 0xFF));
+  buffer.push_back(static_cast<uint8_t>(value & 0xFF));
+}
+
+void GDL90Encoder::appendBigEndian64(std::vector<uint8_t>& buffer,
+                                     uint64_t value) const {
+  buffer.push_back(static_cast<uint8_t>((value >> 56) & 0xFF));
+  buffer.push_back(static_cast<uint8_t>((value >> 48) & 0xFF));
+  buffer.push_back(static_cast<uint8_t>((value >> 40) & 0xFF));
+  buffer.push_back(static_cast<uint8_t>((value >> 32) & 0xFF));
+  buffer.push_back(static_cast<uint8_t>((value >> 24) & 0xFF));
+  buffer.push_back(static_cast<uint8_t>((value >> 16) & 0xFF));
+  buffer.push_back(static_cast<uint8_t>((value >> 8) & 0xFF));
+  buffer.push_back(static_cast<uint8_t>(value & 0xFF));
+}
+
+void GDL90Encoder::appendFixedText(std::vector<uint8_t>& buffer,
+                                   const std::string& value,
+                                   size_t width) const {
+  const size_t count = std::min(value.size(), width);
+  buffer.insert(buffer.end(), value.begin(), value.begin() + count);
+  buffer.insert(buffer.end(), width - count, 0x00);
 }
 
 void GDL90Encoder::pack24bit(std::vector<uint8_t>& buffer,
@@ -264,9 +368,59 @@ std::vector<uint8_t> GDL90Encoder::createOwnshipReport(
   return createPositionReport(MSG_ID_OWNSHIP_REPORT, data);
 }
 
+std::vector<uint8_t> GDL90Encoder::createOwnshipGeometricAltitude(
+    const GeoAltitudeData& data) {
+  std::vector<uint8_t> payload;
+  payload.reserve(5);
+
+  payload.push_back(MSG_ID_OWNSHIP_GEO_ALTITUDE);
+  appendBigEndian16(payload,
+                    static_cast<uint16_t>(encodeGeoAltitude(data.altitude_feet)));
+  appendBigEndian16(payload,
+                    encodeGeoVerticalMetrics(data.vertical_warning,
+                                             data.vfom_meters));
+
+  return prepareMessage(payload);
+}
+
 std::vector<uint8_t> GDL90Encoder::createTrafficReport(
     const PositionData& data) {
   return createPositionReport(MSG_ID_TRAFFIC_REPORT, data);
+}
+
+std::vector<uint8_t> GDL90Encoder::createForeFlightIdMessage(
+    const DeviceInfo& data) {
+  std::vector<uint8_t> payload;
+  payload.reserve(39);
+
+  payload.push_back(MSG_ID_FORE_FLIGHT);
+  payload.push_back(FORE_FLIGHT_SUB_ID_DEVICE_INFO);
+  payload.push_back(0x01);
+  appendBigEndian64(payload, data.serial_number);
+  appendFixedText(payload, data.device_name, 8);
+  appendFixedText(payload, data.device_long_name, 16);
+  appendBigEndian32(payload, data.capabilities_mask);
+
+  return prepareMessage(payload);
+}
+
+std::vector<uint8_t> GDL90Encoder::createForeFlightAhrsMessage(
+    const AhrsData& data) {
+  std::vector<uint8_t> payload;
+  payload.reserve(12);
+
+  payload.push_back(MSG_ID_FORE_FLIGHT);
+  payload.push_back(FORE_FLIGHT_SUB_ID_AHRS);
+  appendBigEndian16(payload,
+                    static_cast<uint16_t>(encodeAhrsAttitude(data.roll_deg)));
+  appendBigEndian16(payload,
+                    static_cast<uint16_t>(encodeAhrsAttitude(data.pitch_deg)));
+  appendBigEndian16(payload,
+                    encodeAhrsHeading(data.heading_deg, data.magnetic_heading));
+  appendBigEndian16(payload, data.indicated_airspeed);
+  appendBigEndian16(payload, data.true_airspeed);
+
+  return prepareMessage(payload);
 }
 
 }  // namespace gdl90

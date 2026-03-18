@@ -4,6 +4,7 @@
 #include <functional>
 #include <cstdint>
 #include <ctime>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -17,11 +18,22 @@ namespace gdl90 {
 
 constexpr uint8_t MSG_ID_HEARTBEAT = 0x00;
 constexpr uint8_t MSG_ID_OWNSHIP_REPORT = 0x0A;
+constexpr uint8_t MSG_ID_OWNSHIP_GEO_ALTITUDE = 0x0B;
 constexpr uint8_t MSG_ID_TRAFFIC_REPORT = 0x14;
+constexpr uint8_t MSG_ID_FORE_FLIGHT = 0x65;
+
+constexpr uint8_t FORE_FLIGHT_SUB_ID_DEVICE_INFO = 0x00;
+constexpr uint8_t FORE_FLIGHT_SUB_ID_AHRS = 0x01;
 
 constexpr uint16_t ALTITUDE_INVALID = 0xFFF;
 constexpr uint16_t VELOCITY_INVALID = 0xFFF;
 constexpr uint16_t VVELOCITY_INVALID = 0x800;
+constexpr uint64_t DEVICE_SERIAL_INVALID = 0xFFFFFFFFFFFFFFFFull;
+constexpr int16_t AHRS_ATTITUDE_INVALID = 0x7FFF;
+constexpr uint16_t AHRS_HEADING_INVALID = 0xFFFF;
+constexpr uint16_t AHRS_AIRSPEED_INVALID = 0xFFFF;
+constexpr uint16_t GEO_ALTITUDE_VFOM_INVALID = 0x7FFF;
+constexpr uint16_t GEO_ALTITUDE_VFOM_EXCESSIVE = 0x7FFEu;
 
 enum class AddressType : uint8_t {
   ADSB_ICAO = 0,
@@ -75,6 +87,28 @@ struct PositionData {
   uint8_t emergency_code;
 };
 
+struct DeviceInfo {
+  uint64_t serial_number = DEVICE_SERIAL_INVALID;
+  std::string device_name;
+  std::string device_long_name;
+  uint32_t capabilities_mask = 0;
+};
+
+struct AhrsData {
+  double roll_deg = std::numeric_limits<double>::quiet_NaN();
+  double pitch_deg = std::numeric_limits<double>::quiet_NaN();
+  double heading_deg = std::numeric_limits<double>::quiet_NaN();
+  bool magnetic_heading = false;
+  uint16_t indicated_airspeed = AHRS_AIRSPEED_INVALID;
+  uint16_t true_airspeed = AHRS_AIRSPEED_INVALID;
+};
+
+struct GeoAltitudeData {
+  int32_t altitude_feet = 0;
+  bool vertical_warning = false;
+  uint16_t vfom_meters = GEO_ALTITUDE_VFOM_INVALID;
+};
+
 class GDL90Encoder {
  public:
   GDL90Encoder();
@@ -84,7 +118,11 @@ class GDL90Encoder {
   std::vector<uint8_t> createHeartbeat(bool gps_valid = true,
                                        bool utc_ok = true);
   std::vector<uint8_t> createOwnshipReport(const PositionData& data);
+  std::vector<uint8_t> createOwnshipGeometricAltitude(
+      const GeoAltitudeData& data);
   std::vector<uint8_t> createTrafficReport(const PositionData& data);
+  std::vector<uint8_t> createForeFlightIdMessage(const DeviceInfo& data);
+  std::vector<uint8_t> createForeFlightAhrsMessage(const AhrsData& data);
 
  private:
   static const uint16_t crc16_table_[256];
@@ -100,6 +138,17 @@ class GDL90Encoder {
   uint16_t encodeAltitude(int32_t altitude) const;
   uint16_t encodeVerticalVelocity(int16_t vv_fpm) const;
   uint8_t encodeTrack(uint16_t track) const;
+  int16_t encodeGeoAltitude(int32_t altitude_feet) const;
+  uint16_t encodeGeoVerticalMetrics(bool vertical_warning,
+                                    uint16_t vfom_meters) const;
+  int16_t encodeAhrsAttitude(double degrees) const;
+  uint16_t encodeAhrsHeading(double degrees, bool magnetic_heading) const;
+  void appendBigEndian16(std::vector<uint8_t>& buffer, uint16_t value) const;
+  void appendBigEndian32(std::vector<uint8_t>& buffer, uint32_t value) const;
+  void appendBigEndian64(std::vector<uint8_t>& buffer, uint64_t value) const;
+  void appendFixedText(std::vector<uint8_t>& buffer,
+                       const std::string& value,
+                       size_t width) const;
   void pack24bit(std::vector<uint8_t>& buffer, uint32_t value) const;
   std::vector<uint8_t> createPositionReport(uint8_t msg_id,
                                             const PositionData& data);

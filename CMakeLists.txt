@@ -41,6 +41,10 @@ if(MSVC)
     endfunction()
 endif()
 
+if(APPLE AND NOT DEFINED CMAKE_OSX_ARCHITECTURES)
+    set(CMAKE_OSX_ARCHITECTURES "x86_64;arm64")
+endif()
+
 # Plugin name
 set(PLUGIN_NAME "xp2gdl90")
 
@@ -50,6 +54,7 @@ set(SDK_PATH "${CMAKE_SOURCE_DIR}/SDK")
 # Source files
 set(CORE_SOURCES
     src/gdl90_encoder.cpp
+    src/udp_receiver.cpp
     src/udp_broadcaster.cpp
 )
 
@@ -68,6 +73,7 @@ set(IMGUI_SOURCES
 
 set(HEADERS
     include/xp2gdl90/gdl90_encoder.h
+    include/xp2gdl90/udp_receiver.h
     include/xp2gdl90/udp_broadcaster.h
 )
 
@@ -80,7 +86,7 @@ if(MSVC)
 endif()
 if(APPLE)
     set_target_properties(xp2gdl90_core PROPERTIES
-        OSX_ARCHITECTURES "x86_64;arm64"
+        OSX_ARCHITECTURES "${CMAKE_OSX_ARCHITECTURES}"
     )
 endif()
 
@@ -95,9 +101,6 @@ if(APPLE)
     
     # Set minimum macOS version
     set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15")
-    
-    # Universal binary (Intel + Apple Silicon)
-    set(CMAKE_OSX_ARCHITECTURES "x86_64;arm64")
     
     # X-Plane plugin settings
     set(CMAKE_SHARED_LIBRARY_PREFIX "")

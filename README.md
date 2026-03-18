@@ -8,10 +8,11 @@ A high-performance X-Plane 12 plugin that broadcasts real-time flight data in GD
 ## Features
 
 - **Real-time Position Broadcasting**: Ownship position, altitude, speed, and heading
+- **ForeFlight Extended Spec Support**: Device ID, AHRS, Ownship Geometric Altitude, and ForeFlight auto-discovery
 - **Traffic Report Broadcasting**: Remote multiplayer / xPilot traffic as GDL90 `0x14` reports
 - **High Performance**: Native C++ plugin, minimal CPU overhead
 - **Cross-Platform**: Windows, macOS (Universal), and Linux support
-- **Fully Configurable**: INI-based configuration for all settings
+- **Fully Configurable**: In-sim settings UI backed by JSON config
 - **Standards Based**: GDL90 framing/CRC/byte-stuffing per Rev A (message subset below)
 - **Easy Setup**: No external dependencies, works out of the box
 
@@ -31,9 +32,13 @@ A high-performance X-Plane 12 plugin that broadcasts real-time flight data in GD
 ### Basic Configuration
 
 Open **Plugins → XP2GDL90 → Settings...** and set:
-- Target IP / Port
+- Target IP / Port fallback
+- ForeFlight auto-discovery / discovery port
 - ICAO address, callsign fallback, emitter category
+- Device name / internet policy
 - Update rates and accuracy values
+
+ForeFlight device-ID broadcasts run automatically at 1 Hz, AHRS broadcasts run automatically at 5 Hz, Ownship Geometric Altitude is sent at 1 Hz, and the plugin can auto-switch to ForeFlight unicast when it sees ForeFlight's discovery broadcast.
 
 Settings are saved to X‑Plane’s preferences folder as `Output/preferences/xp2gdl90.json`.
 
@@ -114,6 +119,8 @@ target_ip = 192.168.1.100    # Target device IP
                              # - Broadcast: 192.168.1.255
                              # - Global: 255.255.255.255
 target_port = 4000           # UDP port (default: 4000)
+foreflight_auto_discovery = true
+foreflight_broadcast_port = 63093
 ```
 
 ### Ownship Settings
@@ -130,6 +137,9 @@ emitter_category = 1         # Aircraft type:
                              # 5 = Heavy (>300,000 lbs)
                              # 7 = Rotorcraft
                              # 9 = Glider
+device_name = XP2GDL90       # ForeFlight ID message name (8 chars max)
+device_long_name = XP2GDL90 AHRS
+internet_policy = 0          # 0=Unrestricted 1=Expensive 2=Disallowed
 ```
 
 ### Update Rates
@@ -223,9 +233,12 @@ This plugin currently transmits a subset of GDL90 messages:
 |------------|------|-------------|
 | 0x00 | Heartbeat | Status and timing information (1 Hz) |
 | 0x0A | Ownship Report | Own aircraft position and status |
+| 0x0B | Ownship Geometric Altitude | Geometric altitude (MSL capability advertised) |
 | 0x14 | Traffic Report | Multiplayer / TCAS traffic targets (1 Hz) |
+| 0x65 / 0x00 | ForeFlight ID | Device name / capabilities extension |
+| 0x65 / 0x01 | ForeFlight AHRS | Roll, pitch, and true heading at 5 Hz |
 
-Other GDL90 message types (e.g., Uplink Data, Ownship Geometric Altitude) are not transmitted yet.
+Weather / `Uplink Data (0x07)` is intentionally not transmitted, because this plugin does not have a complete native UAT weather source. Ownship geometric altitude is sent as MSL and advertised that way in the ForeFlight ID capabilities mask.
 
 ### Message Format
 
@@ -263,8 +276,14 @@ EFB Application
 | `sim/flightmodel/position/latitude` | Ownship latitude |
 | `sim/flightmodel/position/longitude` | Ownship longitude |
 | `sim/flightmodel/position/elevation` | Ownship altitude (MSL) |
+| `sim/cockpit2/gauges/indicators/pressure_alt_ft_pilot` | Ownship pressure altitude for standards-compliant Ownship Report altitude |
 | `sim/flightmodel/position/groundspeed` | Ownship ground speed |
 | `sim/flightmodel/position/true_psi` | Ownship true track angle |
+| `sim/flightmodel/position/theta` | AHRS pitch |
+| `sim/flightmodel/position/phi` | AHRS roll |
+| `sim/flightmodel/position/psi` | AHRS heading |
+| `sim/flightmodel/position/indicated_airspeed` | AHRS indicated airspeed |
+| `sim/flightmodel/position/true_airspeed` | AHRS true airspeed |
 | `sim/flightmodel/position/vh_ind_fpm` | Vertical speed (fpm) |
 | `sim/flightmodel/failures/onground_any` | Airborne status |
 | `sim/aircraft/view/acf_tailnum` | Aircraft tail number (callsign) |
@@ -305,9 +324,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Roadmap
 
-- [ ] Geometric altitude support (XPLM 4.1 feature)
-- [ ] GUI configuration panel
-- [ ] FIS-B weather data integration
 - [ ] Multiple EFB simultaneous broadcasting
 
 ---

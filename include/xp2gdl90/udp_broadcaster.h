@@ -47,9 +47,12 @@ class UDPBroadcaster {
   bool initialize();
   int send(const uint8_t* data, size_t size);
   int send(const std::vector<uint8_t>& data);
+  void setTarget(const std::string& target_ip, uint16_t target_port);
 
   bool isInitialized() const { return initialized_; }
   std::string getLastError() const { return last_error_; }
+  std::string getTargetIp() const { return target_ip_; }
+  uint16_t getTargetPort() const { return target_port_; }
 
   void close();
 

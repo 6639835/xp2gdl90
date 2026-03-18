@@ -14,6 +14,7 @@
 #include <XPLMMenus.h>
 #include <XPLMPlugin.h>
 #include <XPLMProcessing.h>
+#include <XPLMScenery.h>
 #include <XPLMUtilities.h>
 
 #include <algorithm>
@@ -36,6 +37,7 @@
 #include "imgui.h"
 
 #include "xp2gdl90/gdl90_encoder.h"
+#include "xp2gdl90/udp_receiver.h"
 #include "xp2gdl90/udp_broadcaster.h"
 
 #ifdef _WIN32
@@ -58,16 +60,26 @@ constexpr double kMetersToFeet = 3.28084;
 constexpr float kMetersPerSecondToKnots = 1.94384f;
 constexpr float kMetersPerSecondToFeetPerMinute = 196.8504f;
 constexpr float kTrafficReportRate = 1.0f;
+constexpr float kForeFlightDeviceInfoRate = 1.0f;
+constexpr float kForeFlightAhrsRate = 5.0f;
+constexpr float kOwnshipGeoAltitudeRate = 1.0f;
+constexpr float kForeFlightDiscoveryTimeout = 15.0f;
 constexpr int kTrafficFlightIdSize = 8;
 constexpr int kTrafficTailnumSize = 10;
+constexpr char kForeFlightDeviceName[] = "XP2GDL90";
+constexpr char kForeFlightDeviceLongName[] = "XP2GDL90 AHRS";
 
 struct Settings {
   std::string target_ip = "192.168.1.100";
   uint16_t target_port = 4000;
-
+  bool foreflight_auto_discovery = true;
+  uint16_t foreflight_broadcast_port = 63093;
   uint32_t icao_address = 0xABCDEF;
   std::string callsign = "N12345";
   uint8_t emitter_category = 1;
+  std::string device_name = kForeFlightDeviceName;
+  std::string device_long_name = kForeFlightDeviceLongName;
+  uint8_t internet_policy = 0;
 
   float heartbeat_rate = 1.0f;
   float position_rate = 2.0f;
@@ -122,13 +134,20 @@ struct TrafficTextRefs {
 struct PluginState {
   std::unique_ptr<gdl90::GDL90Encoder> encoder;
   std::unique_ptr<udp::UDPBroadcaster> broadcaster;
+  std::unique_ptr<udp::UDPReceiver> foreflight_receiver;
   Settings settings;
 
   XPLMDataRef lat_ref = nullptr;
   XPLMDataRef lon_ref = nullptr;
   XPLMDataRef alt_ref = nullptr;
+  XPLMDataRef pressure_alt_ref = nullptr;
   XPLMDataRef speed_ref = nullptr;
   XPLMDataRef track_ref = nullptr;
+  XPLMDataRef pitch_ref = nullptr;
+  XPLMDataRef roll_ref = nullptr;
+  XPLMDataRef heading_ref = nullptr;
+  XPLMDataRef indicated_airspeed_ref = nullptr;
+  XPLMDataRef true_airspeed_ref = nullptr;
   XPLMDataRef vs_ref = nullptr;
   XPLMDataRef airborne_ref = nullptr;
   XPLMDataRef sim_time_ref = nullptr;
@@ -140,6 +159,14 @@ struct PluginState {
   float last_heartbeat = 0.0f;
   float last_position = 0.0f;
   float last_traffic = 0.0f;
+  float last_device_info = 0.0f;
+  float last_ahrs = 0.0f;
+  float last_geo_altitude = 0.0f;
+  float last_foreflight_discovery = -1.0f;
+
+  std::string discovered_target_ip;
+  uint16_t discovered_target_port = 0;
+  bool using_discovered_target = false;
 
   bool initialized = false;
   bool enabled = false;
@@ -162,9 +189,14 @@ struct PluginState {
 
   char settings_target_ip[64] = {};
   int settings_target_port = 0;
+  bool settings_foreflight_auto_discovery = false;
+  int settings_foreflight_broadcast_port = 0;
   char settings_icao_address[16] = {};
   char settings_callsign[16] = {};
   int settings_emitter_category = 0;
+  char settings_device_name[32] = {};
+  char settings_device_long_name[64] = {};
+  int settings_internet_policy = 0;
   float settings_heartbeat_rate = 0.0f;
   float settings_position_rate = 0.0f;
   int settings_nic = 0;
@@ -175,12 +207,19 @@ struct PluginState {
   uint64_t heartbeat_packets_sent = 0;
   uint64_t position_packets_sent = 0;
   uint64_t traffic_packets_sent = 0;
+  uint64_t device_info_packets_sent = 0;
+  uint64_t ahrs_packets_sent = 0;
+  uint64_t geo_altitude_packets_sent = 0;
   uint64_t bytes_sent = 0;
   int last_heartbeat_send_bytes = 0;
   int last_position_send_bytes = 0;
   int last_traffic_send_bytes = 0;
+  int last_device_info_send_bytes = 0;
+  int last_ahrs_send_bytes = 0;
+  int last_geo_altitude_send_bytes = 0;
   int last_traffic_target_count = 0;
   std::string last_send_error;
+  std::string last_receiver_error;
 };
 
 PluginState g_state;
@@ -201,6 +240,9 @@ void InitializeTrafficDataRefs();
 size_t CollectTrafficData(const Settings& cfg,
                           std::vector<gdl90::PositionData>* out_reports);
 void SendTrafficReports(float sim_time, const Settings& cfg);
+bool ReconfigureRuntimeReceivers(const Settings& cfg, std::string* out_error);
+void RefreshBroadcastTarget(float sim_time, const Settings& cfg);
+void PollForeFlightDiscovery(float sim_time, const Settings& cfg);
 
 
 void LogMessage(const std::string& message) {
@@ -252,6 +294,125 @@ uint16_t NormalizeDegreesToUint16(float degrees) {
   double d = std::fmod(static_cast<double>(degrees), 360.0);
   if (d < 0.0) d += 360.0;
   return ClampFloatToInt<uint16_t>(d);
+}
+
+double NormalizeDegrees360(double degrees) {
+  if (!std::isfinite(degrees)) {
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+
+  double normalized = std::fmod(degrees, 360.0);
+  if (normalized < 0.0) {
+    normalized += 360.0;
+  }
+  return normalized;
+}
+
+uint16_t ClampKnotsToUint16OrInvalid(float knots) {
+  if (!std::isfinite(static_cast<double>(knots)) || knots < 0.0f) {
+    return gdl90::AHRS_AIRSPEED_INVALID;
+  }
+  const float clamped =
+      (std::min)(knots,
+                 static_cast<float>(gdl90::AHRS_AIRSPEED_INVALID - 1u));
+  return static_cast<uint16_t>(clamped);
+}
+
+std::string ExtractJsonStringValue(const std::string& json,
+                                   std::string_view key) {
+  const std::string needle = "\"" + std::string(key) + "\"";
+  size_t pos = json.find(needle);
+  if (pos == std::string::npos) {
+    return "";
+  }
+  pos = json.find(':', pos + needle.size());
+  if (pos == std::string::npos) {
+    return "";
+  }
+  ++pos;
+  while (pos < json.size() &&
+         std::isspace(static_cast<unsigned char>(json[pos]))) {
+    ++pos;
+  }
+  if (pos >= json.size() || json[pos] != '"') {
+    return "";
+  }
+  ++pos;
+
+  std::string value;
+  while (pos < json.size()) {
+    const char ch = json[pos++];
+    if (ch == '"') {
+      return value;
+    }
+    if (ch == '\\' && pos < json.size()) {
+      value.push_back(json[pos++]);
+      continue;
+    }
+    value.push_back(ch);
+  }
+
+  return "";
+}
+
+bool ExtractJsonUnsignedValue(const std::string& json,
+                              std::string_view key,
+                              unsigned int* out_value) {
+  if (!out_value) {
+    return false;
+  }
+  const std::string needle = "\"" + std::string(key) + "\"";
+  size_t pos = json.find(needle);
+  if (pos == std::string::npos) {
+    return false;
+  }
+  pos = json.find(':', pos + needle.size());
+  if (pos == std::string::npos) {
+    return false;
+  }
+  ++pos;
+  while (pos < json.size() &&
+         std::isspace(static_cast<unsigned char>(json[pos]))) {
+    ++pos;
+  }
+
+  const size_t start = pos;
+  while (pos < json.size() &&
+         std::isdigit(static_cast<unsigned char>(json[pos]))) {
+    ++pos;
+  }
+  if (start == pos) {
+    return false;
+  }
+
+  try {
+    *out_value = static_cast<unsigned int>(
+        std::stoul(json.substr(start, pos - start), nullptr, 10));
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+bool ParseForeFlightBroadcastPacket(const std::vector<uint8_t>& packet,
+                                    uint16_t* out_port) {
+  if (!out_port || packet.empty()) {
+    return false;
+  }
+
+  const std::string json(packet.begin(), packet.end());
+  if (ExtractJsonStringValue(json, "App") != "ForeFlight") {
+    return false;
+  }
+
+  unsigned int port = 0;
+  if (!ExtractJsonUnsignedValue(json, "port", &port) ||
+      port == 0 || port > 65535u) {
+    return false;
+  }
+
+  *out_port = static_cast<uint16_t>(port);
+  return true;
 }
 
 std::string ReadTailNumber() {
@@ -576,6 +737,67 @@ bool VerifyDataRef(XPLMDataRef ref, const char* name) {
   return false;
 }
 
+bool ReconfigureRuntimeReceivers(const Settings& cfg, std::string* out_error) {
+  if (cfg.foreflight_auto_discovery) {
+    if (!g_state.foreflight_receiver ||
+        g_state.foreflight_receiver->getListenPort() !=
+            cfg.foreflight_broadcast_port) {
+      auto receiver =
+          std::make_unique<udp::UDPReceiver>(cfg.foreflight_broadcast_port);
+      if (!receiver->initialize()) {
+        if (out_error) {
+          *out_error = "Failed to initialize ForeFlight discovery listener: " +
+                       receiver->getLastError();
+        }
+        return false;
+      }
+      g_state.foreflight_receiver = std::move(receiver);
+      LogMessage("ForeFlight discovery listener active on UDP port " +
+                 std::to_string(cfg.foreflight_broadcast_port));
+    }
+  } else {
+    g_state.foreflight_receiver.reset();
+    g_state.discovered_target_ip.clear();
+    g_state.discovered_target_port = 0;
+    g_state.last_foreflight_discovery = -1.0f;
+    g_state.using_discovered_target = false;
+  }
+
+  if (out_error) {
+    out_error->clear();
+  }
+  return true;
+}
+
+void RefreshBroadcastTarget(float sim_time, const Settings& cfg) {
+  if (!g_state.broadcaster) {
+    return;
+  }
+
+  const bool discovery_valid =
+      cfg.foreflight_auto_discovery &&
+      !g_state.discovered_target_ip.empty() &&
+      g_state.discovered_target_port > 0 &&
+      g_state.last_foreflight_discovery >= 0.0f &&
+      (sim_time - g_state.last_foreflight_discovery) <=
+          kForeFlightDiscoveryTimeout;
+
+  const std::string resolved_ip =
+      discovery_valid ? g_state.discovered_target_ip : cfg.target_ip;
+  const uint16_t resolved_port =
+      discovery_valid ? g_state.discovered_target_port : cfg.target_port;
+
+  if (g_state.broadcaster->getTargetIp() != resolved_ip ||
+      g_state.broadcaster->getTargetPort() != resolved_port) {
+    g_state.broadcaster->setTarget(resolved_ip, resolved_port);
+    LogMessage(std::string("Broadcast target updated: ") + resolved_ip + ":" +
+               std::to_string(resolved_port) +
+               (discovery_valid ? " (ForeFlight discovery)" : " (manual)"));
+  }
+
+  g_state.using_discovered_target = discovery_valid;
+}
+
 bool ApplyConfigToRuntime(const Settings& new_cfg,
                           std::string* out_error) {
   if (!g_state.broadcaster) {
@@ -585,27 +807,14 @@ bool ApplyConfigToRuntime(const Settings& new_cfg,
     return false;
   }
 
-  const Settings old_cfg = g_state.settings;
-  const bool target_changed = (old_cfg.target_ip != new_cfg.target_ip) ||
-                              (old_cfg.target_port != new_cfg.target_port);
-
-  if (target_changed) {
-    auto new_broadcaster =
-        std::make_unique<udp::UDPBroadcaster>(new_cfg.target_ip,
-                                              new_cfg.target_port);
-    if (!new_broadcaster->initialize()) {
-      if (out_error) {
-        *out_error = "Failed to initialize UDP broadcaster: " +
-                     new_broadcaster->getLastError();
-      }
-      return false;
-    }
-    g_state.broadcaster = std::move(new_broadcaster);
-    LogMessage("UDP broadcaster updated: " + new_cfg.target_ip + ":" +
-               std::to_string(new_cfg.target_port));
+  if (!ReconfigureRuntimeReceivers(new_cfg, out_error)) {
+    return false;
   }
 
   g_state.settings = new_cfg;
+  const float sim_time =
+      g_state.sim_time_ref ? XPLMGetDataf(g_state.sim_time_ref) : 0.0f;
+  RefreshBroadcastTarget(sim_time, g_state.settings);
   return true;
 }
 
@@ -615,8 +824,11 @@ gdl90::PositionData GetOwnshipData(const Settings& cfg) {
   data.latitude = XPLMGetDatad(g_state.lat_ref);
   data.longitude = XPLMGetDatad(g_state.lon_ref);
 
-  const double altitude_meters = XPLMGetDatad(g_state.alt_ref);
-  data.altitude = ClampFloatToInt<int32_t>(altitude_meters * kMetersToFeet);
+  if (g_state.pressure_alt_ref) {
+    data.altitude = ClampFloatToInt<int32_t>(XPLMGetDataf(g_state.pressure_alt_ref));
+  } else {
+    data.altitude = std::numeric_limits<int32_t>::min();
+  }
 
   const float speed_ms = XPLMGetDataf(g_state.speed_ref);
   data.h_velocity = ClampFloatToInt<uint16_t>(speed_ms * kMetersPerSecondToKnots);
@@ -642,6 +854,45 @@ gdl90::PositionData GetOwnshipData(const Settings& cfg) {
   data.alert_status = 0;
   data.emergency_code = 0;
 
+  return data;
+}
+
+gdl90::DeviceInfo GetForeFlightDeviceInfo() {
+  gdl90::DeviceInfo data;
+  data.serial_number = gdl90::DEVICE_SERIAL_INVALID;
+  data.device_name = g_state.settings.device_name;
+  data.device_long_name = g_state.settings.device_long_name;
+  data.capabilities_mask =
+      0x01u | (static_cast<uint32_t>(g_state.settings.internet_policy & 0x03u) << 1);
+  return data;
+}
+
+gdl90::AhrsData GetOwnshipAhrsData() {
+  gdl90::AhrsData data;
+  data.roll_deg = g_state.roll_ref ? XPLMGetDataf(g_state.roll_ref) : NAN;
+  data.pitch_deg = g_state.pitch_ref ? XPLMGetDataf(g_state.pitch_ref) : NAN;
+  data.heading_deg =
+      g_state.heading_ref
+          ? NormalizeDegrees360(static_cast<double>(XPLMGetDataf(g_state.heading_ref)))
+          : std::numeric_limits<double>::quiet_NaN();
+  data.magnetic_heading = false;
+  data.indicated_airspeed =
+      g_state.indicated_airspeed_ref
+          ? ClampKnotsToUint16OrInvalid(XPLMGetDataf(g_state.indicated_airspeed_ref))
+          : gdl90::AHRS_AIRSPEED_INVALID;
+  data.true_airspeed =
+      g_state.true_airspeed_ref
+          ? ClampKnotsToUint16OrInvalid(XPLMGetDataf(g_state.true_airspeed_ref))
+          : gdl90::AHRS_AIRSPEED_INVALID;
+  return data;
+}
+
+gdl90::GeoAltitudeData GetOwnshipGeoAltitudeData() {
+  gdl90::GeoAltitudeData data;
+  const double altitude_meters = XPLMGetDatad(g_state.alt_ref);
+  data.altitude_feet = ClampFloatToInt<int32_t>(altitude_meters * kMetersToFeet);
+  data.vertical_warning = false;
+  data.vfom_meters = gdl90::GEO_ALTITUDE_VFOM_INVALID;
   return data;
 }
 
@@ -803,6 +1054,37 @@ void SendTrafficReports(float sim_time, const Settings& cfg) {
   g_state.last_traffic = sim_time;
 }
 
+void PollForeFlightDiscovery(float sim_time, const Settings& cfg) {
+  if (!cfg.foreflight_auto_discovery || !g_state.foreflight_receiver) {
+    return;
+  }
+
+  while (true) {
+    std::vector<uint8_t> packet;
+    std::string source_ip;
+    uint16_t source_port = 0;
+    const int received = g_state.foreflight_receiver->receive(
+        &packet, &source_ip, &source_port);
+    if (received == 0) {
+      break;
+    }
+    if (received < 0) {
+      g_state.last_receiver_error = g_state.foreflight_receiver->getLastError();
+      break;
+    }
+
+    uint16_t discovered_port = 0;
+    if (!ParseForeFlightBroadcastPacket(packet, &discovered_port)) {
+      continue;
+    }
+
+    g_state.discovered_target_ip = source_ip;
+    g_state.discovered_target_port = discovered_port;
+    g_state.last_foreflight_discovery = sim_time;
+    RefreshBroadcastTarget(sim_time, cfg);
+  }
+}
+
 bool SaveSettingsToDisk(std::string* out_error) {
   std::ofstream file(g_state.settings_path, std::ios::binary | std::ios::trunc);
   if (!file.is_open()) {
@@ -857,11 +1139,23 @@ bool SaveSettingsToDisk(std::string* out_error) {
   write_json_string(s.target_ip);
   file << ",\n";
   file << "  \"target_port\": " << static_cast<unsigned int>(s.target_port) << ",\n";
+  file << "  \"foreflight_auto_discovery\": "
+       << (s.foreflight_auto_discovery ? "true" : "false") << ",\n";
+  file << "  \"foreflight_broadcast_port\": "
+       << static_cast<unsigned int>(s.foreflight_broadcast_port) << ",\n";
   file << "  \"icao_address\": " << static_cast<unsigned int>(s.icao_address & 0xFFFFFFu) << ",\n";
   file << "  \"callsign\": ";
   write_json_string(s.callsign);
   file << ",\n";
   file << "  \"emitter_category\": " << static_cast<unsigned int>(s.emitter_category) << ",\n";
+  file << "  \"device_name\": ";
+  write_json_string(s.device_name);
+  file << ",\n";
+  file << "  \"device_long_name\": ";
+  write_json_string(s.device_long_name);
+  file << ",\n";
+  file << "  \"internet_policy\": "
+       << static_cast<unsigned int>(s.internet_policy) << ",\n";
   file << "  \"heartbeat_rate\": " << s.heartbeat_rate << ",\n";
   file << "  \"position_rate\": " << s.position_rate << ",\n";
   file << "  \"nic\": " << static_cast<unsigned int>(s.nic) << ",\n";
@@ -1115,7 +1409,8 @@ bool LoadSettingsFromDisk(Settings* out_settings, std::string* out_error) {
       return false;
     }
 
-    if (key == "target_ip" || key == "callsign") {
+    if (key == "target_ip" || key == "callsign" || key == "device_name" ||
+        key == "device_long_name") {
       std::string value;
       if (!json_detail::ParseString(&c, &value)) {
         if (out_error) *out_error = "Invalid settings JSON: expected string";
@@ -1123,10 +1418,15 @@ bool LoadSettingsFromDisk(Settings* out_settings, std::string* out_error) {
       }
       if (key == "target_ip") {
         if (!value.empty()) s.target_ip = value;
-      } else {
+      } else if (key == "callsign") {
         if (!value.empty()) s.callsign = value.substr(0, 8);
+      } else if (key == "device_name") {
+        if (!value.empty()) s.device_name = value.substr(0, 8);
+      } else if (key == "device_long_name") {
+        if (!value.empty()) s.device_long_name = value.substr(0, 16);
       }
-    } else if (key == "debug_logging" || key == "log_messages") {
+    } else if (key == "debug_logging" || key == "log_messages" ||
+               key == "foreflight_auto_discovery") {
       bool flag = false;
       if (!json_detail::ParseBool(&c, &flag)) {
         if (out_error) *out_error = "Invalid settings JSON: expected boolean";
@@ -1134,9 +1434,12 @@ bool LoadSettingsFromDisk(Settings* out_settings, std::string* out_error) {
       }
       if (key == "debug_logging") s.debug_logging = flag;
       if (key == "log_messages") s.log_messages = flag;
+      if (key == "foreflight_auto_discovery") s.foreflight_auto_discovery = flag;
     } else if (key == "target_port" || key == "icao_address" ||
                key == "emitter_category" || key == "heartbeat_rate" ||
-               key == "position_rate" || key == "nic" || key == "nacp") {
+               key == "position_rate" || key == "nic" || key == "nacp" ||
+               key == "foreflight_broadcast_port" ||
+               key == "internet_policy") {
       double number = 0.0;
       if (!json_detail::ParseNumber(&c, &number)) {
         if (out_error) *out_error = "Invalid settings JSON: expected number for key '" + key + "'";
@@ -1146,6 +1449,11 @@ bool LoadSettingsFromDisk(Settings* out_settings, std::string* out_error) {
       if (key == "target_port") {
         if (number >= 1.0 && number <= 65535.0) {
           s.target_port = static_cast<uint16_t>(static_cast<unsigned int>(number));
+        }
+      } else if (key == "foreflight_broadcast_port") {
+        if (number >= 1.0 && number <= 65535.0) {
+          s.foreflight_broadcast_port =
+              static_cast<uint16_t>(static_cast<unsigned int>(number));
         }
       } else if (key == "icao_address") {
         s.icao_address =
@@ -1161,6 +1469,11 @@ bool LoadSettingsFromDisk(Settings* out_settings, std::string* out_error) {
         s.nic = static_cast<uint8_t>(static_cast<unsigned int>(number) & 0xFFu);
       } else if (key == "nacp") {
         s.nacp = static_cast<uint8_t>(static_cast<unsigned int>(number) & 0xFFu);
+      } else if (key == "internet_policy") {
+        const unsigned int policy = static_cast<unsigned int>(number);
+        if (policy <= 2u) {
+          s.internet_policy = static_cast<uint8_t>(policy);
+        }
       }
     } else {
       // Forward-compat: ignore unknown keys (any primitive JSON value).
@@ -1254,13 +1567,23 @@ void SyncSettingsUiFromConfig() {
   std::snprintf(g_state.settings_target_ip, sizeof(g_state.settings_target_ip),
                 "%s", cfg.target_ip.c_str());
   g_state.settings_target_port = static_cast<int>(cfg.target_port);
+  g_state.settings_foreflight_auto_discovery = cfg.foreflight_auto_discovery;
+  g_state.settings_foreflight_broadcast_port =
+      static_cast<int>(cfg.foreflight_broadcast_port);
   std::snprintf(g_state.settings_icao_address,
                 sizeof(g_state.settings_icao_address), "0x%06X",
                 static_cast<unsigned int>(cfg.icao_address & 0xFFFFFFu));
   std::snprintf(g_state.settings_callsign, sizeof(g_state.settings_callsign),
                 "%s", cfg.callsign.c_str());
+  std::snprintf(g_state.settings_device_name,
+                sizeof(g_state.settings_device_name), "%s",
+                cfg.device_name.c_str());
+  std::snprintf(g_state.settings_device_long_name,
+                sizeof(g_state.settings_device_long_name), "%s",
+                cfg.device_long_name.c_str());
 
   g_state.settings_emitter_category = static_cast<int>(cfg.emitter_category);
+  g_state.settings_internet_policy = static_cast<int>(cfg.internet_policy);
   g_state.settings_heartbeat_rate = cfg.heartbeat_rate;
   g_state.settings_position_rate = cfg.position_rate;
   g_state.settings_nic = static_cast<int>(cfg.nic);
@@ -1317,6 +1640,17 @@ bool BuildConfigFromSettingsUi(Settings* out_cfg,
     return false;
   }
   cfg.target_port = static_cast<uint16_t>(g_state.settings_target_port);
+  cfg.foreflight_auto_discovery = g_state.settings_foreflight_auto_discovery;
+
+  if (g_state.settings_foreflight_broadcast_port <= 0 ||
+      g_state.settings_foreflight_broadcast_port > 65535) {
+    if (out_error) {
+      *out_error = "ForeFlight broadcast port must be 1-65535";
+    }
+    return false;
+  }
+  cfg.foreflight_broadcast_port =
+      static_cast<uint16_t>(g_state.settings_foreflight_broadcast_port);
 
   uint32_t icao = 0;
   if (!ParseHex24(g_state.settings_icao_address, &icao)) {
@@ -1328,6 +1662,8 @@ bool BuildConfigFromSettingsUi(Settings* out_cfg,
   cfg.icao_address = icao;
 
   cfg.callsign = Trim(g_state.settings_callsign).substr(0, 8);
+  cfg.device_name = Trim(g_state.settings_device_name).substr(0, 8);
+  cfg.device_long_name = Trim(g_state.settings_device_long_name).substr(0, 16);
 
   if (g_state.settings_emitter_category < 0 ||
       g_state.settings_emitter_category > 255) {
@@ -1337,6 +1673,15 @@ bool BuildConfigFromSettingsUi(Settings* out_cfg,
     return false;
   }
   cfg.emitter_category = static_cast<uint8_t>(g_state.settings_emitter_category);
+
+  if (g_state.settings_internet_policy < 0 ||
+      g_state.settings_internet_policy > 2) {
+    if (out_error) {
+      *out_error = "Internet policy must be 0-2";
+    }
+    return false;
+  }
+  cfg.internet_policy = static_cast<uint8_t>(g_state.settings_internet_policy);
 
   if (g_state.settings_heartbeat_rate <= 0.0f) {
     if (out_error) {
@@ -1463,8 +1808,8 @@ void DrawSettingsWindowUI() {
   }
 
   ImGui::SameLine();
-  ImGui::Text("Target: %s:%u", cfg.target_ip.c_str(),
-              static_cast<unsigned int>(cfg.target_port));
+  ImGui::Text("Target: %s:%u", g_state.broadcaster->getTargetIp().c_str(),
+              static_cast<unsigned int>(g_state.broadcaster->getTargetPort()));
 
   const float sim_time =
       g_state.sim_time_ref ? XPLMGetDataf(g_state.sim_time_ref) : 0.0f;
@@ -1474,6 +1819,16 @@ void DrawSettingsWindowUI() {
       (g_state.last_position > 0.0f) ? (sim_time - g_state.last_position) : 0.0f;
   const float since_traffic =
       (g_state.last_traffic > 0.0f) ? (sim_time - g_state.last_traffic) : 0.0f;
+  const float since_device_info =
+      (g_state.last_device_info > 0.0f) ? (sim_time - g_state.last_device_info) : 0.0f;
+  const float since_ahrs =
+      (g_state.last_ahrs > 0.0f) ? (sim_time - g_state.last_ahrs) : 0.0f;
+  const float since_geo_altitude =
+      (g_state.last_geo_altitude > 0.0f) ? (sim_time - g_state.last_geo_altitude) : 0.0f;
+  const float since_discovery =
+      (g_state.last_foreflight_discovery >= 0.0f)
+          ? (sim_time - g_state.last_foreflight_discovery)
+          : -1.0f;
 
   const std::string tail = ReadTailNumber();
   const std::string effective_callsign = !tail.empty() ? tail : cfg.callsign;
@@ -1501,6 +1856,26 @@ void DrawSettingsWindowUI() {
                   static_cast<unsigned long long>(g_state.traffic_packets_sent),
                   g_state.last_traffic_target_count,
                   g_state.last_traffic_send_bytes, since_traffic);
+      ImGui::Text("ForeFlight ID: %llu (%d bytes last, %.2fs ago)",
+                  static_cast<unsigned long long>(g_state.device_info_packets_sent),
+                  g_state.last_device_info_send_bytes, since_device_info);
+      ImGui::Text("AHRS packets: %llu (%d bytes last, %.2fs ago)",
+                  static_cast<unsigned long long>(g_state.ahrs_packets_sent),
+                  g_state.last_ahrs_send_bytes, since_ahrs);
+      ImGui::Text("Ownship Geo Alt: %llu (%d bytes last, %.2fs ago)",
+                  static_cast<unsigned long long>(g_state.geo_altitude_packets_sent),
+                  g_state.last_geo_altitude_send_bytes, since_geo_altitude);
+      ImGui::Text("Target mode: %s",
+                  g_state.using_discovered_target ? "ForeFlight discovery" : "Manual");
+      if (since_discovery >= 0.0f) {
+        ImGui::Text("Last ForeFlight discovery: %s:%u (%.2fs ago)",
+                    g_state.discovered_target_ip.c_str(),
+                    static_cast<unsigned int>(g_state.discovered_target_port),
+                    since_discovery);
+      } else {
+        ImGui::TextUnformatted("Last ForeFlight discovery: none");
+      }
+      ImGui::TextUnformatted("AHRS source: theta / phi / psi, indicated_airspeed, true_airspeed");
       ImGui::Text("Bytes sent: %llu",
                   static_cast<unsigned long long>(g_state.bytes_sent));
 
@@ -1509,6 +1884,11 @@ void DrawSettingsWindowUI() {
         ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Last send error:");
         ImGui::TextWrapped("%s", g_state.last_send_error.c_str());
       }
+      if (!g_state.last_receiver_error.empty()) {
+        ImGui::Separator();
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Last receiver error:");
+        ImGui::TextWrapped("%s", g_state.last_receiver_error.c_str());
+      }
       ImGui::EndTabItem();
     }
 
@@ -1516,6 +1896,10 @@ void DrawSettingsWindowUI() {
       dirty_now |= ImGui::InputText("Target IP", g_state.settings_target_ip,
                                     sizeof(g_state.settings_target_ip));
       dirty_now |= ImGui::InputInt("Target Port", &g_state.settings_target_port);
+      dirty_now |= ImGui::Checkbox("ForeFlight auto discovery",
+                                   &g_state.settings_foreflight_auto_discovery);
+      dirty_now |= ImGui::InputInt("ForeFlight broadcast port",
+                                   &g_state.settings_foreflight_broadcast_port);
       ImGui::EndTabItem();
     }
 
@@ -1528,6 +1912,18 @@ void DrawSettingsWindowUI() {
                                     sizeof(g_state.settings_callsign));
       dirty_now |= ImGui::InputInt("Emitter Category",
                                    &g_state.settings_emitter_category);
+      ImGui::EndTabItem();
+    }
+
+    if (ImGui::BeginTabItem("Device")) {
+      dirty_now |= ImGui::InputText("Device Name", g_state.settings_device_name,
+                                    sizeof(g_state.settings_device_name));
+      dirty_now |= ImGui::InputText("Device Long Name",
+                                    g_state.settings_device_long_name,
+                                    sizeof(g_state.settings_device_long_name));
+      dirty_now |= ImGui::InputInt("Internet Policy",
+                                   &g_state.settings_internet_policy);
+      ImGui::TextUnformatted("0=Unrestricted 1=Expensive 2=Disallowed");
       ImGui::EndTabItem();
     }
 
@@ -1611,13 +2007,24 @@ void DrawSettingsWindowUI() {
     std::snprintf(g_state.settings_target_ip, sizeof(g_state.settings_target_ip),
                   "%s", defaults.target_ip.c_str());
     g_state.settings_target_port = static_cast<int>(defaults.target_port);
+    g_state.settings_foreflight_auto_discovery = defaults.foreflight_auto_discovery;
+    g_state.settings_foreflight_broadcast_port =
+        static_cast<int>(defaults.foreflight_broadcast_port);
     std::snprintf(g_state.settings_icao_address,
                   sizeof(g_state.settings_icao_address), "0x%06X",
                   static_cast<unsigned int>(defaults.icao_address & 0xFFFFFFu));
     std::snprintf(g_state.settings_callsign, sizeof(g_state.settings_callsign),
                   "%s", defaults.callsign.c_str());
+    std::snprintf(g_state.settings_device_name,
+                  sizeof(g_state.settings_device_name), "%s",
+                  defaults.device_name.c_str());
+    std::snprintf(g_state.settings_device_long_name,
+                  sizeof(g_state.settings_device_long_name), "%s",
+                  defaults.device_long_name.c_str());
     g_state.settings_emitter_category =
         static_cast<int>(defaults.emitter_category);
+    g_state.settings_internet_policy =
+        static_cast<int>(defaults.internet_policy);
     g_state.settings_heartbeat_rate = defaults.heartbeat_rate;
     g_state.settings_position_rate = defaults.position_rate;
     g_state.settings_nic = static_cast<int>(defaults.nic);
@@ -1939,6 +2346,14 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
   g_state.last_heartbeat = 0.0f;
   g_state.last_position = 0.0f;
   g_state.last_traffic = 0.0f;
+  g_state.last_device_info = 0.0f;
+  g_state.last_ahrs = 0.0f;
+  g_state.last_geo_altitude = 0.0f;
+  g_state.last_foreflight_discovery = -1.0f;
+  g_state.discovered_target_ip.clear();
+  g_state.discovered_target_port = 0;
+  g_state.using_discovered_target = false;
+  g_state.last_receiver_error.clear();
 
   g_state.encoder = std::make_unique<gdl90::GDL90Encoder>();
 
@@ -1974,8 +2389,17 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
   g_state.lat_ref = XPLMFindDataRef("sim/flightmodel/position/latitude");
   g_state.lon_ref = XPLMFindDataRef("sim/flightmodel/position/longitude");
   g_state.alt_ref = XPLMFindDataRef("sim/flightmodel/position/elevation");
+  g_state.pressure_alt_ref =
+      XPLMFindDataRef("sim/cockpit2/gauges/indicators/pressure_alt_ft_pilot");
   g_state.speed_ref = XPLMFindDataRef("sim/flightmodel/position/groundspeed");
   g_state.track_ref = XPLMFindDataRef("sim/flightmodel/position/true_psi");
+  g_state.pitch_ref = XPLMFindDataRef("sim/flightmodel/position/theta");
+  g_state.roll_ref = XPLMFindDataRef("sim/flightmodel/position/phi");
+  g_state.heading_ref = XPLMFindDataRef("sim/flightmodel/position/psi");
+  g_state.indicated_airspeed_ref =
+      XPLMFindDataRef("sim/flightmodel/position/indicated_airspeed");
+  g_state.true_airspeed_ref =
+      XPLMFindDataRef("sim/flightmodel/position/true_airspeed");
   g_state.vs_ref = XPLMFindDataRef("sim/flightmodel/position/vh_ind_fpm");
   g_state.airborne_ref = XPLMFindDataRef("sim/flightmodel/failures/onground_any");
   g_state.sim_time_ref = XPLMFindDataRef("sim/time/total_flight_time_sec");
@@ -1992,6 +2416,12 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
                                "sim/flightmodel/position/groundspeed");
   datarefs_ok &= VerifyDataRef(g_state.track_ref,
                                "sim/flightmodel/position/true_psi");
+  datarefs_ok &= VerifyDataRef(g_state.pitch_ref,
+                               "sim/flightmodel/position/theta");
+  datarefs_ok &= VerifyDataRef(g_state.roll_ref,
+                               "sim/flightmodel/position/phi");
+  datarefs_ok &= VerifyDataRef(g_state.heading_ref,
+                               "sim/flightmodel/position/psi");
   datarefs_ok &= VerifyDataRef(g_state.vs_ref,
                                "sim/flightmodel/position/vh_ind_fpm");
   datarefs_ok &= VerifyDataRef(g_state.airborne_ref,
@@ -2004,7 +2434,20 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     return 0;
   }
 
+  if (g_state.pressure_alt_ref) {
+    LogMessage("Using pressure altitude dataref for Ownship Report altitude");
+  } else {
+    LogMessage("Pressure altitude dataref unavailable; Ownship Report altitude will be sent invalid");
+  }
+
   InitializeTrafficDataRefs();
+
+  std::string receiver_error;
+  if (!ReconfigureRuntimeReceivers(cfg, &receiver_error)) {
+    LogMessage("ERROR: " + receiver_error);
+    return 0;
+  }
+  RefreshBroadcastTarget(0.0f, cfg);
 
   const int menu_container =
       XPLMAppendMenuItem(XPLMFindPluginsMenu(), "XP2GDL90", nullptr, 0);
@@ -2034,6 +2477,7 @@ PLUGIN_API void XPluginStop(void) {
   }
 
   g_state.broadcaster.reset();
+  g_state.foreflight_receiver.reset();
   g_state.encoder.reset();
   DestroySettingsWindow();
 
@@ -2094,6 +2538,9 @@ float FlightLoopCallback(float in_elapsed_since_last_call,
   const float sim_time = XPLMGetDataf(g_state.sim_time_ref);
   const Settings& cfg = g_state.settings;
 
+  PollForeFlightDiscovery(sim_time, cfg);
+  RefreshBroadcastTarget(sim_time, cfg);
+
   if (cfg.heartbeat_rate > 0.0f &&
       sim_time - g_state.last_heartbeat >= (1.0f / cfg.heartbeat_rate)) {
     const auto heartbeat = g_state.encoder->createHeartbeat(true, true);
@@ -2123,6 +2570,52 @@ float FlightLoopCallback(float in_elapsed_since_last_call,
       g_state.last_send_error = g_state.broadcaster->getLastError();
     }
     g_state.last_position = sim_time;
+  }
+
+  if (sim_time - g_state.last_geo_altitude >=
+      (1.0f / kOwnshipGeoAltitudeRate)) {
+    const auto geo_altitude = g_state.encoder->createOwnshipGeometricAltitude(
+        GetOwnshipGeoAltitudeData());
+    const int sent = g_state.broadcaster->send(geo_altitude);
+    g_state.last_geo_altitude_send_bytes = sent;
+    if (sent >= 0) {
+      g_state.bytes_sent += static_cast<uint64_t>(sent);
+      g_state.geo_altitude_packets_sent++;
+      g_state.last_send_error.clear();
+    } else {
+      g_state.last_send_error = g_state.broadcaster->getLastError();
+    }
+    g_state.last_geo_altitude = sim_time;
+  }
+
+  if (sim_time - g_state.last_device_info >= (1.0f / kForeFlightDeviceInfoRate)) {
+    const auto device_info = g_state.encoder->createForeFlightIdMessage(
+        GetForeFlightDeviceInfo());
+    const int sent = g_state.broadcaster->send(device_info);
+    g_state.last_device_info_send_bytes = sent;
+    if (sent >= 0) {
+      g_state.bytes_sent += static_cast<uint64_t>(sent);
+      g_state.device_info_packets_sent++;
+      g_state.last_send_error.clear();
+    } else {
+      g_state.last_send_error = g_state.broadcaster->getLastError();
+    }
+    g_state.last_device_info = sim_time;
+  }
+
+  if (sim_time - g_state.last_ahrs >= (1.0f / kForeFlightAhrsRate)) {
+    const auto ahrs_msg = g_state.encoder->createForeFlightAhrsMessage(
+        GetOwnshipAhrsData());
+    const int sent = g_state.broadcaster->send(ahrs_msg);
+    g_state.last_ahrs_send_bytes = sent;
+    if (sent >= 0) {
+      g_state.bytes_sent += static_cast<uint64_t>(sent);
+      g_state.ahrs_packets_sent++;
+      g_state.last_send_error.clear();
+    } else {
+      g_state.last_send_error = g_state.broadcaster->getLastError();
+    }
+    g_state.last_ahrs = sim_time;
   }
 
   SendTrafficReports(sim_time, cfg);
