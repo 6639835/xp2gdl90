@@ -341,7 +341,10 @@ std::vector<uint8_t> GDL90Encoder::createPositionReport(
   payload.push_back(
       static_cast<uint8_t>(((data.nic & 0x0F) << 4) | (data.nacp & 0x0F)));
 
-  const uint16_t h_vel = std::min(data.h_velocity, static_cast<uint16_t>(0xFFE));
+  const uint16_t h_vel =
+      (data.h_velocity == VELOCITY_INVALID)
+          ? VELOCITY_INVALID
+          : std::min(data.h_velocity, static_cast<uint16_t>(0xFFE));
   const uint16_t v_vel = encodeVerticalVelocity(data.v_velocity);
 
   payload.push_back(static_cast<uint8_t>((h_vel >> 4) & 0xFF));

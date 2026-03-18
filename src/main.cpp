@@ -68,6 +68,19 @@ constexpr int kTrafficFlightIdSize = 8;
 constexpr int kTrafficTailnumSize = 10;
 constexpr char kForeFlightDeviceName[] = "XP2GDL90";
 constexpr char kForeFlightDeviceLongName[] = "XP2GDL90 AHRS";
+constexpr float kMinTrackSpeedMps = 0.5f;
+constexpr double kRadiansToDegrees = 57.29577951308232;
+
+enum class TcasSsrMode : int {
+  Off = 0,
+  Standby = 1,
+  ModeA = 2,
+  ModeC = 3,
+  Test = 4,
+  Ground = 5,
+  TaOnly = 6,
+  TaRa = 7,
+};
 
 struct Settings {
   std::string target_ip = "192.168.1.100";
@@ -80,6 +93,7 @@ struct Settings {
   std::string device_name = kForeFlightDeviceName;
   std::string device_long_name = kForeFlightDeviceLongName;
   uint8_t internet_policy = 0;
+  bool ahrs_use_magnetic_heading = false;
 
   float heartbeat_rate = 1.0f;
   float position_rate = 2.0f;
@@ -93,6 +107,8 @@ struct Settings {
 
 struct TrafficTcasRefs {
   XPLMDataRef mode_s_ref = nullptr;
+  XPLMDataRef mode_c_code_ref = nullptr;
+  XPLMDataRef ssr_mode_ref = nullptr;
   XPLMDataRef flight_id_ref = nullptr;
   XPLMDataRef x_ref = nullptr;
   XPLMDataRef y_ref = nullptr;
@@ -107,8 +123,7 @@ struct TrafficTcasRefs {
   size_t slot_count = 0;
 
   bool IsUsable() const {
-    return mode_s_ref && x_ref && y_ref && z_ref && heading_ref &&
-           slot_count > 0;
+    return mode_s_ref && x_ref && y_ref && z_ref && slot_count > 0;
   }
 };
 
@@ -197,6 +212,7 @@ struct PluginState {
   char settings_device_name[32] = {};
   char settings_device_long_name[64] = {};
   int settings_internet_policy = 0;
+  bool settings_ahrs_use_magnetic_heading = false;
   float settings_heartbeat_rate = 0.0f;
   float settings_position_rate = 0.0f;
   int settings_nic = 0;
@@ -306,6 +322,93 @@ double NormalizeDegrees360(double degrees) {
     normalized += 360.0;
   }
   return normalized;
+}
+
+uint32_t NormalizeTcasAddress(int raw_address) {
+  return static_cast<uint32_t>(raw_address) & 0xFFFFFFu;
+}
+
+bool TcasAddressUsesRealIcao(int raw_address) {
+  return (static_cast<uint32_t>(raw_address) & 0x80000000u) != 0u;
+}
+
+gdl90::AddressType ResolveTcasAddressType(int raw_address) {
+  return TcasAddressUsesRealIcao(raw_address)
+             ? gdl90::AddressType::ADSB_ICAO
+             : gdl90::AddressType::ADSB_SELF_ASSIGNED;
+}
+
+bool TcasSsrModeHasAltitude(int ssr_mode) {
+  switch (static_cast<TcasSsrMode>(ssr_mode)) {
+    case TcasSsrMode::ModeC:
+    case TcasSsrMode::Ground:
+    case TcasSsrMode::TaOnly:
+    case TcasSsrMode::TaRa:
+      return true;
+    default:
+      return false;
+  }
+}
+
+bool TcasSsrModeIndicatesGround(int ssr_mode) {
+  return static_cast<TcasSsrMode>(ssr_mode) == TcasSsrMode::Ground;
+}
+
+uint8_t ResolveTrafficEmergencyCodeFromSquawk(int squawk) {
+  switch (squawk) {
+    case 7500:
+      return 5;
+    case 7600:
+      return 4;
+    case 7700:
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+bool TryResolveTrackFromVelocity(float vx, float vz, uint16_t* out_track) {
+  if (!out_track || !std::isfinite(static_cast<double>(vx)) ||
+      !std::isfinite(static_cast<double>(vz))) {
+    return false;
+  }
+
+  const double speed = std::hypot(static_cast<double>(vx), static_cast<double>(vz));
+  if (speed < kMinTrackSpeedMps) {
+    return false;
+  }
+
+  const double degrees =
+      std::atan2(static_cast<double>(vx), -static_cast<double>(vz)) *
+      kRadiansToDegrees;
+  *out_track = ClampFloatToInt<uint16_t>(NormalizeDegrees360(degrees));
+  return true;
+}
+
+void ResolveTrafficTrack(float vx,
+                         float vz,
+                         float heading,
+                         uint16_t* out_track,
+                         gdl90::TrackType* out_track_type) {
+  if (!out_track || !out_track_type) {
+    return;
+  }
+
+  uint16_t velocity_track = 0;
+  if (TryResolveTrackFromVelocity(vx, vz, &velocity_track)) {
+    *out_track = velocity_track;
+    *out_track_type = gdl90::TrackType::TRUE_TRACK;
+    return;
+  }
+
+  if (std::isfinite(static_cast<double>(heading))) {
+    *out_track = NormalizeDegreesToUint16(heading);
+    *out_track_type = gdl90::TrackType::TRUE_HEADING;
+    return;
+  }
+
+  *out_track = 0;
+  *out_track_type = gdl90::TrackType::INVALID;
 }
 
 uint16_t ClampKnotsToUint16OrInvalid(float knots) {
@@ -568,16 +671,10 @@ std::string ReadTrafficCallsign(size_t slot, uint32_t address) {
   return FormatTrafficFallbackCallsign(address);
 }
 
-gdl90::TrackType ResolveTrafficTrackType(float heading) {
-  return std::isfinite(static_cast<double>(heading))
-             ? gdl90::TrackType::TRUE_HEADING
-             : gdl90::TrackType::INVALID;
-}
-
 uint16_t CalculateHorizontalSpeedKnots(float vx, float vz) {
   if (!std::isfinite(static_cast<double>(vx)) ||
       !std::isfinite(static_cast<double>(vz))) {
-    return 0;
+    return gdl90::VELOCITY_INVALID;
   }
   const float speed = std::sqrt(vx * vx + vz * vz);
   return ClampFloatToInt<uint16_t>(speed * kMetersPerSecondToKnots);
@@ -600,7 +697,8 @@ bool BuildTrafficReportFromTcasSlot(const Settings& cfg,
   const int slot_index = ClampFloatToInt<int>(slot);
   const int raw_address =
       ReadIntArrayValue(g_state.traffic_tcas_refs.mode_s_ref, slot_index, 0);
-  if (raw_address <= 0) {
+  const uint32_t address = NormalizeTcasAddress(raw_address);
+  if (address == 0u) {
     return false;
   }
 
@@ -629,25 +727,36 @@ bool BuildTrafficReportFromTcasSlot(const Settings& cfg,
   const float heading = ReadFloatArrayValue(g_state.traffic_tcas_refs.heading_ref,
                                             slot_index, NAN);
   const int weight_on_wheels = ReadIntArrayValue(
-      g_state.traffic_tcas_refs.weight_on_wheels_ref, slot_index, 0);
+      g_state.traffic_tcas_refs.weight_on_wheels_ref, slot_index, -1);
+  const int ssr_mode =
+      ReadIntArrayValue(g_state.traffic_tcas_refs.ssr_mode_ref, slot_index, -1);
+  const int squawk =
+      ReadIntArrayValue(g_state.traffic_tcas_refs.mode_c_code_ref, slot_index, 0);
   const int wake_category =
       ReadIntArrayValue(g_state.traffic_tcas_refs.wake_cat_ref, slot_index, -1);
+
+  const bool airborne = (weight_on_wheels >= 0)
+                            ? (weight_on_wheels == 0)
+                            : !TcasSsrModeIndicatesGround(ssr_mode);
+  if (g_state.traffic_tcas_refs.ssr_mode_ref &&
+      !TcasSsrModeHasAltitude(ssr_mode)) {
+    report.altitude = std::numeric_limits<int32_t>::min();
+  }
 
   report.h_velocity = CalculateHorizontalSpeedKnots(vx, vz);
   report.v_velocity = std::isfinite(static_cast<double>(vertical_speed))
                           ? ClampFpmToInt16OrInvalid(vertical_speed)
                           : CalculateVerticalSpeedFpm(vy);
-  report.track = NormalizeDegreesToUint16(heading);
-  report.track_type = ResolveTrafficTrackType(heading);
-  report.airborne = (weight_on_wheels == 0);
+  ResolveTrafficTrack(vx, vz, heading, &report.track, &report.track_type);
+  report.airborne = airborne;
   report.nic = cfg.nic;
   report.nacp = cfg.nacp;
-  report.icao_address = static_cast<uint32_t>(raw_address) & 0xFFFFFFu;
+  report.icao_address = address;
   report.callsign = ReadTrafficCallsign(slot, report.icao_address);
   report.emitter_category = WakeCategoryToEmitterCategory(wake_category);
-  report.address_type = gdl90::AddressType::ADSB_SELF_ASSIGNED;
+  report.address_type = ResolveTcasAddressType(raw_address);
   report.alert_status = 0;
-  report.emergency_code = 0;
+  report.emergency_code = ResolveTrafficEmergencyCodeFromSquawk(squawk);
 
   *out_report = report;
   return true;
@@ -695,10 +804,9 @@ bool BuildTrafficReportFromLegacySlot(const Settings& cfg,
 
   report.h_velocity = CalculateHorizontalSpeedKnots(vx, vz);
   report.v_velocity = CalculateVerticalSpeedFpm(vy);
-  report.track = NormalizeDegreesToUint16(heading);
-  report.track_type = ResolveTrafficTrackType(heading);
   report.airborne =
       report.h_velocity >= 35 || std::abs(static_cast<double>(vy)) >= 0.5;
+  ResolveTrafficTrack(vx, vz, heading, &report.track, &report.track_type);
   report.nic = cfg.nic;
   report.nacp = cfg.nacp;
   report.icao_address = synthetic_address;
@@ -871,11 +979,18 @@ gdl90::AhrsData GetOwnshipAhrsData() {
   gdl90::AhrsData data;
   data.roll_deg = g_state.roll_ref ? XPLMGetDataf(g_state.roll_ref) : NAN;
   data.pitch_deg = g_state.pitch_ref ? XPLMGetDataf(g_state.pitch_ref) : NAN;
-  data.heading_deg =
-      g_state.heading_ref
-          ? NormalizeDegrees360(static_cast<double>(XPLMGetDataf(g_state.heading_ref)))
-          : std::numeric_limits<double>::quiet_NaN();
-  data.magnetic_heading = false;
+  if (g_state.heading_ref) {
+    double heading_deg =
+        NormalizeDegrees360(static_cast<double>(XPLMGetDataf(g_state.heading_ref)));
+    if (g_state.settings.ahrs_use_magnetic_heading && std::isfinite(heading_deg)) {
+      heading_deg = NormalizeDegrees360(
+          static_cast<double>(XPLMDegTrueToDegMagnetic(static_cast<float>(heading_deg))));
+    }
+    data.heading_deg = heading_deg;
+  } else {
+    data.heading_deg = std::numeric_limits<double>::quiet_NaN();
+  }
+  data.magnetic_heading = g_state.settings.ahrs_use_magnetic_heading;
   data.indicated_airspeed =
       g_state.indicated_airspeed_ref
           ? ClampKnotsToUint16OrInvalid(XPLMGetDataf(g_state.indicated_airspeed_ref))
@@ -913,6 +1028,10 @@ void InitializeTrafficDataRefs() {
   }
 
   if (g_state.traffic_tcas_refs.slot_count > 0) {
+    g_state.traffic_tcas_refs.mode_c_code_ref =
+        XPLMFindDataRef("sim/cockpit2/tcas/targets/modeC_code");
+    g_state.traffic_tcas_refs.ssr_mode_ref =
+        XPLMFindDataRef("sim/cockpit2/tcas/targets/ssr_mode");
     g_state.traffic_tcas_refs.flight_id_ref =
         XPLMFindDataRef("sim/cockpit2/tcas/targets/flight_id");
     g_state.traffic_tcas_refs.x_ref =
@@ -1156,6 +1275,8 @@ bool SaveSettingsToDisk(std::string* out_error) {
   file << ",\n";
   file << "  \"internet_policy\": "
        << static_cast<unsigned int>(s.internet_policy) << ",\n";
+  file << "  \"ahrs_use_magnetic_heading\": "
+       << (s.ahrs_use_magnetic_heading ? "true" : "false") << ",\n";
   file << "  \"heartbeat_rate\": " << s.heartbeat_rate << ",\n";
   file << "  \"position_rate\": " << s.position_rate << ",\n";
   file << "  \"nic\": " << static_cast<unsigned int>(s.nic) << ",\n";
@@ -1426,7 +1547,8 @@ bool LoadSettingsFromDisk(Settings* out_settings, std::string* out_error) {
         if (!value.empty()) s.device_long_name = value.substr(0, 16);
       }
     } else if (key == "debug_logging" || key == "log_messages" ||
-               key == "foreflight_auto_discovery") {
+               key == "foreflight_auto_discovery" ||
+               key == "ahrs_use_magnetic_heading") {
       bool flag = false;
       if (!json_detail::ParseBool(&c, &flag)) {
         if (out_error) *out_error = "Invalid settings JSON: expected boolean";
@@ -1435,6 +1557,7 @@ bool LoadSettingsFromDisk(Settings* out_settings, std::string* out_error) {
       if (key == "debug_logging") s.debug_logging = flag;
       if (key == "log_messages") s.log_messages = flag;
       if (key == "foreflight_auto_discovery") s.foreflight_auto_discovery = flag;
+      if (key == "ahrs_use_magnetic_heading") s.ahrs_use_magnetic_heading = flag;
     } else if (key == "target_port" || key == "icao_address" ||
                key == "emitter_category" || key == "heartbeat_rate" ||
                key == "position_rate" || key == "nic" || key == "nacp" ||
@@ -1584,6 +1707,7 @@ void SyncSettingsUiFromConfig() {
 
   g_state.settings_emitter_category = static_cast<int>(cfg.emitter_category);
   g_state.settings_internet_policy = static_cast<int>(cfg.internet_policy);
+  g_state.settings_ahrs_use_magnetic_heading = cfg.ahrs_use_magnetic_heading;
   g_state.settings_heartbeat_rate = cfg.heartbeat_rate;
   g_state.settings_position_rate = cfg.position_rate;
   g_state.settings_nic = static_cast<int>(cfg.nic);
@@ -1682,6 +1806,7 @@ bool BuildConfigFromSettingsUi(Settings* out_cfg,
     return false;
   }
   cfg.internet_policy = static_cast<uint8_t>(g_state.settings_internet_policy);
+  cfg.ahrs_use_magnetic_heading = g_state.settings_ahrs_use_magnetic_heading;
 
   if (g_state.settings_heartbeat_rate <= 0.0f) {
     if (out_error) {
@@ -1875,6 +2000,8 @@ void DrawSettingsWindowUI() {
       } else {
         ImGui::TextUnformatted("Last ForeFlight discovery: none");
       }
+      ImGui::Text("AHRS heading mode: %s",
+                  cfg.ahrs_use_magnetic_heading ? "Magnetic" : "True");
       ImGui::TextUnformatted("AHRS source: theta / phi / psi, indicated_airspeed, true_airspeed");
       ImGui::Text("Bytes sent: %llu",
                   static_cast<unsigned long long>(g_state.bytes_sent));
@@ -1923,6 +2050,8 @@ void DrawSettingsWindowUI() {
                                     sizeof(g_state.settings_device_long_name));
       dirty_now |= ImGui::InputInt("Internet Policy",
                                    &g_state.settings_internet_policy);
+      dirty_now |= ImGui::Checkbox("AHRS magnetic heading",
+                                   &g_state.settings_ahrs_use_magnetic_heading);
       ImGui::TextUnformatted("0=Unrestricted 1=Expensive 2=Disallowed");
       ImGui::EndTabItem();
     }
@@ -2025,6 +2154,8 @@ void DrawSettingsWindowUI() {
         static_cast<int>(defaults.emitter_category);
     g_state.settings_internet_policy =
         static_cast<int>(defaults.internet_policy);
+    g_state.settings_ahrs_use_magnetic_heading =
+        defaults.ahrs_use_magnetic_heading;
     g_state.settings_heartbeat_rate = defaults.heartbeat_rate;
     g_state.settings_position_rate = defaults.position_rate;
     g_state.settings_nic = static_cast<int>(defaults.nic);
@@ -2439,6 +2570,9 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
   } else {
     LogMessage("Pressure altitude dataref unavailable; Ownship Report altitude will be sent invalid");
   }
+
+  LogMessage(std::string("AHRS heading mode: ") +
+             (cfg.ahrs_use_magnetic_heading ? "magnetic" : "true"));
 
   InitializeTrafficDataRefs();
 

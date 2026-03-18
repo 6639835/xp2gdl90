@@ -9,7 +9,7 @@ A high-performance X-Plane 12 plugin that broadcasts real-time flight data in GD
 
 - **Real-time Position Broadcasting**: Ownship position, altitude, speed, and heading
 - **ForeFlight Extended Spec Support**: Device ID, AHRS, Ownship Geometric Altitude, and ForeFlight auto-discovery
-- **Traffic Report Broadcasting**: Remote multiplayer / xPilot traffic as GDL90 `0x14` reports
+- **Traffic Report Broadcasting**: Remote multiplayer / xPilot traffic as GDL90 `0x14` reports with TCAS-derived address, emergency, and transponder-state handling
 - **High Performance**: Native C++ plugin, minimal CPU overhead
 - **Cross-Platform**: Windows, macOS (Universal), and Linux support
 - **Fully Configurable**: In-sim settings UI backed by JSON config
@@ -35,7 +35,7 @@ Open **Plugins → XP2GDL90 → Settings...** and set:
 - Target IP / Port fallback
 - ForeFlight auto-discovery / discovery port
 - ICAO address, callsign fallback, emitter category
-- Device name / internet policy
+- Device name / internet policy / AHRS heading mode
 - Update rates and accuracy values
 
 ForeFlight device-ID broadcasts run automatically at 1 Hz, AHRS broadcasts run automatically at 5 Hz, Ownship Geometric Altitude is sent at 1 Hz, and the plugin can auto-switch to ForeFlight unicast when it sees ForeFlight's discovery broadcast.
@@ -140,6 +140,9 @@ emitter_category = 1         # Aircraft type:
 device_name = XP2GDL90       # ForeFlight ID message name (8 chars max)
 device_long_name = XP2GDL90 AHRS
 internet_policy = 0          # 0=Unrestricted 1=Expensive 2=Disallowed
+ahrs_use_magnetic_heading = false
+                             # false = AHRS uses sim/flightmodel/position/psi as true heading
+                             # true  = converts that true heading to magnetic using XPLMDegTrueToDegMagnetic
 ```
 
 ### Update Rates
@@ -236,7 +239,7 @@ This plugin currently transmits a subset of GDL90 messages:
 | 0x0B | Ownship Geometric Altitude | Geometric altitude (MSL capability advertised) |
 | 0x14 | Traffic Report | Multiplayer / TCAS traffic targets (1 Hz) |
 | 0x65 / 0x00 | ForeFlight ID | Device name / capabilities extension |
-| 0x65 / 0x01 | ForeFlight AHRS | Roll, pitch, and true heading at 5 Hz |
+| 0x65 / 0x01 | ForeFlight AHRS | Roll, pitch, and configurable true/magnetic heading at 5 Hz |
 
 Weather / `Uplink Data (0x07)` is intentionally not transmitted, because this plugin does not have a complete native UAT weather source. Ownship geometric altitude is sent as MSL and advertised that way in the ForeFlight ID capabilities mask.
 
@@ -287,6 +290,9 @@ EFB Application
 | `sim/flightmodel/position/vh_ind_fpm` | Vertical speed (fpm) |
 | `sim/flightmodel/failures/onground_any` | Airborne status |
 | `sim/aircraft/view/acf_tailnum` | Aircraft tail number (callsign) |
+| `sim/cockpit2/tcas/targets/modeS_id` | Remote traffic address / real-ICAO indicator |
+| `sim/cockpit2/tcas/targets/modeC_code` | Remote traffic squawk for emergency mapping |
+| `sim/cockpit2/tcas/targets/ssr_mode` | Remote traffic transponder mode / altitude capability |
 | `sim/cockpit2/tcas/targets/*` | Remote traffic position / velocity / state (preferred) |
 | `sim/multiplayer/position/planeN_*` | Legacy multiplayer traffic fallback |
 | `sim/multiplayer/position/planeN_tailnum` | Shared remote traffic callsign / tail number |

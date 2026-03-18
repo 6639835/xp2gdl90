@@ -280,6 +280,34 @@ TEST_CASE("Ownship report encodes invalid altitude sentinel") {
   ASSERT_EQ(static_cast<uint8_t>(0xF9), payload[12]);
 }
 
+TEST_CASE("Ownship report encodes invalid horizontal velocity sentinel") {
+  gdl90::GDL90Encoder encoder;
+  gdl90::PositionData data{};
+  data.latitude = 0.0;
+  data.longitude = 0.0;
+  data.altitude = 0;
+  data.h_velocity = gdl90::VELOCITY_INVALID;
+  data.v_velocity = 0;
+  data.track = 0;
+  data.track_type = gdl90::TrackType::TRUE_TRACK;
+  data.airborne = true;
+  data.nic = 11;
+  data.nacp = 11;
+  data.icao_address = 1;
+  data.callsign = "TEST";
+  data.emitter_category = gdl90::EmitterCategory::LIGHT;
+  data.address_type = gdl90::AddressType::ADSB_ICAO;
+  data.alert_status = 0;
+  data.emergency_code = 0;
+
+  const auto message = encoder.createOwnshipReport(data);
+  const auto payload = ExtractPayload(message);
+
+  ASSERT_EQ(static_cast<uint8_t>(0xFF), payload[14]);
+  ASSERT_EQ(static_cast<uint8_t>(0xF0), payload[15]);
+  ASSERT_EQ(static_cast<uint8_t>(0x00), payload[16]);
+}
+
 TEST_CASE("Ownship geometric altitude encodes altitude and vertical metrics") {
   gdl90::GDL90Encoder encoder;
   gdl90::GeoAltitudeData data{};
