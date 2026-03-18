@@ -37,6 +37,7 @@
 #include "imgui.h"
 
 #include "xp2gdl90/gdl90_encoder.h"
+#include "xp2gdl90/protocol_utils.h"
 #include "xp2gdl90/udp_receiver.h"
 #include "xp2gdl90/udp_broadcaster.h"
 
@@ -421,101 +422,10 @@ uint16_t ClampKnotsToUint16OrInvalid(float knots) {
   return static_cast<uint16_t>(clamped);
 }
 
-std::string ExtractJsonStringValue(const std::string& json,
-                                   std::string_view key) {
-  const std::string needle = "\"" + std::string(key) + "\"";
-  size_t pos = json.find(needle);
-  if (pos == std::string::npos) {
-    return "";
-  }
-  pos = json.find(':', pos + needle.size());
-  if (pos == std::string::npos) {
-    return "";
-  }
-  ++pos;
-  while (pos < json.size() &&
-         std::isspace(static_cast<unsigned char>(json[pos]))) {
-    ++pos;
-  }
-  if (pos >= json.size() || json[pos] != '"') {
-    return "";
-  }
-  ++pos;
-
-  std::string value;
-  while (pos < json.size()) {
-    const char ch = json[pos++];
-    if (ch == '"') {
-      return value;
-    }
-    if (ch == '\\' && pos < json.size()) {
-      value.push_back(json[pos++]);
-      continue;
-    }
-    value.push_back(ch);
-  }
-
-  return "";
-}
-
-bool ExtractJsonUnsignedValue(const std::string& json,
-                              std::string_view key,
-                              unsigned int* out_value) {
-  if (!out_value) {
-    return false;
-  }
-  const std::string needle = "\"" + std::string(key) + "\"";
-  size_t pos = json.find(needle);
-  if (pos == std::string::npos) {
-    return false;
-  }
-  pos = json.find(':', pos + needle.size());
-  if (pos == std::string::npos) {
-    return false;
-  }
-  ++pos;
-  while (pos < json.size() &&
-         std::isspace(static_cast<unsigned char>(json[pos]))) {
-    ++pos;
-  }
-
-  const size_t start = pos;
-  while (pos < json.size() &&
-         std::isdigit(static_cast<unsigned char>(json[pos]))) {
-    ++pos;
-  }
-  if (start == pos) {
-    return false;
-  }
-
-  try {
-    *out_value = static_cast<unsigned int>(
-        std::stoul(json.substr(start, pos - start), nullptr, 10));
-    return true;
-  } catch (...) {
-    return false;
-  }
-}
-
 bool ParseForeFlightBroadcastPacket(const std::vector<uint8_t>& packet,
                                     uint16_t* out_port) {
-  if (!out_port || packet.empty()) {
-    return false;
-  }
-
-  const std::string json(packet.begin(), packet.end());
-  if (ExtractJsonStringValue(json, "App") != "ForeFlight") {
-    return false;
-  }
-
-  unsigned int port = 0;
-  if (!ExtractJsonUnsignedValue(json, "port", &port) ||
-      port == 0 || port > 65535u) {
-    return false;
-  }
-
-  *out_port = static_cast<uint16_t>(port);
-  return true;
+  return xp2gdl90::protocol::ParseForeFlightDiscoveryBroadcast(packet,
+                                                               out_port);
 }
 
 std::string ReadTailNumber() {
@@ -551,25 +461,6 @@ std::string ReadDataRefText(XPLMDataRef ref, int max_bytes) {
     buffer.resize(nul);
   }
   return Trim(buffer);
-}
-
-std::string SanitizeCallsign(std::string_view input) {
-  std::string out;
-  out.reserve(8);
-
-  for (const char ch : input) {
-    const unsigned char uch = static_cast<unsigned char>(ch);
-    if (std::isalnum(uch)) {
-      out.push_back(static_cast<char>(std::toupper(uch)));
-    } else if (ch == ' ' || ch == '-' || ch == '_') {
-      out.push_back(' ');
-    }
-    if (out.size() >= 8) {
-      break;
-    }
-  }
-
-  return Trim(out);
 }
 
 float ReadFloatArrayValue(XPLMDataRef ref, int index, float fallback) {
@@ -660,9 +551,10 @@ std::string ReadTrafficFlightId(size_t slot) {
 }
 
 std::string ReadTrafficCallsign(size_t slot, uint32_t address) {
-  std::string callsign = SanitizeCallsign(ReadTrafficFlightId(slot));
+  std::string callsign =
+      xp2gdl90::protocol::SanitizeCallsign(ReadTrafficFlightId(slot));
   if (callsign.empty() && slot >= 1 && slot <= g_state.traffic_text_refs.size()) {
-    callsign = SanitizeCallsign(ReadDataRefText(
+    callsign = xp2gdl90::protocol::SanitizeCallsign(ReadDataRefText(
         g_state.traffic_text_refs[slot - 1].tailnum_ref, kTrafficTailnumSize));
   }
   if (!callsign.empty()) {
@@ -929,8 +821,12 @@ bool ApplyConfigToRuntime(const Settings& new_cfg,
 gdl90::PositionData GetOwnshipData(const Settings& cfg) {
   gdl90::PositionData data;
 
-  data.latitude = XPLMGetDatad(g_state.lat_ref);
-  data.longitude = XPLMGetDatad(g_state.lon_ref);
+  const double latitude = XPLMGetDatad(g_state.lat_ref);
+  const double longitude = XPLMGetDatad(g_state.lon_ref);
+  const bool gps_valid =
+      xp2gdl90::protocol::HasValidOwnshipPosition(latitude, longitude);
+  data.latitude = gps_valid ? latitude : 0.0;
+  data.longitude = gps_valid ? longitude : 0.0;
 
   if (g_state.pressure_alt_ref) {
     data.altitude = ClampFloatToInt<int32_t>(XPLMGetDataf(g_state.pressure_alt_ref));
@@ -951,13 +847,16 @@ gdl90::PositionData GetOwnshipData(const Settings& cfg) {
 
   data.icao_address = cfg.icao_address;
 
-  const std::string tail_number = ReadTailNumber();
-  data.callsign = tail_number.empty() ? cfg.callsign : tail_number;
+  const std::string tail_number =
+      xp2gdl90::protocol::SanitizeCallsign(ReadTailNumber());
+  const std::string fallback_callsign =
+      xp2gdl90::protocol::SanitizeCallsign(cfg.callsign);
+  data.callsign = tail_number.empty() ? fallback_callsign : tail_number;
 
   data.emitter_category =
       static_cast<gdl90::EmitterCategory>(cfg.emitter_category);
   data.address_type = gdl90::AddressType::ADSB_ICAO;
-  data.nic = cfg.nic;
+  data.nic = gps_valid ? cfg.nic : 0;
   data.nacp = cfg.nacp;
   data.alert_status = 0;
   data.emergency_code = 0;
@@ -1790,13 +1689,19 @@ bool BuildConfigFromSettingsUi(Settings* out_cfg,
   cfg.device_long_name = Trim(g_state.settings_device_long_name).substr(0, 16);
 
   if (g_state.settings_emitter_category < 0 ||
-      g_state.settings_emitter_category > 255) {
+      g_state.settings_emitter_category > 39) {
     if (out_error) {
-      *out_error = "Emitter category must be 0-255";
+      *out_error = "Emitter category must be 0-39";
     }
     return false;
   }
   cfg.emitter_category = static_cast<uint8_t>(g_state.settings_emitter_category);
+  if (!xp2gdl90::protocol::IsValidEmitterCategory(cfg.emitter_category)) {
+    if (out_error) {
+      *out_error = "Emitter category must be 0-39";
+    }
+    return false;
+  }
 
   if (g_state.settings_internet_policy < 0 ||
       g_state.settings_internet_policy > 2) {
@@ -1824,21 +1729,33 @@ bool BuildConfigFromSettingsUi(Settings* out_cfg,
   }
   cfg.position_rate = g_state.settings_position_rate;
 
-  if (g_state.settings_nic < 0 || g_state.settings_nic > 255) {
+  if (g_state.settings_nic < 0 || g_state.settings_nic > 11) {
     if (out_error) {
-      *out_error = "NIC must be 0-255";
+      *out_error = "NIC must be 0-11";
     }
     return false;
   }
   cfg.nic = static_cast<uint8_t>(g_state.settings_nic);
-
-  if (g_state.settings_nacp < 0 || g_state.settings_nacp > 255) {
+  if (!xp2gdl90::protocol::IsValidNic(cfg.nic)) {
     if (out_error) {
-      *out_error = "NACp must be 0-255";
+      *out_error = "NIC must be 0-11";
+    }
+    return false;
+  }
+
+  if (g_state.settings_nacp < 0 || g_state.settings_nacp > 11) {
+    if (out_error) {
+      *out_error = "NACp must be 0-11";
     }
     return false;
   }
   cfg.nacp = static_cast<uint8_t>(g_state.settings_nacp);
+  if (!xp2gdl90::protocol::IsValidNacp(cfg.nacp)) {
+    if (out_error) {
+      *out_error = "NACp must be 0-11";
+    }
+    return false;
+  }
 
   cfg.debug_logging = g_state.settings_debug_logging;
   cfg.log_messages = g_state.settings_log_messages;
@@ -2677,7 +2594,9 @@ float FlightLoopCallback(float in_elapsed_since_last_call,
 
   if (cfg.heartbeat_rate > 0.0f &&
       sim_time - g_state.last_heartbeat >= (1.0f / cfg.heartbeat_rate)) {
-    const auto heartbeat = g_state.encoder->createHeartbeat(true, true);
+    const bool gps_valid = xp2gdl90::protocol::HasValidOwnshipPosition(
+        XPLMGetDatad(g_state.lat_ref), XPLMGetDatad(g_state.lon_ref));
+    const auto heartbeat = g_state.encoder->createHeartbeat(gps_valid, true);
     const int sent = g_state.broadcaster->send(heartbeat);
     g_state.last_heartbeat_send_bytes = sent;
     if (sent >= 0) {

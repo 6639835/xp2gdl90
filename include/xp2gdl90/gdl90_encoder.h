@@ -113,6 +113,7 @@ class GDL90Encoder {
  public:
   GDL90Encoder();
   explicit GDL90Encoder(std::function<uint32_t()> utc_time_provider);
+  explicit GDL90Encoder(std::function<bool(uint32_t*)> utc_time_provider);
   ~GDL90Encoder() = default;
 
   std::vector<uint8_t> createHeartbeat(bool gps_valid = true,
@@ -127,6 +128,7 @@ class GDL90Encoder {
  private:
   static const uint16_t crc16_table_[256];
   std::function<uint32_t()> utc_time_provider_;
+  std::function<bool(uint32_t*)> checked_utc_time_provider_;
 
   uint16_t calculateCRC(const std::vector<uint8_t>& data) const;
   std::vector<uint8_t> escapeMessage(const std::vector<uint8_t>& data) const;
@@ -152,7 +154,7 @@ class GDL90Encoder {
   void pack24bit(std::vector<uint8_t>& buffer, uint32_t value) const;
   std::vector<uint8_t> createPositionReport(uint8_t msg_id,
                                             const PositionData& data);
-  uint32_t getUTCTime() const;
+  bool getUTCTime(uint32_t* out_time) const;
 };
 
 }  // namespace gdl90

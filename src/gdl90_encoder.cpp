@@ -49,6 +49,9 @@ GDL90Encoder::GDL90Encoder() = default;
 GDL90Encoder::GDL90Encoder(std::function<uint32_t()> utc_time_provider)
     : utc_time_provider_(std::move(utc_time_provider)) {}
 
+GDL90Encoder::GDL90Encoder(std::function<bool(uint32_t*)> utc_time_provider)
+    : checked_utc_time_provider_(std::move(utc_time_provider)) {}
+
 uint16_t GDL90Encoder::calculateCRC(const std::vector<uint8_t>& data) const {
   uint16_t crc = 0;
   for (const uint8_t byte : data) {
@@ -265,20 +268,35 @@ void GDL90Encoder::pack24bit(std::vector<uint8_t>& buffer,
   buffer.push_back(static_cast<uint8_t>(value & 0xFF));
 }
 
-uint32_t GDL90Encoder::getUTCTime() const {
+bool GDL90Encoder::getUTCTime(uint32_t* out_time) const {
+  if (!out_time) {
+    return false;
+  }
+
+  if (checked_utc_time_provider_) {
+    return checked_utc_time_provider_(out_time);
+  }
+
   if (utc_time_provider_) {
-    return utc_time_provider_();
+    *out_time = utc_time_provider_();
+    return true;
   }
 
   std::time_t now = std::time(nullptr);
+  if (now == static_cast<std::time_t>(-1)) {
+    *out_time = 0;
+    return false;
+  }
+
   std::tm utc{};
 #if defined(_WIN32)
   gmtime_s(&utc, &now);
 #else
   gmtime_r(&now, &utc);
 #endif
-  return static_cast<uint32_t>(utc.tm_hour * 3600 + utc.tm_min * 60 +
-                               utc.tm_sec);
+  *out_time = static_cast<uint32_t>(utc.tm_hour * 3600 + utc.tm_min * 60 +
+                                    utc.tm_sec);
+  return true;
 }
 
 std::vector<uint8_t> GDL90Encoder::createHeartbeat(bool gps_valid,
@@ -294,9 +312,10 @@ std::vector<uint8_t> GDL90Encoder::createHeartbeat(bool gps_valid,
   }
   payload.push_back(status1);
 
-  const uint32_t timestamp = getUTCTime();
+  uint32_t timestamp = 0;
+  const bool have_utc_time = getUTCTime(&timestamp);
   uint8_t status2 = 0x00;
-  if (utc_ok) {
+  if (utc_ok && have_utc_time) {
     status2 |= 0x01;
   }
   if (timestamp & 0x10000) {

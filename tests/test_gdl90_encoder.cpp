@@ -201,6 +201,20 @@ TEST_CASE("Heartbeat encoding sets timestamp high-bit flag") {
   ASSERT_EQ(static_cast<uint8_t>(0x00), payload[4]);
 }
 
+TEST_CASE("Heartbeat clears UTC OK when time provider reports failure") {
+  gdl90::GDL90Encoder encoder([](uint32_t* out_time) {
+    if (out_time) {
+      *out_time = 0;
+    }
+    return false;
+  });
+  const auto message = encoder.createHeartbeat(true, true);
+  const auto payload = ExtractPayload(message);
+
+  ASSERT_EQ(static_cast<uint8_t>(gdl90::MSG_ID_HEARTBEAT), payload[0]);
+  ASSERT_EQ(static_cast<uint8_t>(0x00), payload[2] & 0x01);
+}
+
 TEST_CASE("Ownship report encodes fields and clamps values") {
   gdl90::GDL90Encoder encoder;
   gdl90::PositionData data{};
