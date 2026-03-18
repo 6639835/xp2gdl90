@@ -111,61 +111,38 @@ The plugin will be built in `build/` directory:
 
 ## Configuration Reference
 
-### Network Settings
+Settings are stored as JSON in `Output/preferences/xp2gdl90.json`.
 
-```ini
-[Network]
-target_ip = 192.168.1.100    # Target device IP
-                             # - Specific IP: 192.168.1.100
-                             # - Broadcast: 192.168.1.255
-                             # - Global: 255.255.255.255
-target_port = 4000           # UDP port (default: 4000)
-foreflight_auto_discovery = true
-foreflight_broadcast_port = 63093
+```json
+{
+  "target_ip": "192.168.1.100",
+  "target_port": 4000,
+  "foreflight_auto_discovery": true,
+  "foreflight_broadcast_port": 63093,
+  "icao_address": 11259375,
+  "callsign": "N12345",
+  "emitter_category": 1,
+  "device_name": "XP2GDL90",
+  "device_long_name": "XP2GDL90 AHRS",
+  "internet_policy": 0,
+  "ahrs_use_magnetic_heading": false,
+  "heartbeat_rate": 1.0,
+  "position_rate": 2.0,
+  "nic": 11,
+  "nacp": 11,
+  "debug_logging": false,
+  "log_messages": false
+}
 ```
 
-### Ownship Settings
-
-```ini
-[Ownship]
-icao_address = 0xABCDEF      # 24-bit ICAO address (hex)
-callsign = N12345            # Fallback callsign (auto-reads from X-Plane)
-emitter_category = 1         # Aircraft type:
-                             # 0 = No info
-                             # 1 = Light (<15,500 lbs)
-                             # 2 = Small (15,500-75,000 lbs)
-                             # 3 = Large (75,000-300,000 lbs)
-                             # 5 = Heavy (>300,000 lbs)
-                             # 7 = Rotorcraft
-                             # 9 = Glider
-device_name = XP2GDL90       # ForeFlight ID message name (8 chars max)
-device_long_name = XP2GDL90 AHRS
-internet_policy = 0          # 0=Unrestricted 1=Expensive 2=Disallowed
-ahrs_use_magnetic_heading = false
-                             # false = AHRS uses sim/flightmodel/position/psi as true heading
-                             # true  = converts that true heading to magnetic using XPLMDegTrueToDegMagnetic
-```
-
-### Update Rates
-
-```ini
-[Update Rates]
-heartbeat_rate = 1.0         # Heartbeats per second (default: 1)
-position_rate = 2.0          # Position updates/sec (default: 2)
-```
-
-### Accuracy Settings
-
-```ini
-[Accuracy]
-nic = 11                     # Navigation Integrity Category
-                             # 11 = HPL < 7.5m (very high precision)
-                             # RECOMMENDED: Use 11 for best EFB compatibility
-                             # Many EFB apps filter out low accuracy reports
-nacp = 11                    # Navigation Accuracy Category
-                             # 11 = HFOM < 3m (very high precision)
-                             # RECOMMENDED: Use 11 for best EFB compatibility
-```
+Field notes:
+- `target_ip`: specific target, subnet broadcast, or `255.255.255.255`
+- `icao_address`: 24-bit ICAO address stored as a decimal JSON number
+- `emitter_category`: `0-39`; common values include `1` light, `2` small, `3` large, `5` heavy, `7` rotorcraft, `9` glider
+- `internet_policy`: `0=Unrestricted`, `1=Expensive`, `2=Disallowed`
+- `ahrs_use_magnetic_heading`: `false` uses true heading, `true` converts via `XPLMDegTrueToDegMagnetic`
+- `heartbeat_rate` and `position_rate`: updates per second, must be greater than `0`
+- `nic` and `nacp`: `0-11`; `11` is recommended for EFB compatibility
 
 ## Troubleshooting
 
@@ -211,20 +188,22 @@ nacp = 11                    # Navigation Accuracy Category
 
 If you experience frame rate drops, lower the update rates:
 
-```ini
-[Update Rates]
-position_rate = 1.0       # 1 update per second
-heartbeat_rate = 0.5      # Once every 2 seconds
+```json
+{
+  "position_rate": 1.0,
+  "heartbeat_rate": 0.5
+}
 ```
 
 ### Advanced Debugging
 
 If you need to troubleshoot at a deeper level, you can enable debug logging:
 
-```ini
-[Debug]
-debug_logging = true     # Enable detailed logging (may impact performance)
-log_messages = true      # Log raw message hex dumps
+```json
+{
+  "debug_logging": true,
+  "log_messages": true
+}
 ```
 
 Then check `X-Plane 12/Log.txt` for detailed output.

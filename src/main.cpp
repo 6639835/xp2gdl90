@@ -24,13 +24,11 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
-#include <fstream>
 #include <iomanip>
 #include <limits>
 #include <memory>
 #include <sstream>
 #include <string>
-#include <string_view>
 #include <vector>
 
 #include "backends/imgui_impl_opengl2.h"
@@ -40,6 +38,8 @@
 #include "xp2gdl90/foreflight_protocol.h"
 #include "xp2gdl90/gdl90_encoder.h"
 #include "xp2gdl90/protocol_utils.h"
+#include "xp2gdl90/settings.h"
+#include "xp2gdl90/settings_ui.h"
 #include "xp2gdl90/udp_receiver.h"
 #include "xp2gdl90/udp_broadcaster.h"
 
@@ -69,10 +69,11 @@ constexpr float kOwnshipGeoAltitudeRate = 1.0f;
 constexpr float kForeFlightDiscoveryTimeout = 15.0f;
 constexpr int kTrafficFlightIdSize = 8;
 constexpr int kTrafficTailnumSize = 10;
-constexpr char kForeFlightDeviceName[] = "XP2GDL90";
-constexpr char kForeFlightDeviceLongName[] = "XP2GDL90 AHRS";
 constexpr float kMinTrackSpeedMps = 0.5f;
 constexpr double kRadiansToDegrees = 57.29577951308232;
+
+using xp2gdl90::Settings;
+using xp2gdl90::SettingsUiState;
 
 enum class TcasSsrMode : int {
   Off = 0,
@@ -83,29 +84,6 @@ enum class TcasSsrMode : int {
   Ground = 5,
   TaOnly = 6,
   TaRa = 7,
-};
-
-struct Settings {
-  std::string target_ip = "192.168.1.100";
-  uint16_t target_port = 4000;
-  bool foreflight_auto_discovery = true;
-  uint16_t foreflight_broadcast_port = 63093;
-  uint32_t icao_address = 0xABCDEF;
-  std::string callsign = "N12345";
-  uint8_t emitter_category = 1;
-  std::string device_name = kForeFlightDeviceName;
-  std::string device_long_name = kForeFlightDeviceLongName;
-  uint8_t internet_policy = 0;
-  bool ahrs_use_magnetic_heading = false;
-
-  float heartbeat_rate = 1.0f;
-  float position_rate = 2.0f;
-
-  uint8_t nic = 11;
-  uint8_t nacp = 11;
-
-  bool debug_logging = false;
-  bool log_messages = false;
 };
 
 struct TrafficTcasRefs {
@@ -205,24 +183,7 @@ struct PluginState {
 
   bool settings_dirty = false;
   std::string settings_last_error;
-
-  char settings_target_ip[64] = {};
-  int settings_target_port = 0;
-  bool settings_foreflight_auto_discovery = false;
-  int settings_foreflight_broadcast_port = 0;
-  char settings_icao_address[16] = {};
-  char settings_callsign[16] = {};
-  int settings_emitter_category = 0;
-  char settings_device_name[32] = {};
-  char settings_device_long_name[64] = {};
-  int settings_internet_policy = 0;
-  bool settings_ahrs_use_magnetic_heading = false;
-  float settings_heartbeat_rate = 0.0f;
-  float settings_position_rate = 0.0f;
-  int settings_nic = 0;
-  int settings_nacp = 0;
-  bool settings_debug_logging = false;
-  bool settings_log_messages = false;
+  SettingsUiState settings_ui;
 
   uint64_t heartbeat_packets_sent = 0;
   uint64_t position_packets_sent = 0;
@@ -251,6 +212,7 @@ float FlightLoopCallback(float in_elapsed_since_last_call,
 void MenuHandlerCallback(void* in_menu_ref, void* in_item_ref);
 
 bool SaveSettingsToDisk(std::string* out_error);
+bool LoadSettingsFromDisk(Settings* out_settings, std::string* out_error);
 void ShowSettingsWindow(bool show);
 void CreateSettingsWindow();
 void DestroySettingsWindow();
@@ -1106,455 +1068,13 @@ void PollForeFlightDiscovery(float sim_time, const Settings& cfg) {
 }
 
 bool SaveSettingsToDisk(std::string* out_error) {
-  std::ofstream file(g_state.settings_path, std::ios::binary | std::ios::trunc);
-  if (!file.is_open()) {
-    if (out_error) {
-      *out_error = "Failed to open settings file for writing: " + g_state.settings_path;
-    }
-    return false;
-  }
-
-  auto write_json_string = [&file](std::string_view input) {
-    file << '"';
-    for (unsigned char ch : input) {
-      switch (ch) {
-        case '\\':
-          file << "\\\\";
-          break;
-        case '"':
-          file << "\\\"";
-          break;
-        case '\b':
-          file << "\\b";
-          break;
-        case '\f':
-          file << "\\f";
-          break;
-        case '\n':
-          file << "\\n";
-          break;
-        case '\r':
-          file << "\\r";
-          break;
-        case '\t':
-          file << "\\t";
-          break;
-        default:
-          if (ch < 0x20) {
-            static const char kHex[] = "0123456789ABCDEF";
-            file << "\\u00" << kHex[(ch >> 4) & 0xF] << kHex[ch & 0xF];
-          } else {
-            file << static_cast<char>(ch);
-          }
-          break;
-      }
-    }
-    file << '"';
-  };
-
-  // Minimal JSON (no external deps).
-  const Settings& s = g_state.settings;
-  file << "{\n";
-  file << "  \"target_ip\": ";
-  write_json_string(s.target_ip);
-  file << ",\n";
-  file << "  \"target_port\": " << static_cast<unsigned int>(s.target_port) << ",\n";
-  file << "  \"foreflight_auto_discovery\": "
-       << (s.foreflight_auto_discovery ? "true" : "false") << ",\n";
-  file << "  \"foreflight_broadcast_port\": "
-       << static_cast<unsigned int>(s.foreflight_broadcast_port) << ",\n";
-  file << "  \"icao_address\": " << static_cast<unsigned int>(s.icao_address & 0xFFFFFFu) << ",\n";
-  file << "  \"callsign\": ";
-  write_json_string(s.callsign);
-  file << ",\n";
-  file << "  \"emitter_category\": " << static_cast<unsigned int>(s.emitter_category) << ",\n";
-  file << "  \"device_name\": ";
-  write_json_string(s.device_name);
-  file << ",\n";
-  file << "  \"device_long_name\": ";
-  write_json_string(s.device_long_name);
-  file << ",\n";
-  file << "  \"internet_policy\": "
-       << static_cast<unsigned int>(s.internet_policy) << ",\n";
-  file << "  \"ahrs_use_magnetic_heading\": "
-       << (s.ahrs_use_magnetic_heading ? "true" : "false") << ",\n";
-  file << "  \"heartbeat_rate\": " << s.heartbeat_rate << ",\n";
-  file << "  \"position_rate\": " << s.position_rate << ",\n";
-  file << "  \"nic\": " << static_cast<unsigned int>(s.nic) << ",\n";
-  file << "  \"nacp\": " << static_cast<unsigned int>(s.nacp) << ",\n";
-  file << "  \"debug_logging\": " << (s.debug_logging ? "true" : "false") << ",\n";
-  file << "  \"log_messages\": " << (s.log_messages ? "true" : "false") << "\n";
-  file << "}\n";
-  file.close();
-
-  if (out_error) {
-    out_error->clear();
-  }
-  return true;
+  return xp2gdl90::SaveSettingsToJsonFile(g_state.settings_path, g_state.settings,
+                                          out_error);
 }
-
-namespace json_detail {
-
-struct Cursor {
-  const char* p;
-  const char* end;
-};
-
-void SkipWs(Cursor* c) {
-  while (c->p < c->end) {
-    const unsigned char ch = static_cast<unsigned char>(*c->p);
-    if (ch != ' ' && ch != '\t' && ch != '\r' && ch != '\n') {
-      break;
-    }
-    ++c->p;
-  }
-}
-
-bool Consume(Cursor* c, char expected) {
-  SkipWs(c);
-  if (c->p >= c->end || *c->p != expected) {
-    return false;
-  }
-  ++c->p;
-  return true;
-}
-
-bool ParseHexNibble(char ch, uint8_t* out) {
-  if (!out) return false;
-  if (ch >= '0' && ch <= '9') {
-    *out = static_cast<uint8_t>(ch - '0');
-    return true;
-  }
-  if (ch >= 'a' && ch <= 'f') {
-    *out = static_cast<uint8_t>(10 + (ch - 'a'));
-    return true;
-  }
-  if (ch >= 'A' && ch <= 'F') {
-    *out = static_cast<uint8_t>(10 + (ch - 'A'));
-    return true;
-  }
-  return false;
-}
-
-void AppendUtf8(std::string* out, uint32_t codepoint) {
-  if (!out) return;
-  if (codepoint <= 0x7F) {
-    out->push_back(static_cast<char>(codepoint));
-  } else if (codepoint <= 0x7FF) {
-    out->push_back(static_cast<char>(0xC0 | ((codepoint >> 6) & 0x1F)));
-    out->push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
-  } else if (codepoint <= 0xFFFF) {
-    out->push_back(static_cast<char>(0xE0 | ((codepoint >> 12) & 0x0F)));
-    out->push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
-    out->push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
-  } else {
-    out->push_back(static_cast<char>(0xF0 | ((codepoint >> 18) & 0x07)));
-    out->push_back(static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F)));
-    out->push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
-    out->push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
-  }
-}
-
-bool ParseString(Cursor* c, std::string* out) {
-  if (!Consume(c, '"')) {
-    return false;
-  }
-
-  std::string result;
-  while (c->p < c->end) {
-    const char ch = *c->p++;
-    if (ch == '"') {
-      *out = std::move(result);
-      return true;
-    }
-    if (static_cast<unsigned char>(ch) < 0x20) {
-      return false;
-    }
-    if (ch != '\\') {
-      result.push_back(ch);
-      continue;
-    }
-
-    if (c->p >= c->end) {
-      return false;
-    }
-    const char esc = *c->p++;
-    switch (esc) {
-      case '"':
-      case '\\':
-      case '/':
-        result.push_back(esc);
-        break;
-      case 'b':
-        result.push_back('\b');
-        break;
-      case 'f':
-        result.push_back('\f');
-        break;
-      case 'n':
-        result.push_back('\n');
-        break;
-      case 'r':
-        result.push_back('\r');
-        break;
-      case 't':
-        result.push_back('\t');
-        break;
-      case 'u': {
-        if (c->end - c->p < 4) {
-          return false;
-        }
-        uint8_t n0 = 0, n1 = 0, n2 = 0, n3 = 0;
-        if (!ParseHexNibble(c->p[0], &n0) || !ParseHexNibble(c->p[1], &n1) ||
-            !ParseHexNibble(c->p[2], &n2) || !ParseHexNibble(c->p[3], &n3)) {
-          return false;
-        }
-        c->p += 4;
-        const uint32_t codepoint =
-            (static_cast<uint32_t>(n0) << 12) | (static_cast<uint32_t>(n1) << 8) |
-            (static_cast<uint32_t>(n2) << 4) | static_cast<uint32_t>(n3);
-        AppendUtf8(&result, codepoint);
-        break;
-      }
-      default:
-        return false;
-    }
-  }
-  return false;
-}
-
-bool ParseBool(Cursor* c, bool* out) {
-  SkipWs(c);
-  const size_t remaining = static_cast<size_t>(c->end - c->p);
-  if (remaining >= 4 && std::strncmp(c->p, "true", 4) == 0) {
-    c->p += 4;
-    *out = true;
-    return true;
-  }
-  if (remaining >= 5 && std::strncmp(c->p, "false", 5) == 0) {
-    c->p += 5;
-    *out = false;
-    return true;
-  }
-  return false;
-}
-
-bool ParseNumber(Cursor* c, double* out) {
-  SkipWs(c);
-  const char* start = c->p;
-  if (start >= c->end) {
-    return false;
-  }
-  const char* p = start;
-  if (*p == '-' || *p == '+') {
-    ++p;
-  }
-  bool saw_digit = false;
-  while (p < c->end && std::isdigit(static_cast<unsigned char>(*p))) {
-    saw_digit = true;
-    ++p;
-  }
-  if (p < c->end && *p == '.') {
-    ++p;
-    while (p < c->end && std::isdigit(static_cast<unsigned char>(*p))) {
-      saw_digit = true;
-      ++p;
-    }
-  }
-  if (!saw_digit) {
-    return false;
-  }
-  if (p < c->end && (*p == 'e' || *p == 'E')) {
-    ++p;
-    if (p < c->end && (*p == '-' || *p == '+')) {
-      ++p;
-    }
-    bool exp_digit = false;
-    while (p < c->end && std::isdigit(static_cast<unsigned char>(*p))) {
-      exp_digit = true;
-      ++p;
-    }
-    if (!exp_digit) {
-      return false;
-    }
-  }
-
-  try {
-    *out = std::stod(std::string(start, p));
-  } catch (...) {
-    return false;
-  }
-  c->p = p;
-  return true;
-}
-
-}  // namespace json_detail
 
 bool LoadSettingsFromDisk(Settings* out_settings, std::string* out_error) {
-  if (!out_settings) return false;
-  std::ifstream file(g_state.settings_path, std::ios::binary);
-  if (!file.is_open()) {
-    // Not an error: file may not exist yet.
-    if (out_error) out_error->clear();
-    return false;
-  }
-  std::stringstream buffer;
-  buffer << file.rdbuf();
-  const std::string text = buffer.str();
-
-  Settings s = *out_settings;
-
-  json_detail::Cursor c{text.data(), text.data() + text.size()};
-  if (!json_detail::Consume(&c, '{')) {
-    if (out_error) *out_error = "Invalid settings JSON: expected '{'";
-    return false;
-  }
-
-  while (true) {
-    json_detail::SkipWs(&c);
-    if (c.p >= c.end) {
-      if (out_error) *out_error = "Invalid settings JSON: unexpected EOF";
-      return false;
-    }
-    if (*c.p == '}') {
-      ++c.p;
-      break;
-    }
-
-    std::string key;
-    if (!json_detail::ParseString(&c, &key)) {
-      if (out_error) *out_error = "Invalid settings JSON: expected string key";
-      return false;
-    }
-    if (!json_detail::Consume(&c, ':')) {
-      if (out_error) *out_error = "Invalid settings JSON: expected ':'";
-      return false;
-    }
-
-    if (key == "target_ip" || key == "callsign" || key == "device_name" ||
-        key == "device_long_name") {
-      std::string value;
-      if (!json_detail::ParseString(&c, &value)) {
-        if (out_error) *out_error = "Invalid settings JSON: expected string";
-        return false;
-      }
-      if (key == "target_ip") {
-        if (!value.empty()) s.target_ip = value;
-      } else if (key == "callsign") {
-        if (!value.empty()) s.callsign = value.substr(0, 8);
-      } else if (key == "device_name") {
-        if (!value.empty()) s.device_name = value.substr(0, 8);
-      } else if (key == "device_long_name") {
-        if (!value.empty()) s.device_long_name = value.substr(0, 16);
-      }
-    } else if (key == "debug_logging" || key == "log_messages" ||
-               key == "foreflight_auto_discovery" ||
-               key == "ahrs_use_magnetic_heading") {
-      bool flag = false;
-      if (!json_detail::ParseBool(&c, &flag)) {
-        if (out_error) *out_error = "Invalid settings JSON: expected boolean";
-        return false;
-      }
-      if (key == "debug_logging") s.debug_logging = flag;
-      if (key == "log_messages") s.log_messages = flag;
-      if (key == "foreflight_auto_discovery") s.foreflight_auto_discovery = flag;
-      if (key == "ahrs_use_magnetic_heading") s.ahrs_use_magnetic_heading = flag;
-    } else if (key == "target_port" || key == "icao_address" ||
-               key == "emitter_category" || key == "heartbeat_rate" ||
-               key == "position_rate" || key == "nic" || key == "nacp" ||
-               key == "foreflight_broadcast_port" ||
-               key == "internet_policy") {
-      double number = 0.0;
-      if (!json_detail::ParseNumber(&c, &number)) {
-        if (out_error) *out_error = "Invalid settings JSON: expected number for key '" + key + "'";
-        return false;
-      }
-
-      if (key == "target_port") {
-        if (number >= 1.0 && number <= 65535.0) {
-          s.target_port = static_cast<uint16_t>(static_cast<unsigned int>(number));
-        }
-      } else if (key == "foreflight_broadcast_port") {
-        if (number >= 1.0 && number <= 65535.0) {
-          s.foreflight_broadcast_port =
-              static_cast<uint16_t>(static_cast<unsigned int>(number));
-        }
-      } else if (key == "icao_address") {
-        s.icao_address =
-            static_cast<uint32_t>(static_cast<unsigned int>(number)) & 0xFFFFFFu;
-      } else if (key == "emitter_category") {
-        s.emitter_category =
-            static_cast<uint8_t>(static_cast<unsigned int>(number) & 0xFFu);
-      } else if (key == "heartbeat_rate") {
-        if (number > 0.0) s.heartbeat_rate = static_cast<float>(number);
-      } else if (key == "position_rate") {
-        if (number > 0.0) s.position_rate = static_cast<float>(number);
-      } else if (key == "nic") {
-        s.nic = static_cast<uint8_t>(static_cast<unsigned int>(number) & 0xFFu);
-      } else if (key == "nacp") {
-        s.nacp = static_cast<uint8_t>(static_cast<unsigned int>(number) & 0xFFu);
-      } else if (key == "internet_policy") {
-        const unsigned int policy = static_cast<unsigned int>(number);
-        if (policy <= 2u) {
-          s.internet_policy = static_cast<uint8_t>(policy);
-        }
-      }
-    } else {
-      // Forward-compat: ignore unknown keys (any primitive JSON value).
-      json_detail::SkipWs(&c);
-      if (c.p >= c.end) {
-        if (out_error) *out_error = "Invalid settings JSON: unexpected EOF";
-        return false;
-      }
-      if (*c.p == '"') {
-        std::string ignored;
-        if (!json_detail::ParseString(&c, &ignored)) {
-          if (out_error) *out_error = "Invalid settings JSON: expected string";
-          return false;
-        }
-      } else if (*c.p == 't' || *c.p == 'f') {
-        bool ignored = false;
-        if (!json_detail::ParseBool(&c, &ignored)) {
-          if (out_error) *out_error = "Invalid settings JSON: expected boolean";
-          return false;
-        }
-      } else if (*c.p == 'n') {
-        if (static_cast<size_t>(c.end - c.p) >= 4 &&
-            std::strncmp(c.p, "null", 4) == 0) {
-          c.p += 4;
-        } else {
-          if (out_error) *out_error = "Invalid settings JSON: expected 'null'";
-          return false;
-        }
-      } else {
-        double ignored = 0.0;
-        if (!json_detail::ParseNumber(&c, &ignored)) {
-          if (out_error) *out_error = "Invalid settings JSON: expected number";
-          return false;
-        }
-      }
-    }
-
-    json_detail::SkipWs(&c);
-    if (c.p >= c.end) {
-      if (out_error) *out_error = "Invalid settings JSON: unexpected EOF";
-      return false;
-    }
-    if (*c.p == ',') {
-      ++c.p;
-      continue;
-    }
-    if (*c.p == '}') {
-      ++c.p;
-      break;
-    }
-    if (out_error) *out_error = "Invalid settings JSON: expected ',' or '}'";
-    return false;
-  }
-
-  *out_settings = s;
-  if (out_error) out_error->clear();
-  return true;
+  return xp2gdl90::LoadSettingsFromJsonFile(g_state.settings_path, out_settings,
+                                            out_error);
 }
 
 bool ReloadSettingsFromDisk() {
@@ -1586,184 +1106,16 @@ bool ReloadSettingsFromDisk() {
 }
 
 void SyncSettingsUiFromConfig() {
-  const Settings& cfg = g_state.settings;
-
-  std::snprintf(g_state.settings_target_ip, sizeof(g_state.settings_target_ip),
-                "%s", cfg.target_ip.c_str());
-  g_state.settings_target_port = static_cast<int>(cfg.target_port);
-  g_state.settings_foreflight_auto_discovery = cfg.foreflight_auto_discovery;
-  g_state.settings_foreflight_broadcast_port =
-      static_cast<int>(cfg.foreflight_broadcast_port);
-  std::snprintf(g_state.settings_icao_address,
-                sizeof(g_state.settings_icao_address), "0x%06X",
-                static_cast<unsigned int>(cfg.icao_address & 0xFFFFFFu));
-  std::snprintf(g_state.settings_callsign, sizeof(g_state.settings_callsign),
-                "%s", cfg.callsign.c_str());
-  std::snprintf(g_state.settings_device_name,
-                sizeof(g_state.settings_device_name), "%s",
-                cfg.device_name.c_str());
-  std::snprintf(g_state.settings_device_long_name,
-                sizeof(g_state.settings_device_long_name), "%s",
-                cfg.device_long_name.c_str());
-
-  g_state.settings_emitter_category = static_cast<int>(cfg.emitter_category);
-  g_state.settings_internet_policy = static_cast<int>(cfg.internet_policy);
-  g_state.settings_ahrs_use_magnetic_heading = cfg.ahrs_use_magnetic_heading;
-  g_state.settings_heartbeat_rate = cfg.heartbeat_rate;
-  g_state.settings_position_rate = cfg.position_rate;
-  g_state.settings_nic = static_cast<int>(cfg.nic);
-  g_state.settings_nacp = static_cast<int>(cfg.nacp);
-  g_state.settings_debug_logging = cfg.debug_logging;
-  g_state.settings_log_messages = cfg.log_messages;
-
+  xp2gdl90::SyncSettingsUiFromConfig(&g_state.settings_ui, g_state.settings);
   g_state.settings_dirty = false;
   g_state.settings_last_error.clear();
 }
 
-bool ParseHex24(const char* text, uint32_t* out_value) {
-  if (!text || !out_value) {
-    return false;
-  }
-  std::string s = Trim(text);
-  if (s.empty()) {
-    return false;
-  }
-  try {
-    unsigned long value = 0;
-    if (s.rfind("0x", 0) == 0 || s.rfind("0X", 0) == 0) {
-      value = std::stoul(s, nullptr, 16);
-    } else {
-      value = std::stoul(s, nullptr, 16);
-    }
-    *out_value = static_cast<uint32_t>(value) & 0xFFFFFFu;
-    return true;
-  } catch (...) {
-    return false;
-  }
-}
-
 bool BuildConfigFromSettingsUi(Settings* out_cfg,
                                std::string* out_error) {
-  if (!out_cfg) {
-    return false;
-  }
-  Settings cfg = g_state.settings;
-
-  const std::string ip = Trim(g_state.settings_target_ip);
-  if (ip.empty()) {
-    if (out_error) {
-      *out_error = "Target IP cannot be empty";
-    }
-    return false;
-  }
-  cfg.target_ip = ip;
-
-  if (g_state.settings_target_port <= 0 || g_state.settings_target_port > 65535) {
-    if (out_error) {
-      *out_error = "Target port must be 1-65535";
-    }
-    return false;
-  }
-  cfg.target_port = static_cast<uint16_t>(g_state.settings_target_port);
-  cfg.foreflight_auto_discovery = g_state.settings_foreflight_auto_discovery;
-
-  if (g_state.settings_foreflight_broadcast_port <= 0 ||
-      g_state.settings_foreflight_broadcast_port > 65535) {
-    if (out_error) {
-      *out_error = "ForeFlight broadcast port must be 1-65535";
-    }
-    return false;
-  }
-  cfg.foreflight_broadcast_port =
-      static_cast<uint16_t>(g_state.settings_foreflight_broadcast_port);
-
-  uint32_t icao = 0;
-  if (!ParseHex24(g_state.settings_icao_address, &icao)) {
-    if (out_error) {
-      *out_error = "ICAO address must be a hex value (e.g. 0xABCDEF)";
-    }
-    return false;
-  }
-  cfg.icao_address = icao;
-
-  cfg.callsign = Trim(g_state.settings_callsign).substr(0, 8);
-  cfg.device_name = Trim(g_state.settings_device_name).substr(0, 8);
-  cfg.device_long_name = Trim(g_state.settings_device_long_name).substr(0, 16);
-
-  if (g_state.settings_emitter_category < 0 ||
-      g_state.settings_emitter_category > 39) {
-    if (out_error) {
-      *out_error = "Emitter category must be 0-39";
-    }
-    return false;
-  }
-  cfg.emitter_category = static_cast<uint8_t>(g_state.settings_emitter_category);
-  if (!xp2gdl90::protocol::IsValidEmitterCategory(cfg.emitter_category)) {
-    if (out_error) {
-      *out_error = "Emitter category must be 0-39";
-    }
-    return false;
-  }
-
-  if (g_state.settings_internet_policy < 0 ||
-      g_state.settings_internet_policy > 2) {
-    if (out_error) {
-      *out_error = "Internet policy must be 0-2";
-    }
-    return false;
-  }
-  cfg.internet_policy = static_cast<uint8_t>(g_state.settings_internet_policy);
-  cfg.ahrs_use_magnetic_heading = g_state.settings_ahrs_use_magnetic_heading;
-
-  if (g_state.settings_heartbeat_rate <= 0.0f) {
-    if (out_error) {
-      *out_error = "Heartbeat rate must be > 0";
-    }
-    return false;
-  }
-  cfg.heartbeat_rate = g_state.settings_heartbeat_rate;
-
-  if (g_state.settings_position_rate <= 0.0f) {
-    if (out_error) {
-      *out_error = "Position rate must be > 0";
-    }
-    return false;
-  }
-  cfg.position_rate = g_state.settings_position_rate;
-
-  if (g_state.settings_nic < 0 || g_state.settings_nic > 11) {
-    if (out_error) {
-      *out_error = "NIC must be 0-11";
-    }
-    return false;
-  }
-  cfg.nic = static_cast<uint8_t>(g_state.settings_nic);
-  if (!xp2gdl90::protocol::IsValidNic(cfg.nic)) {
-    if (out_error) {
-      *out_error = "NIC must be 0-11";
-    }
-    return false;
-  }
-
-  if (g_state.settings_nacp < 0 || g_state.settings_nacp > 11) {
-    if (out_error) {
-      *out_error = "NACp must be 0-11";
-    }
-    return false;
-  }
-  cfg.nacp = static_cast<uint8_t>(g_state.settings_nacp);
-  if (!xp2gdl90::protocol::IsValidNacp(cfg.nacp)) {
-    if (out_error) {
-      *out_error = "NACp must be 0-11";
-    }
-    return false;
-  }
-
-  cfg.debug_logging = g_state.settings_debug_logging;
-  cfg.log_messages = g_state.settings_log_messages;
-
-  *out_cfg = cfg;
-  return true;
+  return xp2gdl90::BuildConfigFromSettingsUi(g_state.settings_ui,
+                                             g_state.settings, out_cfg,
+                                             out_error);
 }
 
 ImGuiKey XplmVkeyToImGuiKey(unsigned char vkey) {
@@ -1939,61 +1291,61 @@ void DrawSettingsWindowUI() {
     }
 
     if (ImGui::BeginTabItem("Network")) {
-      dirty_now |= ImGui::InputText("Target IP", g_state.settings_target_ip,
-                                    sizeof(g_state.settings_target_ip));
-      dirty_now |= ImGui::InputInt("Target Port", &g_state.settings_target_port);
+      dirty_now |= ImGui::InputText("Target IP", g_state.settings_ui.target_ip,
+                                    sizeof(g_state.settings_ui.target_ip));
+      dirty_now |= ImGui::InputInt("Target Port", &g_state.settings_ui.target_port);
       dirty_now |= ImGui::Checkbox("ForeFlight auto discovery",
-                                   &g_state.settings_foreflight_auto_discovery);
+                                   &g_state.settings_ui.foreflight_auto_discovery);
       dirty_now |= ImGui::InputInt("ForeFlight broadcast port",
-                                   &g_state.settings_foreflight_broadcast_port);
+                                   &g_state.settings_ui.foreflight_broadcast_port);
       ImGui::EndTabItem();
     }
 
     if (ImGui::BeginTabItem("Ownship")) {
       dirty_now |= ImGui::InputText("ICAO Address (hex)",
-                                    g_state.settings_icao_address,
-                                    sizeof(g_state.settings_icao_address));
+                                    g_state.settings_ui.icao_address,
+                                    sizeof(g_state.settings_ui.icao_address));
       dirty_now |= ImGui::InputText("Callsign (fallback)",
-                                    g_state.settings_callsign,
-                                    sizeof(g_state.settings_callsign));
+                                    g_state.settings_ui.callsign,
+                                    sizeof(g_state.settings_ui.callsign));
       dirty_now |= ImGui::InputInt("Emitter Category",
-                                   &g_state.settings_emitter_category);
+                                   &g_state.settings_ui.emitter_category);
       ImGui::EndTabItem();
     }
 
     if (ImGui::BeginTabItem("Device")) {
-      dirty_now |= ImGui::InputText("Device Name", g_state.settings_device_name,
-                                    sizeof(g_state.settings_device_name));
+      dirty_now |= ImGui::InputText("Device Name", g_state.settings_ui.device_name,
+                                    sizeof(g_state.settings_ui.device_name));
       dirty_now |= ImGui::InputText("Device Long Name",
-                                    g_state.settings_device_long_name,
-                                    sizeof(g_state.settings_device_long_name));
+                                    g_state.settings_ui.device_long_name,
+                                    sizeof(g_state.settings_ui.device_long_name));
       dirty_now |= ImGui::InputInt("Internet Policy",
-                                   &g_state.settings_internet_policy);
+                                   &g_state.settings_ui.internet_policy);
       dirty_now |= ImGui::Checkbox("AHRS magnetic heading",
-                                   &g_state.settings_ahrs_use_magnetic_heading);
+                                   &g_state.settings_ui.ahrs_use_magnetic_heading);
       ImGui::TextUnformatted("0=Unrestricted 1=Expensive 2=Disallowed");
       ImGui::EndTabItem();
     }
 
     if (ImGui::BeginTabItem("Rates")) {
       dirty_now |= ImGui::InputFloat("Heartbeat Rate (Hz)",
-                                     &g_state.settings_heartbeat_rate, 0.1f,
+                                     &g_state.settings_ui.heartbeat_rate, 0.1f,
                                      1.0f, "%.2f");
       dirty_now |= ImGui::InputFloat("Position Rate (Hz)",
-                                     &g_state.settings_position_rate, 0.1f,
+                                     &g_state.settings_ui.position_rate, 0.1f,
                                      1.0f, "%.2f");
       ImGui::EndTabItem();
     }
 
     if (ImGui::BeginTabItem("Accuracy")) {
-      dirty_now |= ImGui::InputInt("NIC", &g_state.settings_nic);
-      dirty_now |= ImGui::InputInt("NACp", &g_state.settings_nacp);
+      dirty_now |= ImGui::InputInt("NIC", &g_state.settings_ui.nic);
+      dirty_now |= ImGui::InputInt("NACp", &g_state.settings_ui.nacp);
       ImGui::EndTabItem();
     }
 
     if (ImGui::BeginTabItem("Debug")) {
-      dirty_now |= ImGui::Checkbox("Debug logging", &g_state.settings_debug_logging);
-      dirty_now |= ImGui::Checkbox("Log raw messages", &g_state.settings_log_messages);
+      dirty_now |= ImGui::Checkbox("Debug logging", &g_state.settings_ui.debug_logging);
+      dirty_now |= ImGui::Checkbox("Log raw messages", &g_state.settings_ui.log_messages);
       ImGui::EndTabItem();
     }
 
@@ -2051,36 +1403,7 @@ void DrawSettingsWindowUI() {
   }
   ImGui::SameLine();
   if (ImGui::Button("Defaults")) {
-    const Settings defaults;
-    std::snprintf(g_state.settings_target_ip, sizeof(g_state.settings_target_ip),
-                  "%s", defaults.target_ip.c_str());
-    g_state.settings_target_port = static_cast<int>(defaults.target_port);
-    g_state.settings_foreflight_auto_discovery = defaults.foreflight_auto_discovery;
-    g_state.settings_foreflight_broadcast_port =
-        static_cast<int>(defaults.foreflight_broadcast_port);
-    std::snprintf(g_state.settings_icao_address,
-                  sizeof(g_state.settings_icao_address), "0x%06X",
-                  static_cast<unsigned int>(defaults.icao_address & 0xFFFFFFu));
-    std::snprintf(g_state.settings_callsign, sizeof(g_state.settings_callsign),
-                  "%s", defaults.callsign.c_str());
-    std::snprintf(g_state.settings_device_name,
-                  sizeof(g_state.settings_device_name), "%s",
-                  defaults.device_name.c_str());
-    std::snprintf(g_state.settings_device_long_name,
-                  sizeof(g_state.settings_device_long_name), "%s",
-                  defaults.device_long_name.c_str());
-    g_state.settings_emitter_category =
-        static_cast<int>(defaults.emitter_category);
-    g_state.settings_internet_policy =
-        static_cast<int>(defaults.internet_policy);
-    g_state.settings_ahrs_use_magnetic_heading =
-        defaults.ahrs_use_magnetic_heading;
-    g_state.settings_heartbeat_rate = defaults.heartbeat_rate;
-    g_state.settings_position_rate = defaults.position_rate;
-    g_state.settings_nic = static_cast<int>(defaults.nic);
-    g_state.settings_nacp = static_cast<int>(defaults.nacp);
-    g_state.settings_debug_logging = defaults.debug_logging;
-    g_state.settings_log_messages = defaults.log_messages;
+    xp2gdl90::LoadDefaultSettingsUiState(&g_state.settings_ui);
     g_state.settings_dirty = true;
     g_state.settings_last_error.clear();
   }

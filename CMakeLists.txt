@@ -58,6 +58,9 @@ set(CORE_SOURCES
     src/foreflight_protocol.cpp
     src/gdl90_encoder.cpp
     src/protocol_utils.cpp
+    src/settings.cpp
+    src/settings_ui.cpp
+    src/simple_json.cpp
     src/udp_receiver.cpp
     src/udp_broadcaster.cpp
 )
@@ -80,6 +83,9 @@ set(HEADERS
     include/xp2gdl90/foreflight_protocol.h
     include/xp2gdl90/gdl90_encoder.h
     include/xp2gdl90/protocol_utils.h
+    include/xp2gdl90/settings.h
+    include/xp2gdl90/settings_ui.h
+    include/xp2gdl90/simple_json.h
     include/xp2gdl90/udp_receiver.h
     include/xp2gdl90/udp_broadcaster.h
 )
@@ -284,6 +290,8 @@ if(XP2GDL90_BUILD_TESTS)
         tests/test_main.cpp
         tests/test_gdl90_encoder.cpp
         tests/test_protocol_utils.cpp
+        tests/test_settings.cpp
+        tests/test_settings_ui.cpp
         tests/test_udp_broadcaster.cpp
     )
     target_link_libraries(xp2gdl90_tests PRIVATE xp2gdl90_core)

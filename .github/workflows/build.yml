@@ -218,7 +218,7 @@ jobs:
              ```
              X-Plane 12/Resources/plugins/xp2gdl90/
              ```
-          4. **Configure** your settings in `xp2gdl90.ini`:
+          4. **Configure** your settings in `xp2gdl90.json`:
              - Set `target_ip` to your iPad/tablet IP address
              - Adjust `target_port` if needed (default: 4000)
           5. **Start** X-Plane 12
@@ -231,7 +231,7 @@ jobs:
           ├── 64/
           │   ├── win.xpl         # Windows 64-bit
           │   └── lin.xpl         # Linux 64-bit
-          ├── xp2gdl90.ini        # Configuration file
+          ├── xp2gdl90.json       # Configuration file (created after first save)
           ├── README.md           # Documentation
           └── LICENSE             # MIT License
           ```
