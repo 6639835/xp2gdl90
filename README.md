@@ -1,117 +1,154 @@
-# XP2GDL90 - X-Plane to GDL90 Bridge
+# XP2GDL90
 
 [![Build Status](https://github.com/6639835/xp2gdl90/workflows/Build%20XP2GDL90/badge.svg)](https://github.com/6639835/xp2gdl90/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A high-performance X-Plane 12 plugin that broadcasts real-time flight data in GDL90 format via UDP. Compatible with ForeFlight, Garmin Pilot, WingX, and other Electronic Flight Bag (EFB) applications.
+`xp2gdl90` is an X-Plane 12 plugin that broadcasts simulator data over UDP in GDL90 format for EFB apps such as ForeFlight, Garmin Pilot, WingX, and FltPlan Go.
 
-## Features
+The current codebase includes:
 
-- **Real-time Position Broadcasting**: Ownship position, altitude, speed, and heading
-- **ForeFlight Extended Spec Support**: Device ID, AHRS, and ForeFlight auto-discovery
-- **Standard GDL90 Support**: Heartbeat, Ownship Report, Ownship Geometric Altitude, and Traffic Report
-- **Traffic Report Broadcasting**: Remote multiplayer / xPilot traffic as GDL90 `0x14` reports with TCAS-derived address, emergency, and transponder-state handling
-- **High Performance**: Native C++ plugin, minimal CPU overhead
-- **Cross-Platform**: Windows, macOS (Universal), and Linux support
-- **Fully Configurable**: In-sim settings UI backed by JSON config
-- **Standards Based**: GDL90 framing/CRC/byte-stuffing per Rev A (message subset below)
-- **Easy Setup**: No external dependencies, works out of the box
+- Standard GDL90 heartbeat, ownship report, and ownship geometric altitude messages
+- ForeFlight ID and AHRS extension messages
+- ForeFlight auto-discovery with fallback to a manual target IP/port
+- Traffic broadcasting from TCAS targets, with legacy multiplayer fallback
+- An in-sim ImGui settings and status window
+- Cross-platform builds for macOS, Windows, and Linux
+- A unit test target and coverage script
 
-## Quick Start
+## Release Installation
 
-### Installation
+Download the latest release from [GitHub Releases](https://github.com/6639835/xp2gdl90/releases), extract it, and copy the `xp2gdl90` folder into:
 
-1. **Download** the latest release from [Releases](https://github.com/6639835/xp2gdl90/releases)
-2. **Extract** the ZIP file
-3. **Copy** the `xp2gdl90` folder to:
-   ```
-   X-Plane 12/Resources/plugins/xp2gdl90/
-   ```
-4. **Configure** your settings in-sim: **Plugins → XP2GDL90 → Settings...**
-5. **Start** X-Plane 12
+```text
+X-Plane 12/Resources/plugins/
+```
 
-### Basic Configuration
+The packaged release layout is:
 
-Open **Plugins → XP2GDL90 → Settings...** and set:
-- Target IP / Port fallback
-- ForeFlight auto-discovery / discovery port
-- ICAO address, callsign fallback, emitter category
-- Device name / internet policy / AHRS heading mode
-- Update rates and accuracy values
+```text
+xp2gdl90/
+├── mac.xpl
+├── 64/
+│   ├── win.xpl
+│   └── lin.xpl
+├── README.md
+└── LICENSE
+```
 
-ForeFlight device-ID broadcasts run automatically at 1 Hz, AHRS broadcasts run automatically at 5 Hz, standard GDL90 Ownship Geometric Altitude is sent at 1 Hz, and the plugin can auto-switch to ForeFlight unicast when it sees ForeFlight's discovery broadcast.
+After launching X-Plane, open:
 
-Settings are saved to X‑Plane’s preferences folder as `Output/preferences/xp2gdl90.json`.
+```text
+Plugins -> XP2GDL90 -> Settings...
+```
 
-### Finding Your iPad's IP Address
+You can also toggle broadcasting from:
 
-**iOS (iPad/iPhone):**
-1. Open **Settings** → **Wi-Fi**
-2. Tap the **(i)** icon next to your connected network
-3. Note the **IP Address** (e.g., 192.168.1.100)
+```text
+Plugins -> XP2GDL90 -> Enable Broadcasting
+```
 
-**Android:**
-1. Open **Settings** → **Network & Internet** → **Wi-Fi**
-2. Tap your connected network
-3. Note the **IP address**
+Settings are stored in X-Plane's preferences directory as `xp2gdl90.json`, typically:
 
-## Compatible Applications
+```text
+Output/preferences/xp2gdl90.json
+```
 
-| Application | Port | Tested |
-|------------|------|--------|
-| ForeFlight | 4000 | Yes |
-| Garmin Pilot | 4000 | Yes |
-| WingX Pro | 4000 | Not tested |
-| FltPlan Go | 4000 | Not tested |
+## Quick Setup
 
-## Building from Source
+For a basic manual setup:
+
+1. Install the plugin.
+2. Open `Plugins -> XP2GDL90 -> Settings...`.
+3. Set `Target IP` to the tablet or EFB device IP.
+4. Leave `Target Port` at `4000` unless your app requires something else.
+5. Keep `NIC` and `NACp` at `11`.
+6. Save the settings.
+7. Confirm the Status tab shows packets being sent.
+
+For ForeFlight, the plugin can also listen for discovery broadcasts on UDP `63093` and temporarily switch the broadcast target to the discovered host and port.
+
+## Build From Source
+
+The repository uses the X-Plane SDK from `SDK/` and Dear ImGui as a git submodule under `third_party/imgui`.
+
+Clone with submodules:
+
+```bash
+git clone --recursive https://github.com/6639835/xp2gdl90.git
+cd xp2gdl90
+```
 
 ### Prerequisites
 
-- **CMake** 3.16 or higher
-- **C++17 compiler**:
-  - Windows: Visual Studio 2019+ or MSVC
-  - macOS: Xcode Command Line Tools
-  - Linux: GCC 7+ or Clang 6+
-- **X-Plane SDK** (included in `SDK/` directory)
+- CMake 3.16+
+- C++17 compiler
+- X-Plane SDK headers and libraries in `SDK/` (already vendored here)
+- OpenGL development libraries on Linux
 
-### Build Instructions
+Platform notes:
 
-#### Windows
+- macOS: Xcode Command Line Tools
+- Windows: Visual Studio 2022 or a compatible MSVC toolchain
+- Linux: GCC 7+ or Clang 6+ plus OpenGL development packages
 
-```bash
-mkdir build
-cd build
-cmake .. -G "Visual Studio 17 2022" -A x64
-cmake --build . --config Release
-```
+### Configure And Build
 
-#### macOS
+Generic CMake flow:
 
 ```bash
-mkdir build
-cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-cmake --build .
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
 ```
 
-#### Linux
+Expected output locations:
+
+- macOS: `build/mac.xpl`
+- Linux: `build/lin.xpl`
+- Windows: `build/win.xpl` or `build/Release/win.xpl` depending on generator
+
+Helper scripts are also included:
+
+- macOS: `./build_mac.sh`
+- Linux: `./build_linux.sh`
+- Windows: `build_win.bat`
+
+## Testing
+
+Enable the test target with:
 
 ```bash
-mkdir build
-cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-cmake --build .
+cmake -S . -B build -DXP2GDL90_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Debug
+cmake --build build --target xp2gdl90_tests --config Debug
+ctest --test-dir build --output-on-failure
 ```
 
-The plugin will be built in `build/` directory:
-- Windows: `win.xpl`
-- macOS: `mac.xpl` (Universal binary)
-- Linux: `lin.xpl`
+A coverage helper is available at `scripts/coverage.sh`. It configures a separate coverage build under `build/coverage`, runs `ctest`, and reports line and function coverage for `src/`. On Clang-based setups it expects full coverage for those metrics.
 
-## Configuration Reference
+## Runtime Behavior
 
-Settings are stored as JSON in `Output/preferences/xp2gdl90.json`.
+The plugin currently sends:
+
+- `0x00` Heartbeat at the configured `heartbeat_rate`
+- `0x0A` Ownship Report at the configured `position_rate`
+- `0x0B` Ownship Geometric Altitude at 1 Hz
+- `0x14` Traffic Report at 1 Hz
+- `0x65/0x00` ForeFlight ID at 1 Hz
+- `0x65/0x01` ForeFlight AHRS at 5 Hz
+
+Current behavior from the implementation:
+
+- ForeFlight auto-discovery is optional and listens on the configured broadcast port
+- Manual `target_ip` and `target_port` are used as the fallback target
+- The effective callsign uses the aircraft tail number when available, otherwise the configured fallback callsign
+- Ownship report altitude uses `sim/cockpit2/gauges/indicators/altitude_ft_pilot` when available
+- AHRS heading can be transmitted as true or magnetic heading
+- Traffic is sourced from TCAS target datarefs when available, otherwise from legacy multiplayer datarefs
+
+Weather uplink data is not transmitted.
+
+## Configuration
+
+The on-disk settings file is JSON:
 
 ```json
 {
@@ -135,183 +172,112 @@ Settings are stored as JSON in `Output/preferences/xp2gdl90.json`.
 }
 ```
 
-Field notes:
-- `target_ip`: specific target, subnet broadcast, or `255.255.255.255`
-- `icao_address`: 24-bit ICAO address stored as a decimal JSON number
-- `emitter_category`: `0-39`; common values include `1` light, `2` small, `3` large, `5` heavy, `7` rotorcraft, `9` glider
-- `internet_policy`: `0=Unrestricted`, `1=Expensive`, `2=Disallowed`
-- `ahrs_use_magnetic_heading`: `false` uses true heading, `true` converts via `XPLMDegTrueToDegMagnetic`
-- `heartbeat_rate` and `position_rate`: updates per second, must be greater than `0`
-- `nic` and `nacp`: `0-11`; `11` is recommended for EFB compatibility
+Field reference:
+
+| Key | Type | Notes |
+| --- | --- | --- |
+| `target_ip` | string | Manual UDP target. Can be a unicast address, subnet broadcast, or `255.255.255.255`. |
+| `target_port` | number | Manual UDP destination port. |
+| `foreflight_auto_discovery` | boolean | Enables the listener for ForeFlight discovery broadcasts. |
+| `foreflight_broadcast_port` | number | Discovery listen port. Default is `63093`. |
+| `icao_address` | number | Stored in JSON as a decimal 24-bit value. The UI accepts hex such as `0xABCDEF`. |
+| `callsign` | string | Fallback only. Trimmed to 8 characters. |
+| `emitter_category` | number | Valid range `0-39`. |
+| `device_name` | string | ForeFlight device name. Trimmed to 8 characters. |
+| `device_long_name` | string | ForeFlight long name. Trimmed to 16 characters. |
+| `internet_policy` | number | `0=Unrestricted`, `1=Expensive`, `2=Disallowed`. |
+| `ahrs_use_magnetic_heading` | boolean | `false` sends true heading, `true` converts to magnetic heading. |
+| `heartbeat_rate` | number | Must be greater than `0`. |
+| `position_rate` | number | Must be greater than `0`. |
+| `nic` | number | Valid range `0-11`. `11` is recommended for EFB compatibility. |
+| `nacp` | number | Valid range `0-11`. `11` is recommended for EFB compatibility. |
+| `debug_logging` | boolean | Enables plugin debug logging to `Log.txt`. |
+| `log_messages` | boolean | Enables raw message logging. |
+
+## In-Sim UI
+
+The settings window currently exposes these tabs:
+
+- `Status`
+- `Network`
+- `Ownship`
+- `Device`
+- `Rates`
+- `Accuracy`
+- `Debug`
+
+The window supports `Apply`, `Save`, `Revert`, and `Defaults`.
+
+## Data Sources
+
+Key X-Plane datarefs used by the plugin include:
+
+- `sim/flightmodel/position/latitude`
+- `sim/flightmodel/position/longitude`
+- `sim/flightmodel/position/elevation`
+- `sim/cockpit2/gauges/indicators/altitude_ft_pilot`
+- `sim/flightmodel/position/groundspeed`
+- `sim/flightmodel/position/true_psi`
+- `sim/flightmodel/position/theta`
+- `sim/flightmodel/position/phi`
+- `sim/flightmodel/position/psi`
+- `sim/flightmodel/position/indicated_airspeed`
+- `sim/flightmodel/position/true_airspeed`
+- `sim/flightmodel/position/vh_ind_fpm`
+- `sim/flightmodel/failures/onground_any`
+- `sim/aircraft/view/acf_tailnum`
+- `sim/cockpit2/tcas/targets/*`
+- `sim/multiplayer/position/planeN_*`
 
 ## Troubleshooting
 
-### Plugin doesn't load
+### Plugin does not load
 
-1. Check `X-Plane 12/Log.txt` for error messages (look for `[XP2GDL90]` entries)
-2. Ensure plugin is in correct folder: `Resources/plugins/xp2gdl90/`
-3. Verify plugin structure:
-   ```
-   xp2gdl90/
-   ├── mac.xpl (macOS)
-   └── xp2gdl90.json (created after first Save)
-   ```
-   Or for Windows/Linux:
-   ```
-   xp2gdl90/
-   ├── 64/
-   │   ├── win.xpl (Windows)
-   │   └── lin.xpl (Linux)
-   └── xp2gdl90.json (created after first Save)
-   ```
+- Check X-Plane's `Log.txt` for lines prefixed with `[XP2GDL90]`
+- Verify the plugin directory is `Resources/plugins/xp2gdl90/`
+- Verify the correct platform binary exists inside the folder
+- If building from source, make sure the ImGui submodule is present
 
-### Aircraft not showing up in EFB
+### The EFB does not show the aircraft
 
-**Important:** Many EFB applications (especially ForeFlight and Garmin Pilot) **filter out low-accuracy GPS reports**. The default configuration uses `nic=11` and `nacp=11` (highest accuracy) to ensure compatibility with all EFB apps.
+- Make sure the X-Plane machine and EFB device are on the same network
+- Confirm the target IP is correct if you are not relying on ForeFlight auto-discovery
+- Keep `NIC=11` and `NACp=11`
+- Check the Status tab to confirm heartbeat and position packets are increasing
+- Check `Log.txt` for UDP send errors
 
-**Checklist:**
-1. Verify `NIC = 11` and `NACp = 11` in **Plugins → XP2GDL90 → Settings...**
-2. Confirm plugin is enabled (check Plugins menu → XP2GDL90)
-3. Ensure GPS is available in X-Plane (not in a hangar, GPS panel powered on)
-4. Check X-Plane's `Log.txt` for `[XP2GDL90] Plugin enabled` message
+### ForeFlight auto-discovery does not work
 
-### EFB app not receiving data
+- Confirm `ForeFlight auto discovery` is enabled
+- Confirm the discovery port matches the app environment; default is `63093`
+- Check that firewall rules allow UDP traffic
+- Use a manual target IP/port as fallback
 
-1. **Network connection**: Ensure X-Plane computer and EFB device are on the **same Wi-Fi network**
-2. **IP address**: Confirm `target_ip` in config matches your EFB device's IP
-   - Don't use `127.0.0.1` or `localhost` if EFB is on a different device
-3. **Firewall**: Ensure **UDP port 4000 is allowed** on both devices
-4. **Try broadcast mode**: Set `target_ip = 255.255.255.255` to broadcast to all devices
-5. **Restart**: Restart both X-Plane and the EFB app
+### Settings changes do not persist
 
-### Performance issues
+- Use `Save`, not only `Apply`
+- Check whether `xp2gdl90.json` was created in the X-Plane preferences directory
+- Check `Log.txt` for a settings write error
 
-If you experience frame rate drops, lower the update rates:
+## Repository Layout
 
-```json
-{
-  "position_rate": 1.0,
-  "heartbeat_rate": 0.5
-}
+```text
+.
+├── CMakeLists.txt
+├── SDK/
+├── docs/
+├── include/xp2gdl90/
+├── scripts/
+├── src/
+├── tests/
+└── third_party/imgui/
 ```
-
-### Advanced Debugging
-
-If you need to troubleshoot at a deeper level, you can enable debug logging:
-
-```json
-{
-  "debug_logging": true,
-  "log_messages": true
-}
-```
-
-Then check `X-Plane 12/Log.txt` for detailed output.
-
-## GDL90 Protocol Details
-
-This plugin currently transmits a subset of GDL90 messages:
-
-| Message ID | Name | Description |
-|------------|------|-------------|
-| 0x00 | Heartbeat | Status and timing information (1 Hz) |
-| 0x0A | Ownship Report | Own aircraft position and status |
-| 0x0B | Ownship Geometric Altitude | Standard GDL90 geometric altitude message (MSL capability advertised via ForeFlight ID mask) |
-| 0x14 | Traffic Report | Multiplayer / TCAS traffic targets (1 Hz) |
-| 0x65 / 0x00 | ForeFlight ID | Device name / capabilities extension |
-| 0x65 / 0x01 | ForeFlight AHRS | Roll, pitch, and configurable true/magnetic heading at 5 Hz |
-
-Weather / `Uplink Data (0x07)` is intentionally not transmitted, because this plugin does not have a complete native UAT weather source. Ownship geometric altitude remains a standard GDL90 message; this plugin advertises its MSL datum through the ForeFlight ID capabilities mask as described in the ForeFlight extension spec.
-
-### Message Format
-
-All transmitted messages follow the GDL90 framing rules:
-- CRC-16-CCITT error checking
-- Byte stuffing for 0x7D and 0x7E characters
-- Flag bytes (0x7E) for message framing
-
-## Technical Details
-
-### Architecture
-
-```
-X-Plane DataRefs
-       ↓
-GDL90 Encoder (C++)
-       ↓
-UDP Broadcaster
-       ↓
-Network (UDP)
-       ↓
-EFB Application
-```
-
-### Performance
-
-- **CPU Usage**: < 0.1% on modern systems
-- **Memory**: ~1 MB
-- **Network Bandwidth**: ~2-5 KB/s
-
-### X-Plane DataRefs Used
-
-| DataRef | Purpose |
-|---------|---------|
-| `sim/flightmodel/position/latitude` | Ownship latitude |
-| `sim/flightmodel/position/longitude` | Ownship longitude |
-| `sim/flightmodel/position/elevation` | Ownship altitude (MSL) |
-| `sim/cockpit2/gauges/indicators/altitude_ft_pilot` | Ownship indicated altitude for Ownship Report altitude |
-| `sim/flightmodel/position/groundspeed` | Ownship ground speed |
-| `sim/flightmodel/position/true_psi` | Ownship true track angle |
-| `sim/flightmodel/position/theta` | AHRS pitch |
-| `sim/flightmodel/position/phi` | AHRS roll |
-| `sim/flightmodel/position/psi` | AHRS heading |
-| `sim/flightmodel/position/indicated_airspeed` | AHRS indicated airspeed |
-| `sim/flightmodel/position/true_airspeed` | AHRS true airspeed |
-| `sim/flightmodel/position/vh_ind_fpm` | Vertical speed (fpm) |
-| `sim/flightmodel/failures/onground_any` | Airborne status |
-| `sim/aircraft/view/acf_tailnum` | Aircraft tail number (callsign) |
-| `sim/cockpit2/tcas/targets/modeS_id` | Remote traffic address / real-ICAO indicator |
-| `sim/cockpit2/tcas/targets/modeC_code` | Remote traffic squawk for emergency mapping |
-| `sim/cockpit2/tcas/targets/ssr_mode` | Remote traffic transponder mode / altitude capability |
-| `sim/cockpit2/tcas/targets/*` | Remote traffic position / velocity / state (preferred) |
-| `sim/multiplayer/position/planeN_*` | Legacy multiplayer traffic fallback |
-| `sim/multiplayer/position/planeN_tailnum` | Shared remote traffic callsign / tail number |
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-### Development Setup
-
-1. Clone the repository with submodules:
-   ```bash
-   git clone --recursive https://github.com/6639835/xp2gdl90.git
-   ```
-
-2. Build using instructions above
-
-3. Test in X-Plane 12
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- [X-Plane SDK](https://developer.x-plane.com/sdk/) - Laminar Research
-- [GDL90 Specification](https://www.faa.gov/) - Garmin/FAA
-- Inspired by the original Python implementation
+This project is licensed under the MIT License. See [LICENSE](LICENSE).
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/6639835/xp2gdl90/issues)
-- **Documentation**: [Wiki](https://github.com/6639835/xp2gdl90/wiki)
-- **Discussions**: [GitHub Discussions](https://github.com/6639835/xp2gdl90/discussions)
-
-## Roadmap
-
-- [ ] Multiple EFB simultaneous broadcasting
-
----
-
-**Made with love for the flight simulation community**
+- Issues: [GitHub Issues](https://github.com/6639835/xp2gdl90/issues)
+- Actions: [GitHub Actions](https://github.com/6639835/xp2gdl90/actions)
