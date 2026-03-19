@@ -259,7 +259,7 @@ EFB Application
 | `sim/flightmodel/position/latitude` | Ownship latitude |
 | `sim/flightmodel/position/longitude` | Ownship longitude |
 | `sim/flightmodel/position/elevation` | Ownship altitude (MSL) |
-| `sim/cockpit2/gauges/indicators/pressure_alt_ft_pilot` | Ownship pressure altitude for standards-compliant Ownship Report altitude |
+| `sim/cockpit2/gauges/indicators/altitude_ft_pilot` | Ownship indicated altitude for Ownship Report altitude |
 | `sim/flightmodel/position/groundspeed` | Ownship ground speed |
 | `sim/flightmodel/position/true_psi` | Ownship true track angle |
 | `sim/flightmodel/position/theta` | AHRS pitch |

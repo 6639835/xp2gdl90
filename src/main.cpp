@@ -1765,7 +1765,7 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
   g_state.lon_ref = XPLMFindDataRef("sim/flightmodel/position/longitude");
   g_state.alt_ref = XPLMFindDataRef("sim/flightmodel/position/elevation");
   g_state.pressure_alt_ref =
-      XPLMFindDataRef("sim/cockpit2/gauges/indicators/pressure_alt_ft_pilot");
+      XPLMFindDataRef("sim/cockpit2/gauges/indicators/altitude_ft_pilot");
   g_state.speed_ref = XPLMFindDataRef("sim/flightmodel/position/groundspeed");
   g_state.track_ref = XPLMFindDataRef("sim/flightmodel/position/true_psi");
   g_state.pitch_ref = XPLMFindDataRef("sim/flightmodel/position/theta");
