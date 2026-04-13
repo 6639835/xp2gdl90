@@ -80,7 +80,8 @@ bool LoadSettingsFromJsonFile(const std::string& path,
   Settings settings = *out_settings;
 
   if (const json::Value* value = root.Find("target_ip");
-      value && value->IsString() && !value->string_value.empty()) {
+      value && value->IsString() &&
+      protocol::IsValidIpv4Address(value->string_value)) {
     settings.target_ip = value->string_value;
   }
 
@@ -165,6 +166,13 @@ bool LoadSettingsFromJsonFile(const std::string& path,
 bool SaveSettingsToJsonFile(const std::string& path,
                             const Settings& settings,
                             std::string* out_error) {
+  if (!protocol::IsValidIpv4Address(settings.target_ip)) {
+    if (out_error) {
+      *out_error = "Target IP must be a valid IPv4 address";
+    }
+    return false;
+  }
+
   std::ofstream file(path, std::ios::binary | std::ios::trunc);
   if (!file.is_open()) {
     if (out_error) {

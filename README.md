@@ -122,7 +122,7 @@ cmake --build build --target xp2gdl90_tests --config Debug
 ctest --test-dir build --output-on-failure
 ```
 
-A coverage helper is available at `scripts/coverage.sh`. It configures a separate coverage build under `build/coverage`, runs `ctest`, and reports line and function coverage for `src/`. On Clang-based setups it expects full coverage for those metrics.
+A coverage helper is available at `scripts/coverage.sh`. It configures a separate coverage build under `build/coverage`, runs `ctest`, and reports line and function coverage for `src/`. By default it enforces at least `97.5%` line coverage and `100%` function coverage, and you can override those thresholds with `MIN_LINES_PERCENT` and `MIN_FUNCTIONS_PERCENT`.
 
 ## Runtime Behavior
 

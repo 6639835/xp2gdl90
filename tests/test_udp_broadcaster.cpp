@@ -183,6 +183,13 @@ TEST_CASE("UDPBroadcaster forwards payload when send succeeds") {
   ASSERT_EQ(1, ops.sendto_calls);
 }
 
+TEST_CASE("UDPBroadcaster updates target with setter") {
+  udp::UDPBroadcaster broadcaster("127.0.0.1", 4000);
+  broadcaster.setTarget("192.168.0.255", 4900);
+  ASSERT_EQ(std::string("192.168.0.255"), broadcaster.getTargetIp());
+  ASSERT_EQ(static_cast<uint16_t>(4900), broadcaster.getTargetPort());
+}
+
 TEST_CASE("UDPBroadcaster sends data after initialize") {
   udp::UDPBroadcaster broadcaster("127.0.0.1", 4000);
   ASSERT_TRUE(broadcaster.initialize());

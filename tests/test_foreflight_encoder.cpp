@@ -76,3 +76,32 @@ TEST_CASE("ForeFlight AHRS message invalidates out-of-range attitude") {
   ASSERT_EQ(static_cast<uint16_t>(120), xp2gdl90::test::Decode16BE(payload, 8));
   ASSERT_EQ(static_cast<uint16_t>(135), xp2gdl90::test::Decode16BE(payload, 10));
 }
+
+TEST_CASE("ForeFlight AHRS heading normalizes wraparound and invalid heading") {
+  gdl90::foreflight::ForeFlightEncoder encoder;
+
+  gdl90::foreflight::AhrsData wrapped{};
+  wrapped.roll_deg = 0.0;
+  wrapped.pitch_deg = 0.0;
+  wrapped.heading_deg = -90.0;
+  const auto wrapped_message = encoder.createAhrsMessage(wrapped);
+  const auto wrapped_payload = xp2gdl90::test::ExtractPayload(wrapped_message);
+  ASSERT_EQ(static_cast<uint16_t>(2700), xp2gdl90::test::Decode16BE(wrapped_payload, 6));
+
+  gdl90::foreflight::AhrsData rounded{};
+  rounded.roll_deg = 0.0;
+  rounded.pitch_deg = 0.0;
+  rounded.heading_deg = 359.95;
+  const auto rounded_message = encoder.createAhrsMessage(rounded);
+  const auto rounded_payload = xp2gdl90::test::ExtractPayload(rounded_message);
+  ASSERT_EQ(static_cast<uint16_t>(0), xp2gdl90::test::Decode16BE(rounded_payload, 6));
+
+  gdl90::foreflight::AhrsData invalid{};
+  invalid.roll_deg = 0.0;
+  invalid.pitch_deg = 0.0;
+  invalid.heading_deg = std::numeric_limits<double>::quiet_NaN();
+  const auto invalid_message = encoder.createAhrsMessage(invalid);
+  const auto invalid_payload = xp2gdl90::test::ExtractPayload(invalid_message);
+  ASSERT_EQ(static_cast<uint16_t>(gdl90::foreflight::AHRS_HEADING_INVALID),
+            xp2gdl90::test::Decode16BE(invalid_payload, 6));
+}

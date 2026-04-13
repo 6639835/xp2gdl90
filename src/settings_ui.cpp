@@ -104,6 +104,12 @@ bool BuildConfigFromSettingsUi(const SettingsUiState& ui_state,
     }
     return false;
   }
+  if (!protocol::IsValidIpv4Address(ip)) {
+    if (out_error) {
+      *out_error = "Target IP must be a valid IPv4 address";
+    }
+    return false;
+  }
   settings.target_ip = ip;
 
   if (ui_state.target_port <= 0 || ui_state.target_port > 65535) {
@@ -145,12 +151,6 @@ bool BuildConfigFromSettingsUi(const SettingsUiState& ui_state,
     return false;
   }
   settings.emitter_category = static_cast<uint8_t>(ui_state.emitter_category);
-  if (!protocol::IsValidEmitterCategory(settings.emitter_category)) {
-    if (out_error) {
-      *out_error = "Emitter category must be 0-39";
-    }
-    return false;
-  }
 
   if (ui_state.internet_policy < 0 || ui_state.internet_policy > 2) {
     if (out_error) {
@@ -184,12 +184,6 @@ bool BuildConfigFromSettingsUi(const SettingsUiState& ui_state,
     return false;
   }
   settings.nic = static_cast<uint8_t>(ui_state.nic);
-  if (!protocol::IsValidNic(settings.nic)) {
-    if (out_error) {
-      *out_error = "NIC must be 0-11";
-    }
-    return false;
-  }
 
   if (ui_state.nacp < 0 || ui_state.nacp > 11) {
     if (out_error) {
@@ -198,12 +192,6 @@ bool BuildConfigFromSettingsUi(const SettingsUiState& ui_state,
     return false;
   }
   settings.nacp = static_cast<uint8_t>(ui_state.nacp);
-  if (!protocol::IsValidNacp(settings.nacp)) {
-    if (out_error) {
-      *out_error = "NACp must be 0-11";
-    }
-    return false;
-  }
 
   settings.debug_logging = ui_state.debug_logging;
   settings.log_messages = ui_state.log_messages;

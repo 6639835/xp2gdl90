@@ -47,6 +47,19 @@ TEST_CASE("Settings UI sync reflects config values") {
   ASSERT_TRUE(ui_state.log_messages);
 }
 
+TEST_CASE("Settings UI defaults mirror default config") {
+  xp2gdl90::SyncSettingsUiFromConfig(nullptr, xp2gdl90::Settings{});
+
+  xp2gdl90::SettingsUiState ui_state;
+  xp2gdl90::LoadDefaultSettingsUiState(&ui_state);
+
+  ASSERT_EQ(std::string("192.168.1.100"), std::string(ui_state.target_ip));
+  ASSERT_EQ(4000, ui_state.target_port);
+  ASSERT_TRUE(ui_state.foreflight_auto_discovery);
+  ASSERT_EQ(63093, ui_state.foreflight_broadcast_port);
+  ASSERT_EQ(std::string("0xABCDEF"), std::string(ui_state.icao_address));
+}
+
 TEST_CASE("Settings UI builder validates fields and trims text") {
   xp2gdl90::SettingsUiState ui_state;
   std::snprintf(ui_state.target_ip, sizeof(ui_state.target_ip), " 10.1.1.5 ");
@@ -82,6 +95,15 @@ TEST_CASE("Settings UI builder validates fields and trims text") {
   ASSERT_TRUE(built.ahrs_use_magnetic_heading);
 }
 
+TEST_CASE("Settings UI builder requires output settings object") {
+  xp2gdl90::SettingsUiState ui_state;
+  std::string error;
+  ASSERT_TRUE(!xp2gdl90::BuildConfigFromSettingsUi(
+      ui_state, xp2gdl90::Settings{}, nullptr, &error));
+  ASSERT_TRUE(error.find("Output settings object is required") !=
+              std::string::npos);
+}
+
 TEST_CASE("Settings UI builder rejects invalid numeric ranges") {
   xp2gdl90::SettingsUiState ui_state;
   std::snprintf(ui_state.target_ip, sizeof(ui_state.target_ip), "127.0.0.1");
@@ -100,4 +122,85 @@ TEST_CASE("Settings UI builder rejects invalid numeric ranges") {
   ASSERT_TRUE(!xp2gdl90::BuildConfigFromSettingsUi(
       ui_state, xp2gdl90::Settings{}, &built, &error));
   ASSERT_TRUE(error.find("Target port must be 1-65535") != std::string::npos);
+}
+
+TEST_CASE("Settings UI builder rejects invalid text and remaining numeric fields") {
+  xp2gdl90::SettingsUiState ui_state;
+  xp2gdl90::LoadDefaultSettingsUiState(&ui_state);
+  xp2gdl90::Settings built;
+  std::string error;
+
+  std::snprintf(ui_state.target_ip, sizeof(ui_state.target_ip), "   ");
+  ASSERT_TRUE(!xp2gdl90::BuildConfigFromSettingsUi(
+      ui_state, xp2gdl90::Settings{}, &built, &error));
+  ASSERT_TRUE(error.find("Target IP cannot be empty") != std::string::npos);
+
+  xp2gdl90::LoadDefaultSettingsUiState(&ui_state);
+  std::snprintf(ui_state.target_ip, sizeof(ui_state.target_ip), "example.com");
+  ASSERT_TRUE(!xp2gdl90::BuildConfigFromSettingsUi(
+      ui_state, xp2gdl90::Settings{}, &built, &error));
+  ASSERT_TRUE(
+      error.find("Target IP must be a valid IPv4 address") != std::string::npos);
+
+  xp2gdl90::LoadDefaultSettingsUiState(&ui_state);
+  ui_state.foreflight_broadcast_port = 70000;
+  ASSERT_TRUE(!xp2gdl90::BuildConfigFromSettingsUi(
+      ui_state, xp2gdl90::Settings{}, &built, &error));
+  ASSERT_TRUE(
+      error.find("ForeFlight broadcast port must be 1-65535") !=
+      std::string::npos);
+
+  xp2gdl90::LoadDefaultSettingsUiState(&ui_state);
+  std::snprintf(ui_state.icao_address, sizeof(ui_state.icao_address), "   ");
+  ASSERT_TRUE(!xp2gdl90::BuildConfigFromSettingsUi(
+      ui_state, xp2gdl90::Settings{}, &built, &error));
+  ASSERT_TRUE(
+      error.find("ICAO address must be a hex value") != std::string::npos);
+
+  xp2gdl90::LoadDefaultSettingsUiState(&ui_state);
+  std::snprintf(ui_state.icao_address, sizeof(ui_state.icao_address), "XYZ");
+  ASSERT_TRUE(!xp2gdl90::BuildConfigFromSettingsUi(
+      ui_state, xp2gdl90::Settings{}, &built, &error));
+  ASSERT_TRUE(
+      error.find("ICAO address must be a hex value") != std::string::npos);
+
+  xp2gdl90::LoadDefaultSettingsUiState(&ui_state);
+  ui_state.emitter_category = 40;
+  ASSERT_TRUE(!xp2gdl90::BuildConfigFromSettingsUi(
+      ui_state, xp2gdl90::Settings{}, &built, &error));
+  ASSERT_TRUE(error.find("Emitter category must be 0-39") !=
+              std::string::npos);
+
+  xp2gdl90::LoadDefaultSettingsUiState(&ui_state);
+  ui_state.internet_policy = 3;
+  ASSERT_TRUE(!xp2gdl90::BuildConfigFromSettingsUi(
+      ui_state, xp2gdl90::Settings{}, &built, &error));
+  ASSERT_TRUE(error.find("Internet policy must be 0-2") !=
+              std::string::npos);
+
+  xp2gdl90::LoadDefaultSettingsUiState(&ui_state);
+  ui_state.heartbeat_rate = 0.0f;
+  ASSERT_TRUE(!xp2gdl90::BuildConfigFromSettingsUi(
+      ui_state, xp2gdl90::Settings{}, &built, &error));
+  ASSERT_TRUE(error.find("Heartbeat rate must be > 0") !=
+              std::string::npos);
+
+  xp2gdl90::LoadDefaultSettingsUiState(&ui_state);
+  ui_state.position_rate = 0.0f;
+  ASSERT_TRUE(!xp2gdl90::BuildConfigFromSettingsUi(
+      ui_state, xp2gdl90::Settings{}, &built, &error));
+  ASSERT_TRUE(error.find("Position rate must be > 0") !=
+              std::string::npos);
+
+  xp2gdl90::LoadDefaultSettingsUiState(&ui_state);
+  ui_state.nic = 12;
+  ASSERT_TRUE(!xp2gdl90::BuildConfigFromSettingsUi(
+      ui_state, xp2gdl90::Settings{}, &built, &error));
+  ASSERT_TRUE(error.find("NIC must be 0-11") != std::string::npos);
+
+  xp2gdl90::LoadDefaultSettingsUiState(&ui_state);
+  ui_state.nacp = 12;
+  ASSERT_TRUE(!xp2gdl90::BuildConfigFromSettingsUi(
+      ui_state, xp2gdl90::Settings{}, &built, &error));
+  ASSERT_TRUE(error.find("NACp must be 0-11") != std::string::npos);
 }

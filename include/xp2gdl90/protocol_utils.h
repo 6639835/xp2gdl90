@@ -9,6 +9,7 @@
 namespace xp2gdl90::protocol {
 
 std::string SanitizeCallsign(std::string_view input);
+bool IsValidIpv4Address(std::string_view input);
 
 bool IsValidNic(uint8_t value);
 bool IsValidNacp(uint8_t value);

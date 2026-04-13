@@ -19,6 +19,20 @@ TEST_CASE("SanitizeCallsign trims trailing spaces and allows empty fallback") {
             xp2gdl90::protocol::SanitizeCallsign("!!!"));
 }
 
+TEST_CASE("IPv4 validator accepts dotted-quad addresses only") {
+  ASSERT_TRUE(xp2gdl90::protocol::IsValidIpv4Address("127.0.0.1"));
+  ASSERT_TRUE(xp2gdl90::protocol::IsValidIpv4Address("255.255.255.255"));
+  ASSERT_TRUE(xp2gdl90::protocol::IsValidIpv4Address("192.168.001.010"));
+
+  ASSERT_TRUE(!xp2gdl90::protocol::IsValidIpv4Address(""));
+  ASSERT_TRUE(!xp2gdl90::protocol::IsValidIpv4Address("300.1.1.1"));
+  ASSERT_TRUE(!xp2gdl90::protocol::IsValidIpv4Address("1.2.3"));
+  ASSERT_TRUE(!xp2gdl90::protocol::IsValidIpv4Address("1.2.3.4.5"));
+  ASSERT_TRUE(!xp2gdl90::protocol::IsValidIpv4Address("1..3.4"));
+  ASSERT_TRUE(!xp2gdl90::protocol::IsValidIpv4Address("1.2.3.-1"));
+  ASSERT_TRUE(!xp2gdl90::protocol::IsValidIpv4Address("1.2.3.4 "));
+}
+
 TEST_CASE("Protocol field validators enforce published ranges") {
   ASSERT_TRUE(xp2gdl90::protocol::IsValidNic(11));
   ASSERT_TRUE(!xp2gdl90::protocol::IsValidNic(12));

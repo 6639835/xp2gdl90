@@ -29,6 +29,38 @@ std::string SanitizeCallsign(std::string_view input) {
   return out;
 }
 
+bool IsValidIpv4Address(std::string_view input) {
+  if (input.empty()) {
+    return false;
+  }
+
+  int octet_count = 0;
+  int octet_value = 0;
+  bool saw_digit = false;
+
+  for (const char ch : input) {
+    const unsigned char uch = static_cast<unsigned char>(ch);
+    if (std::isdigit(uch) != 0) {
+      saw_digit = true;
+      octet_value = octet_value * 10 + (ch - '0');
+      if (octet_value > 255) {
+        return false;
+      }
+      continue;
+    }
+
+    if (ch != '.' || !saw_digit || octet_count >= 3) {
+      return false;
+    }
+
+    ++octet_count;
+    octet_value = 0;
+    saw_digit = false;
+  }
+
+  return saw_digit && octet_count == 3;
+}
+
 bool IsValidNic(uint8_t value) {
   return value <= 11;
 }

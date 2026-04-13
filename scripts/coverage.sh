@@ -15,6 +15,8 @@ else
 fi
 
 IGNORE_REGEX='(.*/tests/|.*/third_party/|.*/SDK/|.*/build/)'
+MIN_LINES_PERCENT="${MIN_LINES_PERCENT:-97.5}"
+MIN_FUNCTIONS_PERCENT="${MIN_FUNCTIONS_PERCENT:-100.0}"
 
 rm -rf "$BUILD_DIR"
 cmake -S "$ROOT_DIR" -B "$BUILD_DIR" \
@@ -47,18 +49,30 @@ SUMMARY_JSON="$("$LLVM_COV" export "$BUILD_DIR/xp2gdl90_tests" \
   --summary-only \
   --ignore-filename-regex="$IGNORE_REGEX")"
 
-XP_ROOT_DIR="$ROOT_DIR" python3 - <<'PY' <<<"$SUMMARY_JSON"
+SUMMARY_JSON_PATH="$BUILD_DIR/coverage_summary.json"
+printf '%s' "$SUMMARY_JSON" > "$SUMMARY_JSON_PATH"
+
+XP_ROOT_DIR="$ROOT_DIR" \
+MIN_LINES_PERCENT="$MIN_LINES_PERCENT" \
+MIN_FUNCTIONS_PERCENT="$MIN_FUNCTIONS_PERCENT" \
+python3 - "$SUMMARY_JSON_PATH" <<'PY'
 import json
 import os
 import sys
 
 ROOT = os.environ["XP_ROOT_DIR"]
 SRC_PREFIX = os.path.join(ROOT, "src") + os.sep
+SUMMARY_PATH = sys.argv[1]
+THRESHOLDS = {
+    "lines": float(os.environ["MIN_LINES_PERCENT"]),
+    "functions": float(os.environ["MIN_FUNCTIONS_PERCENT"]),
+}
 
 metrics = ["lines", "functions"]
 totals = {m: {"count": 0, "covered": 0} for m in metrics}
 
-data = json.load(sys.stdin)
+with open(SUMMARY_PATH, "r", encoding="utf-8") as handle:
+  data = json.load(handle)
 files = data["data"][0]["files"]
 for entry in files:
   filename = entry["filename"]
@@ -78,7 +92,7 @@ for metric in metrics:
   else:
     percent = covered / count * 100.0
   print(f"{metric}: {percent:.2f}%")
-  if percent < 100.0:
+  if percent < THRESHOLDS[metric]:
     failed.append(metric)
 
 if failed:

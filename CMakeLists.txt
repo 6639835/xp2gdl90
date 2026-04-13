@@ -292,6 +292,7 @@ if(XP2GDL90_BUILD_TESTS)
         tests/test_protocol_utils.cpp
         tests/test_settings.cpp
         tests/test_settings_ui.cpp
+        tests/test_simple_json.cpp
         tests/test_udp_broadcaster.cpp
     )
     target_link_libraries(xp2gdl90_tests PRIVATE xp2gdl90_core)

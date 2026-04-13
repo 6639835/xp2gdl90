@@ -82,6 +82,17 @@ TEST_CASE("Settings save and load round-trip through JSON") {
   ASSERT_EQ(saved.log_messages, loaded.log_messages);
 }
 
+TEST_CASE("Settings save and load validate output object and file presence") {
+  std::string error = "unchanged";
+  ASSERT_TRUE(!xp2gdl90::LoadSettingsFromJsonFile("missing.json", nullptr, &error));
+  ASSERT_TRUE(error.find("Output settings object is required") != std::string::npos);
+
+  xp2gdl90::Settings loaded;
+  error = "stale";
+  ASSERT_TRUE(!xp2gdl90::LoadSettingsFromJsonFile("missing.json", &loaded, &error));
+  ASSERT_EQ(std::string(""), error);
+}
+
 TEST_CASE("Settings loader ignores invalid values and unknown keys") {
   const std::filesystem::path path = MakeTempPath("settings_invalid.json");
   ScopedFileCleanup cleanup(path);
@@ -89,7 +100,7 @@ TEST_CASE("Settings loader ignores invalid values and unknown keys") {
   std::ofstream file(path);
   file
       << "{\n"
-      << "  \"target_ip\": \"192.168.0.10\",\n"
+      << "  \"target_ip\": \"999.168.0.10\",\n"
       << "  \"target_port\": 70000,\n"
       << "  \"emitter_category\": 99,\n"
       << "  \"nic\": 12,\n"
@@ -101,6 +112,7 @@ TEST_CASE("Settings loader ignores invalid values and unknown keys") {
   file.close();
 
   xp2gdl90::Settings loaded;
+  loaded.target_ip = "192.168.0.20";
   loaded.target_port = 4000;
   loaded.emitter_category = 1;
   loaded.nic = 11;
@@ -111,12 +123,70 @@ TEST_CASE("Settings loader ignores invalid values and unknown keys") {
       xp2gdl90::LoadSettingsFromJsonFile(path.string(), &loaded, &error));
   ASSERT_EQ(std::string(""), error);
 
-  ASSERT_EQ(std::string("192.168.0.10"), loaded.target_ip);
+  ASSERT_EQ(std::string("192.168.0.20"), loaded.target_ip);
   ASSERT_EQ(static_cast<uint16_t>(4000), loaded.target_port);
   ASSERT_EQ(static_cast<uint8_t>(1), loaded.emitter_category);
   ASSERT_EQ(static_cast<uint8_t>(11), loaded.nic);
   ASSERT_EQ(static_cast<uint8_t>(11), loaded.nacp);
   ASSERT_TRUE(loaded.debug_logging);
+}
+
+TEST_CASE("Settings loader rejects invalid top-level type and truncates strings") {
+  const std::filesystem::path path = MakeTempPath("settings_values.json");
+  ScopedFileCleanup cleanup(path);
+
+  std::ofstream file(path);
+  file
+      << "{\n"
+      << "  \"target_ip\": \"192.168.0.10\",\n"
+      << "  \"target_port\": 4900,\n"
+      << "  \"foreflight_auto_discovery\": false,\n"
+      << "  \"foreflight_broadcast_port\": 63090,\n"
+      << "  \"icao_address\": 16777231,\n"
+      << "  \"callsign\": \"LONGCALLSIGN\",\n"
+      << "  \"device_name\": \"DEVICE-NAME\",\n"
+      << "  \"device_long_name\": \"Long Device Name Beyond Sixteen\",\n"
+      << "  \"internet_policy\": 1,\n"
+      << "  \"heartbeat_rate\": 4.0,\n"
+      << "  \"position_rate\": 2.0,\n"
+      << "  \"nic\": 10,\n"
+      << "  \"nacp\": 9,\n"
+      << "  \"ahrs_use_magnetic_heading\": true,\n"
+      << "  \"log_messages\": true\n"
+      << "}\n";
+  file.close();
+
+  xp2gdl90::Settings loaded;
+  std::string error;
+  ASSERT_TRUE(xp2gdl90::LoadSettingsFromJsonFile(path.string(), &loaded, &error));
+  ASSERT_EQ(std::string(""), error);
+  ASSERT_EQ(std::string("192.168.0.10"), loaded.target_ip);
+  ASSERT_EQ(static_cast<uint16_t>(4900), loaded.target_port);
+  ASSERT_TRUE(!loaded.foreflight_auto_discovery);
+  ASSERT_EQ(static_cast<uint16_t>(63090), loaded.foreflight_broadcast_port);
+  ASSERT_EQ(static_cast<uint32_t>(0x00000Fu), loaded.icao_address);
+  ASSERT_EQ(std::string("LONGCALL"), loaded.callsign);
+  ASSERT_EQ(std::string("DEVICE-N"), loaded.device_name);
+  ASSERT_EQ(std::string("Long Device Name"), loaded.device_long_name);
+  ASSERT_EQ(static_cast<uint8_t>(1), loaded.internet_policy);
+  ASSERT_EQ(4.0f, loaded.heartbeat_rate);
+  ASSERT_EQ(2.0f, loaded.position_rate);
+  ASSERT_EQ(static_cast<uint8_t>(10), loaded.nic);
+  ASSERT_EQ(static_cast<uint8_t>(9), loaded.nacp);
+  ASSERT_TRUE(loaded.ahrs_use_magnetic_heading);
+  ASSERT_TRUE(loaded.log_messages);
+
+  const std::filesystem::path scalar_path = MakeTempPath("settings_scalar.json");
+  ScopedFileCleanup scalar_cleanup(scalar_path);
+  std::ofstream scalar_file(scalar_path);
+  scalar_file << "123";
+  scalar_file.close();
+
+  ASSERT_TRUE(
+      !xp2gdl90::LoadSettingsFromJsonFile(scalar_path.string(), &loaded, &error));
+  ASSERT_TRUE(
+      error.find("Invalid settings JSON: expected top-level object") !=
+      std::string::npos);
 }
 
 TEST_CASE("Settings loader reports malformed JSON") {
@@ -132,4 +202,21 @@ TEST_CASE("Settings loader reports malformed JSON") {
   ASSERT_TRUE(
       !xp2gdl90::LoadSettingsFromJsonFile(path.string(), &loaded, &error));
   ASSERT_TRUE(error.find("Invalid settings JSON:") != std::string::npos);
+}
+
+TEST_CASE("Settings saver rejects invalid target IP and write failures") {
+  xp2gdl90::Settings settings;
+  settings.target_ip = "not-an-ip";
+
+  std::string error;
+  ASSERT_TRUE(!xp2gdl90::SaveSettingsToJsonFile("/tmp/unused.json", settings, &error));
+  ASSERT_TRUE(error.find("Target IP must be a valid IPv4 address") !=
+              std::string::npos);
+
+  const std::filesystem::path bad_path =
+      MakeTempPath("missing_dir") / "settings.json";
+  settings.target_ip = "127.0.0.1";
+  ASSERT_TRUE(!xp2gdl90::SaveSettingsToJsonFile(bad_path.string(), settings, &error));
+  ASSERT_TRUE(error.find("Failed to open settings file for writing:") !=
+              std::string::npos);
 }

@@ -73,7 +73,8 @@ void AppendUtf8(std::string* out, uint32_t codepoint) {
   }
 }
 
-bool ParseUnicodeEscape(Cursor* cursor, uint32_t* out_codepoint) {
+bool ParseUnicodeEscape(Cursor* cursor, uint32_t* out_codepoint,
+                        bool allow_low_surrogate = false) {
   if (!out_codepoint || cursor->end - cursor->p < 4) {
     return false;
   }
@@ -97,6 +98,14 @@ bool ParseUnicodeEscape(Cursor* cursor, uint32_t* out_codepoint) {
     return true;
   }
 
+  if (codepoint >= 0xDC00) {
+    if (!allow_low_surrogate) {
+      return false;
+    }
+    *out_codepoint = codepoint;
+    return true;
+  }
+
   if (codepoint > 0xDBFF || cursor->end - cursor->p < 6 ||
       cursor->p[0] != '\\' || cursor->p[1] != 'u') {
     return false;
@@ -104,7 +113,7 @@ bool ParseUnicodeEscape(Cursor* cursor, uint32_t* out_codepoint) {
   cursor->p += 2;
 
   uint32_t low_surrogate = 0;
-  if (!ParseUnicodeEscape(cursor, &low_surrogate) ||
+  if (!ParseUnicodeEscape(cursor, &low_surrogate, true) ||
       low_surrogate < 0xDC00 || low_surrogate > 0xDFFF) {
     return false;
   }

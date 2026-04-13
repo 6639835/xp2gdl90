@@ -770,6 +770,12 @@ bool ApplyConfigToRuntime(const Settings& new_cfg,
     }
     return false;
   }
+  if (!xp2gdl90::protocol::IsValidIpv4Address(new_cfg.target_ip)) {
+    if (out_error) {
+      *out_error = "Target IP must be a valid IPv4 address";
+    }
+    return false;
+  }
 
   if (!ReconfigureRuntimeReceivers(new_cfg, out_error)) {
     return false;
@@ -1618,8 +1624,19 @@ int SettingsMouseWheelCallback(XPLMWindowID in_window_id,
                                void* in_refcon) {
   (void)in_window_id;
   (void)x;
-  (void)y;
   (void)in_refcon;
+
+  int left = 0;
+  int top = 0;
+  int right = 0;
+  int bottom = 0;
+  XPLMGetWindowGeometry(in_window_id, &left, &top, &right, &bottom);
+
+  const bool inside =
+      (x >= left && x <= right && y >= bottom && y <= top);
+  if (!inside) {
+    return 0;
+  }
 
   if (wheel == 0) {
     g_state.imgui_mouse_wheel += static_cast<float>(clicks);

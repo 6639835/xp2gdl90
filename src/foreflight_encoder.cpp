@@ -34,9 +34,6 @@ uint16_t ForeFlightEncoder::encodeAhrsHeading(double degrees,
   if (value == 3600) {
     value = 0;
   }
-  if (value < 0 || value > 3600) {
-    return AHRS_HEADING_INVALID;
-  }
 
   uint16_t encoded = static_cast<uint16_t>(value) & 0x7FFF;
   if (magnetic_heading) {
