@@ -6,6 +6,12 @@
 #include <string>
 #include <vector>
 
+#if !defined(_WIN32)
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#endif
+
 #include "xp2gdl90/udp_broadcaster.h"
 
 #if defined(XP2GDL90_ENABLE_SOCKET_OPS_TESTS)
@@ -163,6 +169,30 @@ TEST_CASE("Default socket ops create socket failure path works") {
       udp::detail::xp2gdl90_test_default_socket_ops_create_socket(-1, -1, -1);
   ASSERT_EQ(udp::UDPBroadcaster::kInvalidSocket, invalid);
 }
+
+#if !defined(_WIN32)
+TEST_CASE("Default POSIX socket ops report invalid operation failures") {
+  udp::detail::SocketOps& ops = udp::detail::DefaultSocketOps();
+  ASSERT_EQ(0, ops.Startup());
+
+  int broadcast = 1;
+  ASSERT_EQ(-1, ops.SetSockOpt(udp::UDPBroadcaster::kInvalidSocket, SOL_SOCKET,
+                               SO_BROADCAST, &broadcast, sizeof(broadcast)));
+
+  sockaddr_in target_addr{};
+  ASSERT_EQ(0, ops.InetPton(AF_INET, "not-an-ip", &target_addr.sin_addr));
+
+  const uint8_t payload = 0x42;
+  ASSERT_EQ(-1, ops.SendTo(udp::UDPBroadcaster::kInvalidSocket, &payload,
+                           sizeof(payload), 0, &target_addr,
+                           sizeof(target_addr)));
+
+  ASSERT_EQ(-1, ops.CloseSocket(udp::UDPBroadcaster::kInvalidSocket));
+  ASSERT_NE(0, ops.LastError());
+
+  ops.Cleanup();
+}
+#endif
 #endif
 
 TEST_CASE("UDPBroadcaster forwards payload when send succeeds") {
