@@ -302,11 +302,19 @@ if(XP2GDL90_BUILD_MSFS)
             "${MSFS_SDK_PATH}/Lib"
         NO_DEFAULT_PATH
     )
+    find_file(SIMCONNECT_RUNTIME_DLL
+        NAMES SimConnect.dll
+        PATHS
+            "${MSFS_SDK_PATH}/SimConnect SDK/lib"
+            "${MSFS_SDK_PATH}/lib"
+            "${MSFS_SDK_PATH}/Lib"
+        NO_DEFAULT_PATH
+    )
 
-    if(NOT SIMCONNECT_INCLUDE_DIR OR NOT SIMCONNECT_LIBRARY)
+    if(NOT SIMCONNECT_INCLUDE_DIR OR NOT SIMCONNECT_LIBRARY OR NOT SIMCONNECT_RUNTIME_DLL)
         message(FATAL_ERROR
             "Could not find the MSFS SimConnect SDK. Set MSFS_SDK_PATH to the SDK root, "
-            "or set SIMCONNECT_INCLUDE_DIR and SIMCONNECT_LIBRARY explicitly."
+            "or set SIMCONNECT_INCLUDE_DIR, SIMCONNECT_LIBRARY, and SIMCONNECT_RUNTIME_DLL explicitly."
         )
     endif()
 
@@ -337,6 +345,12 @@ if(XP2GDL90_BUILD_MSFS)
         d3dcompiler
     )
     target_compile_definitions(msfs2gdl90 PRIVATE _CRT_SECURE_NO_WARNINGS NOMINMAX)
+    add_custom_command(TARGET msfs2gdl90 POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${SIMCONNECT_RUNTIME_DLL}"
+            "$<TARGET_FILE_DIR:msfs2gdl90>"
+        COMMENT "Copying SimConnect runtime DLL"
+    )
     if(MSVC)
         set_msvc_runtime(msfs2gdl90)
         target_compile_options(msfs2gdl90 PRIVATE /W4 /EHsc)

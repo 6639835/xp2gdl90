@@ -34,6 +34,9 @@ xp2gdl90/
 ├── 64/
 │   ├── win.xpl
 │   └── lin.xpl
+├── msfs/
+│   ├── msfs2gdl90.exe
+│   └── SimConnect.dll
 ├── README.md
 └── LICENSE
 ```
@@ -128,7 +131,15 @@ cmake --build build-msfs --config Release --target msfs2gdl90
 
 `MSFS_SDK_PATH` should point to the SDK root that contains `SimConnect SDK\include\SimConnect.h` and `SimConnect SDK\lib\SimConnect.lib`. Building against the MSFS 2020 SDK is recommended for one bridge binary that can run with MSFS 2020 and MSFS 2024.
 
-Run the bridge after starting MSFS and loading a flight:
+Release packages include `msfs/msfs2gdl90.exe` and its required `SimConnect.dll`, so release users do not need to install or copy the SimConnect runtime separately.
+
+For release packages, run the bridge after starting MSFS and loading a flight:
+
+```bat
+msfs\msfs2gdl90.exe
+```
+
+For source builds, run:
 
 ```bat
 build-msfs\Release\msfs2gdl90.exe

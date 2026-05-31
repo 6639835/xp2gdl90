@@ -57,6 +57,41 @@ jobs:
       - name: Build
         run: cmake --build ${{ github.workspace }}/build --config ${{ env.BUILD_TYPE }}
 
+      - name: Configure MSFS Bridge
+        run: >
+          cmake
+          -S "${{ github.workspace }}"
+          -B "${{ github.workspace }}/build-msfs"
+          -DXP2GDL90_BUILD_MSFS=ON
+          "-DMSFS_SDK_PATH=${{ github.workspace }}/MSFS SDK"
+          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+
+      - name: Build MSFS Bridge
+        run: cmake --build "${{ github.workspace }}/build-msfs" --config ${{ env.BUILD_TYPE }} --target msfs2gdl90
+
+      - name: Verify MSFS Bridge Build
+        run: |
+          $candidatePaths = @(
+            "build-msfs/msfs2gdl90.exe",
+            "build-msfs/${{ env.BUILD_TYPE }}/msfs2gdl90.exe"
+          )
+          $bridge = $candidatePaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $bridge) {
+            Write-Error "Build failed: msfs2gdl90.exe not found (checked: $($candidatePaths -join ', '))"
+            exit 1
+          }
+          Write-Host "MSFS bridge build successful: $bridge"
+          Get-Item $bridge | Format-List
+          $bridgeDir = Split-Path -Parent $bridge
+          $simConnectDll = Join-Path $bridgeDir "SimConnect.dll"
+          if (-not (Test-Path $simConnectDll)) {
+            Write-Error "Build failed: SimConnect.dll was not copied next to msfs2gdl90.exe"
+            exit 1
+          }
+          Write-Host "SimConnect runtime bundled: $simConnectDll"
+          Get-Item $simConnectDll | Format-List
+        shell: pwsh
+
       - name: Verify Build
         run: |
           $candidatePaths = @(
@@ -74,11 +109,18 @@ jobs:
 
       - name: Package
         run: |
-          mkdir -p package/xp2gdl90/64
+          mkdir -p package/xp2gdl90/64 package/xp2gdl90/msfs
           if [ -f "build/win.xpl" ]; then
             cp build/win.xpl package/xp2gdl90/64/
           else
             cp "build/${{ env.BUILD_TYPE }}/win.xpl" package/xp2gdl90/64/
+          fi
+          if [ -f "build-msfs/msfs2gdl90.exe" ]; then
+            cp build-msfs/msfs2gdl90.exe package/xp2gdl90/msfs/
+            cp build-msfs/SimConnect.dll package/xp2gdl90/msfs/
+          else
+            cp "build-msfs/${{ env.BUILD_TYPE }}/msfs2gdl90.exe" package/xp2gdl90/msfs/
+            cp "build-msfs/${{ env.BUILD_TYPE }}/SimConnect.dll" package/xp2gdl90/msfs/
           fi
           cp README.md package/xp2gdl90/
           cp LICENSE package/xp2gdl90/
@@ -215,6 +257,7 @@ jobs:
           cp macos/xp2gdl90/mac.xpl xp2gdl90/
           cp windows/xp2gdl90/64/win.xpl xp2gdl90/64/
           cp linux/xp2gdl90/64/lin.xpl xp2gdl90/64/
+          cp -R windows/xp2gdl90/msfs xp2gdl90/
           cp windows/xp2gdl90/README.md xp2gdl90/
           cp windows/xp2gdl90/LICENSE xp2gdl90/
           zip -r xp2gdl90-${{ github.ref_name }}.zip xp2gdl90/
@@ -256,6 +299,9 @@ jobs:
             ├── 64/
             │   ├── win.xpl
             │   └── lin.xpl
+            ├── msfs/
+            │   ├── msfs2gdl90.exe
+            │   └── SimConnect.dll
             ├── README.md
             └── LICENSE
             ```
@@ -272,6 +318,6 @@ jobs:
             - ForeFlight device ID, AHRS extensions, and optional auto-discovery
             - In-simulator ImGui settings and status window
             - JSON settings stored in X-Plane preferences as `xp2gdl90.json`
-            - Experimental Windows MSFS 2020/2024 SimConnect bridge available from source builds
+            - Bundled experimental Windows MSFS 2020/2024 SimConnect bridge
 
             SHA-256 checksum is provided for download verification.

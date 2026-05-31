@@ -3,6 +3,11 @@ build/
 cmake-build-*/
 out/
 
+# Vendored SDK subsets
+MSFS SDK/*
+!MSFS SDK/SimConnect SDK/
+!MSFS SDK/SimConnect SDK/**
+
 # IDE files
 .vscode/
 .idea/
@@ -20,6 +25,8 @@ out/
 *.dll
 *.lib
 !SDK/Libraries/**/*.lib
+!MSFS SDK/SimConnect SDK/lib/**/*.dll
+!MSFS SDK/SimConnect SDK/lib/**/*.lib
 *.a
 *.xpl
 
@@ -81,4 +88,3 @@ venv/
 # Temporary files
 *.tmp
 *.temp
-
