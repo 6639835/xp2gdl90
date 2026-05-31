@@ -2,8 +2,6 @@
 #define NOMINMAX
 #endif
 
-#include <SimConnect.h>
-#include <Windows.h>
 #include <d3d11.h>
 #include <dxgi.h>
 #include <tchar.h>
@@ -37,6 +35,7 @@
 #include "xp2gdl90/protocol_utils.h"
 #include "xp2gdl90/settings.h"
 #include "xp2gdl90/settings_ui.h"
+#include "xp2gdl90/simconnect_compat.h"
 #include "xp2gdl90/udp_broadcaster.h"
 #include "xp2gdl90/udp_receiver.h"
 
