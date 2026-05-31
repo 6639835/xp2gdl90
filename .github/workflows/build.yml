@@ -2,265 +2,276 @@ name: Build XP2GDL90
 
 on:
   push:
-    branches: [ main, master, develop ]
+    branches: [main, master, develop]
     tags:
       - 'v*'
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master, develop]
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 env:
   BUILD_TYPE: Release
+  CMAKE_BUILD_PARALLEL_LEVEL: 4
 
 jobs:
+  format:
+    name: Format
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Install clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format
+
+      - name: Check formatting
+        run: clang-format --dry-run --Werror src/*.cpp include/xp2gdl90/*.h tests/*.cpp tests/*.h
+
   build-windows:
     name: Build Windows
-    runs-on: windows-latest
-    
+    needs: format
+    runs-on: windows-2022
+
     steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: recursive
-    
-    - name: Setup MSVC
-      uses: ilammy/msvc-dev-cmd@v1
-    
-    - name: Configure CMake
-      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
-    
-    - name: Build
-      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
-    
-    - name: Verify Build
-      run: |
-        $candidatePaths = @(
-          "build/win.xpl",
-          "build/${{env.BUILD_TYPE}}/win.xpl"
-        )
-        $plugin = $candidatePaths | Where-Object { Test-Path $_ } | Select-Object -First 1
-        if (-not $plugin) {
-          Write-Error "✗ Build failed: win.xpl not found (checked: $($candidatePaths -join ', '))"
-          exit 1
-        }
-        Write-Host "✓ Build successful: $plugin"
-        Get-Item $plugin | Format-List
-      shell: pwsh
-    
-    - name: Package
-      run: |
-        mkdir -p package/xp2gdl90/64
-        if [ -f "build/win.xpl" ]; then
-          cp build/win.xpl package/xp2gdl90/64/
-        else
-          cp "build/${{env.BUILD_TYPE}}/win.xpl" package/xp2gdl90/64/
-        fi
-        cp README.md package/xp2gdl90/
-        cp LICENSE package/xp2gdl90/
-      shell: bash
-    
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: xp2gdl90-windows
-        path: package/
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure CMake
+        run: cmake -S ${{ github.workspace }} -B ${{ github.workspace }}/build -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+
+      - name: Build
+        run: cmake --build ${{ github.workspace }}/build --config ${{ env.BUILD_TYPE }}
+
+      - name: Verify Build
+        run: |
+          $candidatePaths = @(
+            "build/win.xpl",
+            "build/${{ env.BUILD_TYPE }}/win.xpl"
+          )
+          $plugin = $candidatePaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $plugin) {
+            Write-Error "Build failed: win.xpl not found (checked: $($candidatePaths -join ', '))"
+            exit 1
+          }
+          Write-Host "Build successful: $plugin"
+          Get-Item $plugin | Format-List
+        shell: pwsh
+
+      - name: Package
+        run: |
+          mkdir -p package/xp2gdl90/64
+          if [ -f "build/win.xpl" ]; then
+            cp build/win.xpl package/xp2gdl90/64/
+          else
+            cp "build/${{ env.BUILD_TYPE }}/win.xpl" package/xp2gdl90/64/
+          fi
+          cp README.md package/xp2gdl90/
+          cp LICENSE package/xp2gdl90/
+        shell: bash
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: xp2gdl90-windows
+          path: package/
+          if-no-files-found: error
+          retention-days: 14
 
   build-macos:
     name: Build macOS
-    runs-on: macos-latest
-    
+    needs: format
+    runs-on: macos-15-intel
+
     steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: recursive
-    
-    - name: Configure CMake
-      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
-    
-    - name: Build
-      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
-    
-    - name: Verify Build
-      run: |
-        if [ -f "build/mac.xpl" ]; then
-          echo "✓ Build successful: mac.xpl"
-          ls -lh build/mac.xpl
-          file build/mac.xpl
-          lipo -info build/mac.xpl
-        else
-          echo "✗ Build failed: mac.xpl not found"
-          exit 1
-        fi
-    
-    - name: Package
-      run: |
-        mkdir -p package/xp2gdl90
-        cp build/mac.xpl package/xp2gdl90/
-        cp README.md package/xp2gdl90/
-        cp LICENSE package/xp2gdl90/
-    
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: xp2gdl90-macos
-        path: package/
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Configure CMake
+        run: cmake -S ${{ github.workspace }} -B ${{ github.workspace }}/build -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+
+      - name: Build
+        run: cmake --build ${{ github.workspace }}/build --config ${{ env.BUILD_TYPE }}
+
+      - name: Verify Build
+        run: |
+          if [ -f "build/mac.xpl" ]; then
+            echo "Build successful: mac.xpl"
+            ls -lh build/mac.xpl
+            file build/mac.xpl
+            lipo -info build/mac.xpl
+          else
+            echo "Build failed: mac.xpl not found"
+            exit 1
+          fi
+
+      - name: Package
+        run: |
+          mkdir -p package/xp2gdl90
+          cp build/mac.xpl package/xp2gdl90/
+          cp README.md package/xp2gdl90/
+          cp LICENSE package/xp2gdl90/
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: xp2gdl90-macos
+          path: package/
+          if-no-files-found: error
+          retention-days: 14
 
   build-linux:
     name: Build Linux
-    runs-on: ubuntu-latest
-    
+    needs: format
+    runs-on: ubuntu-24.04
+
     steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: recursive
-    
-    - name: Install Dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential cmake libgl1-mesa-dev
-    
-    - name: Configure CMake
-      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
-    
-    - name: Build
-      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
-    
-    - name: Verify Build
-      run: |
-        if [ -f "build/lin.xpl" ]; then
-          echo "✓ Build successful: lin.xpl"
-          ls -lh build/lin.xpl
-          file build/lin.xpl
-        else
-          echo "✗ Build failed: lin.xpl not found"
-          exit 1
-        fi
-    
-    - name: Package
-      run: |
-        mkdir -p package/xp2gdl90/64
-        cp build/lin.xpl package/xp2gdl90/64/
-        cp README.md package/xp2gdl90/
-        cp LICENSE package/xp2gdl90/
-    
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: xp2gdl90-linux
-        path: package/
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libgl1-mesa-dev
+
+      - name: Configure CMake
+        run: cmake -S ${{ github.workspace }} -B ${{ github.workspace }}/build -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+
+      - name: Build
+        run: cmake --build ${{ github.workspace }}/build --config ${{ env.BUILD_TYPE }}
+
+      - name: Verify Build
+        run: |
+          if [ -f "build/lin.xpl" ]; then
+            echo "Build successful: lin.xpl"
+            ls -lh build/lin.xpl
+            file build/lin.xpl
+          else
+            echo "Build failed: lin.xpl not found"
+            exit 1
+          fi
+
+      - name: Package
+        run: |
+          mkdir -p package/xp2gdl90/64
+          cp build/lin.xpl package/xp2gdl90/64/
+          cp README.md package/xp2gdl90/
+          cp LICENSE package/xp2gdl90/
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: xp2gdl90-linux
+          path: package/
+          if-no-files-found: error
+          retention-days: 14
 
   create-release:
     name: Create Release
     needs: [build-windows, build-macos, build-linux]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
-    
+
     steps:
-    - name: Download Windows Artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: xp2gdl90-windows
-        path: windows/
-    
-    - name: Download macOS Artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: xp2gdl90-macos
-        path: macos/
-    
-    - name: Download Linux Artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: xp2gdl90-linux
-        path: linux/
-    
-    - name: Create Combined Package
-      run: |
-        mkdir -p xp2gdl90/64
-        # Copy platform-specific binaries
-        # macOS plugin goes in root directory
-        cp macos/xp2gdl90/mac.xpl xp2gdl90/
-        # Windows and Linux plugins go in 64/ subdirectory
-        cp windows/xp2gdl90/64/win.xpl xp2gdl90/64/
-        cp linux/xp2gdl90/64/lin.xpl xp2gdl90/64/
-        # Copy common files (using Windows as source)
-        cp windows/xp2gdl90/README.md xp2gdl90/
-        cp windows/xp2gdl90/LICENSE xp2gdl90/
-        # Create ZIP
-        zip -r xp2gdl90-${{github.ref_name}}.zip xp2gdl90/
-    
-    - name: Generate checksums
-      run: |
-        sha256sum xp2gdl90-${{github.ref_name}}.zip > xp2gdl90-${{github.ref_name}}.zip.sha256
-    
-    - name: Create Release
-      uses: softprops/action-gh-release@v2
-      with:
-        files: |
-          xp2gdl90-${{github.ref_name}}.zip
-          xp2gdl90-${{github.ref_name}}.zip.sha256
-        draft: false
-        prerelease: false
-        body: |
-          ## XP2GDL90 ${{github.ref_name}}
-          
-          A high-performance X-Plane 12 plugin that broadcasts flight data in GDL90 format to ForeFlight, Garmin Pilot, and other EFB applications.
-          
-          ### Installation
-          
-          1. **Download** `xp2gdl90-${{github.ref_name}}.zip` (all platforms included)
-          2. **Extract** the ZIP file
-          3. **Copy** the `xp2gdl90` folder to:
-             ```
-             X-Plane 12/Resources/plugins/xp2gdl90/
-             ```
-          4. **Configure** your settings in `xp2gdl90.json`:
-             - Set `target_ip` to your iPad/tablet IP address
-             - Adjust `target_port` if needed (default: 4000)
-          5. **Start** X-Plane 12
-          
-          ### Package Structure
-          
-          ```
-          xp2gdl90/
-          ├── mac.xpl              # macOS (Universal: Intel + Apple Silicon)
-          ├── 64/
-          │   ├── win.xpl         # Windows 64-bit
-          │   └── lin.xpl         # Linux 64-bit
-          ├── xp2gdl90.json       # Configuration file (created after first save)
-          ├── README.md           # Documentation
-          └── LICENSE             # MIT License
-          ```
-          
-          ### Supported Platforms
-          
-          - **Windows** 64-bit
-          - **macOS** Universal (Intel x86_64 + Apple Silicon arm64)
-          - **Linux** 64-bit
-          
-          ### Features
-          
-          - Real-time ownship position broadcasting
-          - GDL90 Heartbeat and Position Report messages
-          - Configurable update rates and accuracy settings
-          - INI-based configuration (no GUI required)
-          - Minimal CPU usage (< 0.1%)
-          - Compatible with ForeFlight, Garmin Pilot, WingX, etc.
-          
-          ### Verification
-          
-          SHA-256 checksum is provided for download verification.
-          
-          ### Documentation
-          
-          For detailed setup instructions, troubleshooting, and configuration options, see the included `README.md` or visit the [GitHub repository](https://github.com/6639835/xp2gdl90).
-          
-          ### Issues & Support
-          
-          If you encounter any problems, please [open an issue](https://github.com/6639835/xp2gdl90/issues).
-      env:
-        GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+      - name: Download Windows Artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: xp2gdl90-windows
+          path: windows/
+
+      - name: Download macOS Artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: xp2gdl90-macos
+          path: macos/
+
+      - name: Download Linux Artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: xp2gdl90-linux
+          path: linux/
+
+      - name: Create Combined Package
+        run: |
+          mkdir -p xp2gdl90/64
+          cp macos/xp2gdl90/mac.xpl xp2gdl90/
+          cp windows/xp2gdl90/64/win.xpl xp2gdl90/64/
+          cp linux/xp2gdl90/64/lin.xpl xp2gdl90/64/
+          cp windows/xp2gdl90/README.md xp2gdl90/
+          cp windows/xp2gdl90/LICENSE xp2gdl90/
+          zip -r xp2gdl90-${{ github.ref_name }}.zip xp2gdl90/
+
+      - name: Generate checksums
+        run: sha256sum xp2gdl90-${{ github.ref_name }}.zip > xp2gdl90-${{ github.ref_name }}.zip.sha256
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            xp2gdl90-${{ github.ref_name }}.zip
+            xp2gdl90-${{ github.ref_name }}.zip.sha256
+          draft: false
+          prerelease: false
+          body: |
+            ## XP2GDL90 ${{ github.ref_name }}
+
+            `xp2gdl90` broadcasts simulator data over UDP in GDL90 format for EFB apps such as ForeFlight, Garmin Pilot, WingX, and FltPlan Go.
+
+            ### Installation
+
+            1. Download `xp2gdl90-${{ github.ref_name }}.zip`.
+            2. Extract the ZIP file.
+            3. Copy the `xp2gdl90` folder to:
+
+               ```text
+               X-Plane 12/Resources/plugins/
+               ```
+
+            4. Start X-Plane 12.
+            5. Open `Plugins -> XP2GDL90 -> Settings...` to configure the target device and broadcasting options.
+
+            ### Package Structure
+
+            ```text
+            xp2gdl90/
+            ├── mac.xpl
+            ├── 64/
+            │   ├── win.xpl
+            │   └── lin.xpl
+            ├── README.md
+            └── LICENSE
+            ```
+
+            ### Supported X-Plane Plugin Platforms
+
+            - Windows 64-bit
+            - macOS Universal (Intel x86_64 + Apple Silicon arm64)
+            - Linux 64-bit
+
+            ### Current Features
+
+            - GDL90 heartbeat, ownship report, ownship geometric altitude, and traffic report messages
+            - ForeFlight device ID, AHRS extensions, and optional auto-discovery
+            - In-simulator ImGui settings and status window
+            - JSON settings stored in X-Plane preferences as `xp2gdl90.json`
+            - Experimental Windows MSFS 2020/2024 SimConnect bridge available from source builds
+
+            SHA-256 checksum is provided for download verification.
