@@ -64,7 +64,11 @@ constexpr float kWindowHeight = 680.0f;
 // ---------------------------------------------------------------------------
 
 enum DataDefinitionId { kDefinitionOwnship = 1, kDefinitionTraffic = 2 };
-enum DataRequestId { kRequestOwnship = 1, kRequestTraffic = 2 };
+enum DataRequestId {
+  kRequestOwnship = 1,
+  kRequestTrafficAircraft = 2,
+  kRequestTrafficHelicopter = 3,
+};
 
 #pragma pack(push, 1)
 struct OwnshipSimData {
@@ -273,6 +277,24 @@ std::string FormatUptime(double seconds) {
   return buf;
 }
 
+bool IsTrafficRequest(DWORD request_id) {
+  return request_id == kRequestTrafficAircraft ||
+         request_id == kRequestTrafficHelicopter;
+}
+
+void AddOrUpdateTrafficEntry(std::vector<TrafficEntry> *traffic,
+                             DWORD object_id, const TrafficSimData &data) {
+  if (!traffic)
+    return;
+  for (TrafficEntry &entry : *traffic) {
+    if (entry.object_id == object_id) {
+      entry.data = data;
+      return;
+    }
+  }
+  traffic->push_back({object_id, data});
+}
+
 msfs_bridge::OwnshipData ToOwnshipData(const OwnshipSimData &sim) {
   msfs_bridge::OwnshipData out;
   out.latitude_deg = sim.latitude_deg;
@@ -417,12 +439,11 @@ void DispatchSimConnectMessage(BridgeState *state, SIMCONNECT_RECV *msg,
     if (data->dwRequestID == kRequestOwnship) {
       state->ownship = *reinterpret_cast<const OwnshipSimData *>(&data->dwData);
       state->ownship_valid = true;
-    } else if (data->dwRequestID == kRequestTraffic &&
+    } else if (IsTrafficRequest(data->dwRequestID) &&
                data->dwObjectID != SIMCONNECT_OBJECT_ID_USER) {
-      TrafficEntry entry;
-      entry.object_id = data->dwObjectID;
-      entry.data = *reinterpret_cast<const TrafficSimData *>(&data->dwData);
-      state->traffic.push_back(entry);
+      AddOrUpdateTrafficEntry(
+          &state->traffic, data->dwObjectID,
+          *reinterpret_cast<const TrafficSimData *>(&data->dwData));
     }
     break;
   }
@@ -537,11 +558,21 @@ void RequestTrafficIfDue(BridgeState *state, double now) {
     return;
   state->last_traffic_request = now;
   state->traffic.clear();
-  const HRESULT r = SimConnect_RequestDataOnSimObjectType(
-      state->simconnect, kRequestTraffic, kDefinitionTraffic,
+  const HRESULT aircraft_result = SimConnect_RequestDataOnSimObjectType(
+      state->simconnect, kRequestTrafficAircraft, kDefinitionTraffic,
       kTrafficRadiusMeters, SIMCONNECT_SIMOBJECT_TYPE_AIRCRAFT);
-  if (FAILED(r))
-    g_log.Error("Failed to request traffic: " + HexHresult(r));
+  if (FAILED(aircraft_result)) {
+    g_log.Error("Failed to request aircraft traffic: " +
+                HexHresult(aircraft_result));
+  }
+
+  const HRESULT helicopter_result = SimConnect_RequestDataOnSimObjectType(
+      state->simconnect, kRequestTrafficHelicopter, kDefinitionTraffic,
+      kTrafficRadiusMeters, SIMCONNECT_SIMOBJECT_TYPE_HELICOPTER);
+  if (FAILED(helicopter_result)) {
+    g_log.Error("Failed to request helicopter traffic: " +
+                HexHresult(helicopter_result));
+  }
 }
 
 void SendScheduledPackets(BridgeState *state, double now) {

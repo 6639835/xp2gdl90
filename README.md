@@ -202,7 +202,8 @@ Current MSFS bridge behavior:
 - Uses the same JSON settings format as the X-Plane plugin
 - Sends ownship GDL90 position, geometric altitude, ForeFlight device info, and ForeFlight AHRS
 - Uses ForeFlight discovery on UDP `63093` when enabled
-- Requests nearby SimConnect aircraft traffic once per second and sends best-effort GDL90 traffic reports
+- Requests nearby SimConnect airplane and helicopter traffic once per second and sends best-effort GDL90 traffic reports
+- Includes traffic injected by clients such as vPilot because those clients create/update nearby VATSIM aircraft as SimConnect AI sim objects
 - Generates synthetic self-assigned traffic addresses because MSFS traffic does not consistently expose real ICAO addresses
 - Has no in-sim settings window; edit the JSON file or use command-line target overrides
 
