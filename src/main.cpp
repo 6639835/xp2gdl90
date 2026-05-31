@@ -19,8 +19,8 @@
 
 #include <algorithm>
 #include <array>
-#include <cfloat>
 #include <cctype>
+#include <cfloat>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -40,8 +40,8 @@
 #include "xp2gdl90/protocol_utils.h"
 #include "xp2gdl90/settings.h"
 #include "xp2gdl90/settings_ui.h"
-#include "xp2gdl90/udp_receiver.h"
 #include "xp2gdl90/udp_broadcaster.h"
+#include "xp2gdl90/udp_receiver.h"
 
 #ifdef _WIN32
 // X-Plane SDK headers may include Windows headers that define min/max macros.
@@ -118,8 +118,7 @@ struct LegacyTrafficRefs {
   XPLMDataRef heading_ref = nullptr;
 
   bool IsUsable() const {
-    return x_ref && y_ref && z_ref && vx_ref && vy_ref && vz_ref &&
-           heading_ref;
+    return x_ref && y_ref && z_ref && vx_ref && vy_ref && vz_ref && heading_ref;
   }
 };
 
@@ -207,31 +206,29 @@ PluginState g_state;
 
 float FlightLoopCallback(float in_elapsed_since_last_call,
                          float in_elapsed_time_since_last_flight_loop,
-                         int in_counter,
-                         void* in_refcon);
-void MenuHandlerCallback(void* in_menu_ref, void* in_item_ref);
+                         int in_counter, void *in_refcon);
+void MenuHandlerCallback(void *in_menu_ref, void *in_item_ref);
 
-bool SaveSettingsToDisk(std::string* out_error);
-bool LoadSettingsFromDisk(Settings* out_settings, std::string* out_error);
+bool SaveSettingsToDisk(std::string *out_error);
+bool LoadSettingsFromDisk(Settings *out_settings, std::string *out_error);
 void ShowSettingsWindow(bool show);
 void CreateSettingsWindow();
 void DestroySettingsWindow();
 bool ReloadSettingsFromDisk();
 void SyncSettingsUiFromConfig();
 void InitializeTrafficDataRefs();
-size_t CollectTrafficData(const Settings& cfg,
-                          std::vector<gdl90::PositionData>* out_reports);
-void SendTrafficReports(float sim_time, const Settings& cfg);
-bool ReconfigureRuntimeReceivers(const Settings& cfg, std::string* out_error);
-void RefreshBroadcastTarget(float sim_time, const Settings& cfg);
-void PollForeFlightDiscovery(float sim_time, const Settings& cfg);
+size_t CollectTrafficData(const Settings &cfg,
+                          std::vector<gdl90::PositionData> *out_reports);
+void SendTrafficReports(float sim_time, const Settings &cfg);
+bool ReconfigureRuntimeReceivers(const Settings &cfg, std::string *out_error);
+void RefreshBroadcastTarget(float sim_time, const Settings &cfg);
+void PollForeFlightDiscovery(float sim_time, const Settings &cfg);
 
-
-void LogMessage(const std::string& message) {
+void LogMessage(const std::string &message) {
   XPLMDebugString(("[XP2GDL90] " + message + "\n").c_str());
 }
 
-std::string Trim(const std::string& input) {
+std::string Trim(const std::string &input) {
   const size_t start = input.find_first_not_of(" \t\r\n");
   if (start == std::string::npos) {
     return "";
@@ -240,8 +237,7 @@ std::string Trim(const std::string& input) {
   return input.substr(start, end - start + 1);
 }
 
-template <typename Int, typename Float>
-Int ClampFloatToInt(Float value) {
+template <typename Int, typename Float> Int ClampFloatToInt(Float value) {
   static_assert(std::numeric_limits<Int>::is_integer, "Int must be integral");
 
   if (!std::isfinite(static_cast<double>(value))) {
@@ -252,19 +248,25 @@ Int ClampFloatToInt(Float value) {
   const double lo = static_cast<double>(std::numeric_limits<Int>::min());
   const double hi = static_cast<double>(std::numeric_limits<Int>::max());
 
-  if (v <= lo) return std::numeric_limits<Int>::min();
-  if (v >= hi) return std::numeric_limits<Int>::max();
+  if (v <= lo)
+    return std::numeric_limits<Int>::min();
+  if (v >= hi)
+    return std::numeric_limits<Int>::max();
   return static_cast<Int>(value);
 }
 
 int16_t ClampFpmToInt16OrInvalid(float fpm) {
   if (!std::isfinite(static_cast<double>(fpm))) {
-    return std::numeric_limits<int16_t>::min();  // INT16_MIN sentinel => invalid.
+    return std::numeric_limits<int16_t>::min(); // INT16_MIN sentinel =>
+                                                // invalid.
   }
 
-  // INT16_MIN is reserved as invalid sentinel in the encoder; avoid producing it.
-  constexpr float kMin = static_cast<float>(std::numeric_limits<int16_t>::min() + 1);
-  constexpr float kMax = static_cast<float>(std::numeric_limits<int16_t>::max());
+  // INT16_MIN is reserved as invalid sentinel in the encoder; avoid producing
+  // it.
+  constexpr float kMin =
+      static_cast<float>(std::numeric_limits<int16_t>::min() + 1);
+  constexpr float kMax =
+      static_cast<float>(std::numeric_limits<int16_t>::max());
   const float clamped = (std::max)(kMin, (std::min)(kMax, fpm));
   return static_cast<int16_t>(clamped);
 }
@@ -274,7 +276,8 @@ uint16_t NormalizeDegreesToUint16(float degrees) {
     return 0;
   }
   double d = std::fmod(static_cast<double>(degrees), 360.0);
-  if (d < 0.0) d += 360.0;
+  if (d < 0.0)
+    d += 360.0;
   return ClampFloatToInt<uint16_t>(d);
 }
 
@@ -306,13 +309,13 @@ gdl90::AddressType ResolveTcasAddressType(int raw_address) {
 
 bool TcasSsrModeHasAltitude(int ssr_mode) {
   switch (static_cast<TcasSsrMode>(ssr_mode)) {
-    case TcasSsrMode::ModeC:
-    case TcasSsrMode::Ground:
-    case TcasSsrMode::TaOnly:
-    case TcasSsrMode::TaRa:
-      return true;
-    default:
-      return false;
+  case TcasSsrMode::ModeC:
+  case TcasSsrMode::Ground:
+  case TcasSsrMode::TaOnly:
+  case TcasSsrMode::TaRa:
+    return true;
+  default:
+    return false;
   }
 }
 
@@ -322,24 +325,25 @@ bool TcasSsrModeIndicatesGround(int ssr_mode) {
 
 uint8_t ResolveTrafficEmergencyCodeFromSquawk(int squawk) {
   switch (squawk) {
-    case 7500:
-      return 5;
-    case 7600:
-      return 4;
-    case 7700:
-      return 1;
-    default:
-      return 0;
+  case 7500:
+    return 5;
+  case 7600:
+    return 4;
+  case 7700:
+    return 1;
+  default:
+    return 0;
   }
 }
 
-bool TryResolveTrackFromVelocity(float vx, float vz, uint16_t* out_track) {
+bool TryResolveTrackFromVelocity(float vx, float vz, uint16_t *out_track) {
   if (!out_track || !std::isfinite(static_cast<double>(vx)) ||
       !std::isfinite(static_cast<double>(vz))) {
     return false;
   }
 
-  const double speed = std::hypot(static_cast<double>(vx), static_cast<double>(vz));
+  const double speed =
+      std::hypot(static_cast<double>(vx), static_cast<double>(vz));
   if (speed < kMinTrackSpeedMps) {
     return false;
   }
@@ -351,11 +355,8 @@ bool TryResolveTrackFromVelocity(float vx, float vz, uint16_t* out_track) {
   return true;
 }
 
-void ResolveTrafficTrack(float vx,
-                         float vz,
-                         float heading,
-                         uint16_t* out_track,
-                         gdl90::TrackType* out_track_type) {
+void ResolveTrafficTrack(float vx, float vz, float heading, uint16_t *out_track,
+                         gdl90::TrackType *out_track_type) {
   if (!out_track || !out_track_type) {
     return;
   }
@@ -382,13 +383,13 @@ uint16_t ClampKnotsToUint16OrInvalid(float knots) {
     return gdl90::foreflight::AHRS_AIRSPEED_INVALID;
   }
   const float clamped =
-      (std::min)(knots,
-                 static_cast<float>(gdl90::foreflight::AHRS_AIRSPEED_INVALID - 1u));
+      (std::min)(knots, static_cast<float>(
+                            gdl90::foreflight::AHRS_AIRSPEED_INVALID - 1u));
   return static_cast<uint16_t>(clamped);
 }
 
-bool ParseForeFlightBroadcastPacket(const std::vector<uint8_t>& packet,
-                                    uint16_t* out_port) {
+bool ParseForeFlightBroadcastPacket(const std::vector<uint8_t> &packet,
+                                    uint16_t *out_port) {
   return xp2gdl90::foreflight::ParseDiscoveryBroadcast(packet, out_port);
 }
 
@@ -399,7 +400,7 @@ std::string ReadTailNumber() {
 
   char buffer[40];
   const int bytes_read = XPLMGetDatab(g_state.tailnum_ref, buffer, 0,
-                                     static_cast<int>(sizeof(buffer) - 1));
+                                      static_cast<int>(sizeof(buffer) - 1));
   if (bytes_read <= 0) {
     return "";
   }
@@ -447,12 +448,8 @@ int ReadIntArrayValue(XPLMDataRef ref, int index, int fallback) {
   return values_read == 1 ? value : fallback;
 }
 
-bool LocalPositionToWorld(double x,
-                          double y,
-                          double z,
-                          double* out_latitude,
-                          double* out_longitude,
-                          int32_t* out_altitude_feet) {
+bool LocalPositionToWorld(double x, double y, double z, double *out_latitude,
+                          double *out_longitude, int32_t *out_altitude_feet) {
   if (!out_latitude || !out_longitude || !out_altitude_feet ||
       !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
     return false;
@@ -477,16 +474,16 @@ bool LocalPositionToWorld(double x,
 
 gdl90::EmitterCategory WakeCategoryToEmitterCategory(int wake_category) {
   switch (wake_category) {
-    case 0:
-      return gdl90::EmitterCategory::LIGHT;
-    case 1:
-      return gdl90::EmitterCategory::LARGE;
-    case 2:
-      return gdl90::EmitterCategory::HEAVY;
-    case 3:
-      return gdl90::EmitterCategory::HIGH_VORTEX_LARGE;
-    default:
-      return gdl90::EmitterCategory::NO_INFO;
+  case 0:
+    return gdl90::EmitterCategory::LIGHT;
+  case 1:
+    return gdl90::EmitterCategory::LARGE;
+  case 2:
+    return gdl90::EmitterCategory::HEAVY;
+  case 3:
+    return gdl90::EmitterCategory::HIGH_VORTEX_LARGE;
+  default:
+    return gdl90::EmitterCategory::NO_INFO;
   }
 }
 
@@ -517,7 +514,8 @@ std::string ReadTrafficFlightId(size_t slot) {
 std::string ReadTrafficCallsign(size_t slot, uint32_t address) {
   std::string callsign =
       xp2gdl90::protocol::SanitizeCallsign(ReadTrafficFlightId(slot));
-  if (callsign.empty() && slot >= 1 && slot <= g_state.traffic_text_refs.size()) {
+  if (callsign.empty() && slot >= 1 &&
+      slot <= g_state.traffic_text_refs.size()) {
     callsign = xp2gdl90::protocol::SanitizeCallsign(ReadDataRefText(
         g_state.traffic_text_refs[slot - 1].tailnum_ref, kTrafficTailnumSize));
   }
@@ -543,9 +541,8 @@ int16_t CalculateVerticalSpeedFpm(float vy_mps) {
   return ClampFpmToInt16OrInvalid(vy_mps * kMetersPerSecondToFeetPerMinute);
 }
 
-bool BuildTrafficReportFromTcasSlot(const Settings& cfg,
-                                    size_t slot,
-                                    gdl90::PositionData* out_report) {
+bool BuildTrafficReportFromTcasSlot(const Settings &cfg, size_t slot,
+                                    gdl90::PositionData *out_report) {
   if (!out_report || !g_state.traffic_tcas_refs.IsUsable()) {
     return false;
   }
@@ -577,17 +574,16 @@ bool BuildTrafficReportFromTcasSlot(const Settings& cfg,
       ReadFloatArrayValue(g_state.traffic_tcas_refs.vy_ref, slot_index, NAN);
   const float vz =
       ReadFloatArrayValue(g_state.traffic_tcas_refs.vz_ref, slot_index, NAN);
-  const float vertical_speed =
-      ReadFloatArrayValue(g_state.traffic_tcas_refs.vertical_speed_ref,
-                          slot_index, NAN);
-  const float heading = ReadFloatArrayValue(g_state.traffic_tcas_refs.heading_ref,
-                                            slot_index, NAN);
+  const float vertical_speed = ReadFloatArrayValue(
+      g_state.traffic_tcas_refs.vertical_speed_ref, slot_index, NAN);
+  const float heading = ReadFloatArrayValue(
+      g_state.traffic_tcas_refs.heading_ref, slot_index, NAN);
   const int weight_on_wheels = ReadIntArrayValue(
       g_state.traffic_tcas_refs.weight_on_wheels_ref, slot_index, -1);
   const int ssr_mode =
       ReadIntArrayValue(g_state.traffic_tcas_refs.ssr_mode_ref, slot_index, -1);
-  const int squawk =
-      ReadIntArrayValue(g_state.traffic_tcas_refs.mode_c_code_ref, slot_index, 0);
+  const int squawk = ReadIntArrayValue(
+      g_state.traffic_tcas_refs.mode_c_code_ref, slot_index, 0);
   const int wake_category =
       ReadIntArrayValue(g_state.traffic_tcas_refs.wake_cat_ref, slot_index, -1);
 
@@ -618,14 +614,13 @@ bool BuildTrafficReportFromTcasSlot(const Settings& cfg,
   return true;
 }
 
-bool BuildTrafficReportFromLegacySlot(const Settings& cfg,
-                                      size_t slot,
-                                      gdl90::PositionData* out_report) {
+bool BuildTrafficReportFromLegacySlot(const Settings &cfg, size_t slot,
+                                      gdl90::PositionData *out_report) {
   if (!out_report || slot < 1 || slot > g_state.legacy_traffic_refs.size()) {
     return false;
   }
 
-  const LegacyTrafficRefs& refs = g_state.legacy_traffic_refs[slot - 1];
+  const LegacyTrafficRefs &refs = g_state.legacy_traffic_refs[slot - 1];
   if (!refs.IsUsable()) {
     return false;
   }
@@ -638,8 +633,8 @@ bool BuildTrafficReportFromLegacySlot(const Settings& cfg,
   const float vz = XPLMGetDataf(refs.vz_ref);
   const float heading = XPLMGetDataf(refs.heading_ref);
 
-  const uint32_t synthetic_address =
-      static_cast<uint32_t>(0xF00000u | (static_cast<uint32_t>(slot) & 0xFFFFu));
+  const uint32_t synthetic_address = static_cast<uint32_t>(
+      0xF00000u | (static_cast<uint32_t>(slot) & 0xFFFFu));
   const std::string callsign = ReadTrafficCallsign(slot, synthetic_address);
 
   if (!std::isfinite(static_cast<double>(local_x)) ||
@@ -676,7 +671,7 @@ bool BuildTrafficReportFromLegacySlot(const Settings& cfg,
   return true;
 }
 
-const char* GetTrafficSourceName() {
+const char *GetTrafficSourceName() {
   if (g_state.traffic_tcas_refs.IsUsable()) {
     return "TCAS targets";
   }
@@ -693,7 +688,7 @@ size_t GetTrafficSourceSlotCount() {
   return g_state.legacy_traffic_refs.size();
 }
 
-bool VerifyDataRef(XPLMDataRef ref, const char* name) {
+bool VerifyDataRef(XPLMDataRef ref, const char *name) {
   if (ref) {
     return true;
   }
@@ -701,7 +696,7 @@ bool VerifyDataRef(XPLMDataRef ref, const char* name) {
   return false;
 }
 
-bool ReconfigureRuntimeReceivers(const Settings& cfg, std::string* out_error) {
+bool ReconfigureRuntimeReceivers(const Settings &cfg, std::string *out_error) {
   if (cfg.foreflight_auto_discovery) {
     if (!g_state.foreflight_receiver ||
         g_state.foreflight_receiver->getListenPort() !=
@@ -733,18 +728,17 @@ bool ReconfigureRuntimeReceivers(const Settings& cfg, std::string* out_error) {
   return true;
 }
 
-void RefreshBroadcastTarget(float sim_time, const Settings& cfg) {
+void RefreshBroadcastTarget(float sim_time, const Settings &cfg) {
   if (!g_state.broadcaster) {
     return;
   }
 
-  const bool discovery_valid =
-      cfg.foreflight_auto_discovery &&
-      !g_state.discovered_target_ip.empty() &&
-      g_state.discovered_target_port > 0 &&
-      g_state.last_foreflight_discovery >= 0.0f &&
-      (sim_time - g_state.last_foreflight_discovery) <=
-          kForeFlightDiscoveryTimeout;
+  const bool discovery_valid = cfg.foreflight_auto_discovery &&
+                               !g_state.discovered_target_ip.empty() &&
+                               g_state.discovered_target_port > 0 &&
+                               g_state.last_foreflight_discovery >= 0.0f &&
+                               (sim_time - g_state.last_foreflight_discovery) <=
+                                   kForeFlightDiscoveryTimeout;
 
   const std::string resolved_ip =
       discovery_valid ? g_state.discovered_target_ip : cfg.target_ip;
@@ -762,8 +756,7 @@ void RefreshBroadcastTarget(float sim_time, const Settings& cfg) {
   g_state.using_discovered_target = discovery_valid;
 }
 
-bool ApplyConfigToRuntime(const Settings& new_cfg,
-                          std::string* out_error) {
+bool ApplyConfigToRuntime(const Settings &new_cfg, std::string *out_error) {
   if (!g_state.broadcaster) {
     if (out_error) {
       *out_error = "Plugin not initialized";
@@ -788,7 +781,7 @@ bool ApplyConfigToRuntime(const Settings& new_cfg,
   return true;
 }
 
-gdl90::PositionData GetOwnshipData(const Settings& cfg) {
+gdl90::PositionData GetOwnshipData(const Settings &cfg) {
   gdl90::PositionData data;
 
   const double latitude = XPLMGetDatad(g_state.lat_ref);
@@ -799,13 +792,15 @@ gdl90::PositionData GetOwnshipData(const Settings& cfg) {
   data.longitude = gps_valid ? longitude : 0.0;
 
   if (g_state.pressure_alt_ref) {
-    data.altitude = ClampFloatToInt<int32_t>(XPLMGetDataf(g_state.pressure_alt_ref));
+    data.altitude =
+        ClampFloatToInt<int32_t>(XPLMGetDataf(g_state.pressure_alt_ref));
   } else {
     data.altitude = std::numeric_limits<int32_t>::min();
   }
 
   const float speed_ms = XPLMGetDataf(g_state.speed_ref);
-  data.h_velocity = ClampFloatToInt<uint16_t>(speed_ms * kMetersPerSecondToKnots);
+  data.h_velocity =
+      ClampFloatToInt<uint16_t>(speed_ms * kMetersPerSecondToKnots);
 
   data.v_velocity = ClampFpmToInt16OrInvalid(XPLMGetDataf(g_state.vs_ref));
 
@@ -840,7 +835,8 @@ gdl90::foreflight::DeviceInfo GetForeFlightDeviceInfo() {
   data.device_name = g_state.settings.device_name;
   data.device_long_name = g_state.settings.device_long_name;
   data.capabilities_mask =
-      0x01u | (static_cast<uint32_t>(g_state.settings.internet_policy & 0x03u) << 1);
+      0x01u |
+      (static_cast<uint32_t>(g_state.settings.internet_policy & 0x03u) << 1);
   return data;
 }
 
@@ -849,21 +845,22 @@ gdl90::foreflight::AhrsData GetOwnshipAhrsData() {
   data.roll_deg = g_state.roll_ref ? XPLMGetDataf(g_state.roll_ref) : NAN;
   data.pitch_deg = g_state.pitch_ref ? XPLMGetDataf(g_state.pitch_ref) : NAN;
   if (g_state.heading_ref) {
-    double heading_deg =
-        NormalizeDegrees360(static_cast<double>(XPLMGetDataf(g_state.heading_ref)));
-    if (g_state.settings.ahrs_use_magnetic_heading && std::isfinite(heading_deg)) {
-      heading_deg = NormalizeDegrees360(
-          static_cast<double>(XPLMDegTrueToDegMagnetic(static_cast<float>(heading_deg))));
+    double heading_deg = NormalizeDegrees360(
+        static_cast<double>(XPLMGetDataf(g_state.heading_ref)));
+    if (g_state.settings.ahrs_use_magnetic_heading &&
+        std::isfinite(heading_deg)) {
+      heading_deg = NormalizeDegrees360(static_cast<double>(
+          XPLMDegTrueToDegMagnetic(static_cast<float>(heading_deg))));
     }
     data.heading_deg = heading_deg;
   } else {
     data.heading_deg = std::numeric_limits<double>::quiet_NaN();
   }
   data.magnetic_heading = g_state.settings.ahrs_use_magnetic_heading;
-  data.indicated_airspeed =
-      g_state.indicated_airspeed_ref
-          ? ClampKnotsToUint16OrInvalid(XPLMGetDataf(g_state.indicated_airspeed_ref))
-          : gdl90::foreflight::AHRS_AIRSPEED_INVALID;
+  data.indicated_airspeed = g_state.indicated_airspeed_ref
+                                ? ClampKnotsToUint16OrInvalid(XPLMGetDataf(
+                                      g_state.indicated_airspeed_ref))
+                                : gdl90::foreflight::AHRS_AIRSPEED_INVALID;
   data.true_airspeed =
       g_state.true_airspeed_ref
           ? ClampKnotsToUint16OrInvalid(XPLMGetDataf(g_state.true_airspeed_ref))
@@ -874,7 +871,8 @@ gdl90::foreflight::AhrsData GetOwnshipAhrsData() {
 gdl90::GeoAltitudeData GetOwnshipGeoAltitudeData() {
   gdl90::GeoAltitudeData data;
   const double altitude_meters = XPLMGetDatad(g_state.alt_ref);
-  data.altitude_feet = ClampFloatToInt<int32_t>(altitude_meters * kMetersToFeet);
+  data.altitude_feet =
+      ClampFloatToInt<int32_t>(altitude_meters * kMetersToFeet);
   data.vertical_warning = false;
   data.vfom_meters = gdl90::GEO_ALTITUDE_VFOM_INVALID;
   return data;
@@ -929,18 +927,18 @@ void InitializeTrafficDataRefs() {
     char buffer[128] = {};
     LegacyTrafficRefs refs;
 
-    std::snprintf(buffer, sizeof(buffer),
-                  "sim/multiplayer/position/plane%zu_x", slot);
+    std::snprintf(buffer, sizeof(buffer), "sim/multiplayer/position/plane%zu_x",
+                  slot);
     refs.x_ref = XPLMFindDataRef(buffer);
     if (!refs.x_ref) {
       break;
     }
 
-    std::snprintf(buffer, sizeof(buffer),
-                  "sim/multiplayer/position/plane%zu_y", slot);
+    std::snprintf(buffer, sizeof(buffer), "sim/multiplayer/position/plane%zu_y",
+                  slot);
     refs.y_ref = XPLMFindDataRef(buffer);
-    std::snprintf(buffer, sizeof(buffer),
-                  "sim/multiplayer/position/plane%zu_z", slot);
+    std::snprintf(buffer, sizeof(buffer), "sim/multiplayer/position/plane%zu_z",
+                  slot);
     refs.z_ref = XPLMFindDataRef(buffer);
     std::snprintf(buffer, sizeof(buffer),
                   "sim/multiplayer/position/plane%zu_v_x", slot);
@@ -978,8 +976,8 @@ void InitializeTrafficDataRefs() {
   LogMessage(message.str());
 }
 
-size_t CollectTrafficData(const Settings& cfg,
-                          std::vector<gdl90::PositionData>* out_reports) {
+size_t CollectTrafficData(const Settings &cfg,
+                          std::vector<gdl90::PositionData> *out_reports) {
   if (!out_reports) {
     return 0;
   }
@@ -988,7 +986,8 @@ size_t CollectTrafficData(const Settings& cfg,
 
   if (g_state.traffic_tcas_refs.IsUsable()) {
     out_reports->reserve(g_state.traffic_tcas_refs.slot_count);
-    for (size_t slot = 1; slot <= g_state.traffic_tcas_refs.slot_count; ++slot) {
+    for (size_t slot = 1; slot <= g_state.traffic_tcas_refs.slot_count;
+         ++slot) {
       gdl90::PositionData report{};
       if (BuildTrafficReportFromTcasSlot(cfg, slot, &report)) {
         out_reports->push_back(report);
@@ -1011,7 +1010,7 @@ size_t CollectTrafficData(const Settings& cfg,
   return out_reports->size();
 }
 
-void SendTrafficReports(float sim_time, const Settings& cfg) {
+void SendTrafficReports(float sim_time, const Settings &cfg) {
   if (sim_time - g_state.last_traffic < (1.0f / kTrafficReportRate)) {
     return;
   }
@@ -1021,7 +1020,7 @@ void SendTrafficReports(float sim_time, const Settings& cfg) {
 
   int total_bytes = 0;
   bool saw_error = false;
-  for (const gdl90::PositionData& report : reports) {
+  for (const gdl90::PositionData &report : reports) {
     const auto message = g_state.encoder->createTrafficReport(report);
     const int sent = g_state.broadcaster->send(message);
     if (sent >= 0) {
@@ -1042,7 +1041,7 @@ void SendTrafficReports(float sim_time, const Settings& cfg) {
   g_state.last_traffic = sim_time;
 }
 
-void PollForeFlightDiscovery(float sim_time, const Settings& cfg) {
+void PollForeFlightDiscovery(float sim_time, const Settings &cfg) {
   if (!cfg.foreflight_auto_discovery || !g_state.foreflight_receiver) {
     return;
   }
@@ -1051,8 +1050,8 @@ void PollForeFlightDiscovery(float sim_time, const Settings& cfg) {
     std::vector<uint8_t> packet;
     std::string source_ip;
     uint16_t source_port = 0;
-    const int received = g_state.foreflight_receiver->receive(
-        &packet, &source_ip, &source_port);
+    const int received =
+        g_state.foreflight_receiver->receive(&packet, &source_ip, &source_port);
     if (received == 0) {
       break;
     }
@@ -1073,12 +1072,12 @@ void PollForeFlightDiscovery(float sim_time, const Settings& cfg) {
   }
 }
 
-bool SaveSettingsToDisk(std::string* out_error) {
-  return xp2gdl90::SaveSettingsToJsonFile(g_state.settings_path, g_state.settings,
-                                          out_error);
+bool SaveSettingsToDisk(std::string *out_error) {
+  return xp2gdl90::SaveSettingsToJsonFile(g_state.settings_path,
+                                          g_state.settings, out_error);
 }
 
-bool LoadSettingsFromDisk(Settings* out_settings, std::string* out_error) {
+bool LoadSettingsFromDisk(Settings *out_settings, std::string *out_error) {
   return xp2gdl90::LoadSettingsFromJsonFile(g_state.settings_path, out_settings,
                                             out_error);
 }
@@ -1117,11 +1116,9 @@ void SyncSettingsUiFromConfig() {
   g_state.settings_last_error.clear();
 }
 
-bool BuildConfigFromSettingsUi(Settings* out_cfg,
-                               std::string* out_error) {
-  return xp2gdl90::BuildConfigFromSettingsUi(g_state.settings_ui,
-                                             g_state.settings, out_cfg,
-                                             out_error);
+bool BuildConfigFromSettingsUi(Settings *out_cfg, std::string *out_error) {
+  return xp2gdl90::BuildConfigFromSettingsUi(
+      g_state.settings_ui, g_state.settings, out_cfg, out_error);
 }
 
 ImGuiKey XplmVkeyToImGuiKey(unsigned char vkey) {
@@ -1139,38 +1136,38 @@ ImGuiKey XplmVkeyToImGuiKey(unsigned char vkey) {
   }
 
   switch (vkey) {
-    case XPLM_VK_TAB:
-      return ImGuiKey_Tab;
-    case XPLM_VK_LEFT:
-      return ImGuiKey_LeftArrow;
-    case XPLM_VK_RIGHT:
-      return ImGuiKey_RightArrow;
-    case XPLM_VK_UP:
-      return ImGuiKey_UpArrow;
-    case XPLM_VK_DOWN:
-      return ImGuiKey_DownArrow;
-    case XPLM_VK_PRIOR:
-      return ImGuiKey_PageUp;
-    case XPLM_VK_NEXT:
-      return ImGuiKey_PageDown;
-    case XPLM_VK_HOME:
-      return ImGuiKey_Home;
-    case XPLM_VK_END:
-      return ImGuiKey_End;
-    case XPLM_VK_INSERT:
-      return ImGuiKey_Insert;
-    case XPLM_VK_DELETE:
-      return ImGuiKey_Delete;
-    case XPLM_VK_BACK:
-      return ImGuiKey_Backspace;
-    case XPLM_VK_SPACE:
-      return ImGuiKey_Space;
-    case XPLM_VK_RETURN:
-      return ImGuiKey_Enter;
-    case XPLM_VK_ESCAPE:
-      return ImGuiKey_Escape;
-    default:
-      return ImGuiKey_None;
+  case XPLM_VK_TAB:
+    return ImGuiKey_Tab;
+  case XPLM_VK_LEFT:
+    return ImGuiKey_LeftArrow;
+  case XPLM_VK_RIGHT:
+    return ImGuiKey_RightArrow;
+  case XPLM_VK_UP:
+    return ImGuiKey_UpArrow;
+  case XPLM_VK_DOWN:
+    return ImGuiKey_DownArrow;
+  case XPLM_VK_PRIOR:
+    return ImGuiKey_PageUp;
+  case XPLM_VK_NEXT:
+    return ImGuiKey_PageDown;
+  case XPLM_VK_HOME:
+    return ImGuiKey_Home;
+  case XPLM_VK_END:
+    return ImGuiKey_End;
+  case XPLM_VK_INSERT:
+    return ImGuiKey_Insert;
+  case XPLM_VK_DELETE:
+    return ImGuiKey_Delete;
+  case XPLM_VK_BACK:
+    return ImGuiKey_Backspace;
+  case XPLM_VK_SPACE:
+    return ImGuiKey_Space;
+  case XPLM_VK_RETURN:
+    return ImGuiKey_Enter;
+  case XPLM_VK_ESCAPE:
+    return ImGuiKey_Escape;
+  default:
+    return ImGuiKey_None;
   }
 }
 
@@ -1180,7 +1177,7 @@ void EnsureImGuiInitialized() {
   }
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
-  ImGuiIO& io = ImGui::GetIO();
+  ImGuiIO &io = ImGui::GetIO();
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
   ImGui::StyleColorsDark();
   ImGui_ImplOpenGL2_Init();
@@ -1198,7 +1195,7 @@ void ShutdownImGui() {
 }
 
 void DrawSettingsWindowUI() {
-  const Settings& cfg = g_state.settings;
+  const Settings &cfg = g_state.settings;
 
   bool enabled = g_state.enabled;
   if (ImGui::Checkbox("Broadcasting Enabled", &enabled)) {
@@ -1215,18 +1212,22 @@ void DrawSettingsWindowUI() {
 
   const float sim_time =
       g_state.sim_time_ref ? XPLMGetDataf(g_state.sim_time_ref) : 0.0f;
-  const float since_heartbeat =
-      (g_state.last_heartbeat > 0.0f) ? (sim_time - g_state.last_heartbeat) : 0.0f;
-  const float since_position =
-      (g_state.last_position > 0.0f) ? (sim_time - g_state.last_position) : 0.0f;
+  const float since_heartbeat = (g_state.last_heartbeat > 0.0f)
+                                    ? (sim_time - g_state.last_heartbeat)
+                                    : 0.0f;
+  const float since_position = (g_state.last_position > 0.0f)
+                                   ? (sim_time - g_state.last_position)
+                                   : 0.0f;
   const float since_traffic =
       (g_state.last_traffic > 0.0f) ? (sim_time - g_state.last_traffic) : 0.0f;
-  const float since_device_info =
-      (g_state.last_device_info > 0.0f) ? (sim_time - g_state.last_device_info) : 0.0f;
+  const float since_device_info = (g_state.last_device_info > 0.0f)
+                                      ? (sim_time - g_state.last_device_info)
+                                      : 0.0f;
   const float since_ahrs =
       (g_state.last_ahrs > 0.0f) ? (sim_time - g_state.last_ahrs) : 0.0f;
-  const float since_geo_altitude =
-      (g_state.last_geo_altitude > 0.0f) ? (sim_time - g_state.last_geo_altitude) : 0.0f;
+  const float since_geo_altitude = (g_state.last_geo_altitude > 0.0f)
+                                       ? (sim_time - g_state.last_geo_altitude)
+                                       : 0.0f;
   const float since_discovery =
       (g_state.last_foreflight_discovery >= 0.0f)
           ? (sim_time - g_state.last_foreflight_discovery)
@@ -1246,29 +1247,35 @@ void DrawSettingsWindowUI() {
                   cfg.heartbeat_rate, cfg.position_rate);
       ImGui::Text("Last heartbeat: %.2fs ago | Last position: %.2fs ago",
                   since_heartbeat, since_position);
-      ImGui::Text("Heartbeat packets: %llu (%d bytes last)",
-                  static_cast<unsigned long long>(g_state.heartbeat_packets_sent),
-                  g_state.last_heartbeat_send_bytes);
-      ImGui::Text("Position packets: %llu (%d bytes last)",
-                  static_cast<unsigned long long>(g_state.position_packets_sent),
-                  g_state.last_position_send_bytes);
-      ImGui::Text("Traffic source: %s (%zu slots)",
-                  GetTrafficSourceName(), GetTrafficSourceSlotCount());
-      ImGui::Text("Traffic reports: %llu (%d targets, %d bytes last, %.2fs ago)",
-                  static_cast<unsigned long long>(g_state.traffic_packets_sent),
-                  g_state.last_traffic_target_count,
-                  g_state.last_traffic_send_bytes, since_traffic);
-      ImGui::Text("ForeFlight ID: %llu (%d bytes last, %.2fs ago)",
-                  static_cast<unsigned long long>(g_state.device_info_packets_sent),
-                  g_state.last_device_info_send_bytes, since_device_info);
+      ImGui::Text(
+          "Heartbeat packets: %llu (%d bytes last)",
+          static_cast<unsigned long long>(g_state.heartbeat_packets_sent),
+          g_state.last_heartbeat_send_bytes);
+      ImGui::Text(
+          "Position packets: %llu (%d bytes last)",
+          static_cast<unsigned long long>(g_state.position_packets_sent),
+          g_state.last_position_send_bytes);
+      ImGui::Text("Traffic source: %s (%zu slots)", GetTrafficSourceName(),
+                  GetTrafficSourceSlotCount());
+      ImGui::Text(
+          "Traffic reports: %llu (%d targets, %d bytes last, %.2fs ago)",
+          static_cast<unsigned long long>(g_state.traffic_packets_sent),
+          g_state.last_traffic_target_count, g_state.last_traffic_send_bytes,
+          since_traffic);
+      ImGui::Text(
+          "ForeFlight ID: %llu (%d bytes last, %.2fs ago)",
+          static_cast<unsigned long long>(g_state.device_info_packets_sent),
+          g_state.last_device_info_send_bytes, since_device_info);
       ImGui::Text("AHRS packets: %llu (%d bytes last, %.2fs ago)",
                   static_cast<unsigned long long>(g_state.ahrs_packets_sent),
                   g_state.last_ahrs_send_bytes, since_ahrs);
-      ImGui::Text("Ownship Geo Alt: %llu (%d bytes last, %.2fs ago)",
-                  static_cast<unsigned long long>(g_state.geo_altitude_packets_sent),
-                  g_state.last_geo_altitude_send_bytes, since_geo_altitude);
-      ImGui::Text("Target mode: %s",
-                  g_state.using_discovered_target ? "ForeFlight discovery" : "Manual");
+      ImGui::Text(
+          "Ownship Geo Alt: %llu (%d bytes last, %.2fs ago)",
+          static_cast<unsigned long long>(g_state.geo_altitude_packets_sent),
+          g_state.last_geo_altitude_send_bytes, since_geo_altitude);
+      ImGui::Text("Target mode: %s", g_state.using_discovered_target
+                                         ? "ForeFlight discovery"
+                                         : "Manual");
       if (since_discovery >= 0.0f) {
         ImGui::Text("Last ForeFlight discovery: %s:%u (%.2fs ago)",
                     g_state.discovered_target_ip.c_str(),
@@ -1279,7 +1286,8 @@ void DrawSettingsWindowUI() {
       }
       ImGui::Text("AHRS heading mode: %s",
                   cfg.ahrs_use_magnetic_heading ? "Magnetic" : "True");
-      ImGui::TextUnformatted("AHRS source: theta / phi / psi, indicated_airspeed, true_airspeed");
+      ImGui::TextUnformatted(
+          "AHRS source: theta / phi / psi, indicated_airspeed, true_airspeed");
       ImGui::Text("Bytes sent: %llu",
                   static_cast<unsigned long long>(g_state.bytes_sent));
 
@@ -1290,7 +1298,8 @@ void DrawSettingsWindowUI() {
       }
       if (!g_state.last_receiver_error.empty()) {
         ImGui::Separator();
-        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Last receiver error:");
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f),
+                           "Last receiver error:");
         ImGui::TextWrapped("%s", g_state.last_receiver_error.c_str());
       }
       ImGui::EndTabItem();
@@ -1299,11 +1308,14 @@ void DrawSettingsWindowUI() {
     if (ImGui::BeginTabItem("Network")) {
       dirty_now |= ImGui::InputText("Target IP", g_state.settings_ui.target_ip,
                                     sizeof(g_state.settings_ui.target_ip));
-      dirty_now |= ImGui::InputInt("Target Port", &g_state.settings_ui.target_port);
-      dirty_now |= ImGui::Checkbox("ForeFlight auto discovery",
-                                   &g_state.settings_ui.foreflight_auto_discovery);
-      dirty_now |= ImGui::InputInt("ForeFlight broadcast port",
-                                   &g_state.settings_ui.foreflight_broadcast_port);
+      dirty_now |=
+          ImGui::InputInt("Target Port", &g_state.settings_ui.target_port);
+      dirty_now |=
+          ImGui::Checkbox("ForeFlight auto discovery",
+                          &g_state.settings_ui.foreflight_auto_discovery);
+      dirty_now |=
+          ImGui::InputInt("ForeFlight broadcast port",
+                          &g_state.settings_ui.foreflight_broadcast_port);
       ImGui::EndTabItem();
     }
 
@@ -1311,24 +1323,26 @@ void DrawSettingsWindowUI() {
       dirty_now |= ImGui::InputText("ICAO Address (hex)",
                                     g_state.settings_ui.icao_address,
                                     sizeof(g_state.settings_ui.icao_address));
-      dirty_now |= ImGui::InputText("Callsign (fallback)",
-                                    g_state.settings_ui.callsign,
-                                    sizeof(g_state.settings_ui.callsign));
+      dirty_now |=
+          ImGui::InputText("Callsign (fallback)", g_state.settings_ui.callsign,
+                           sizeof(g_state.settings_ui.callsign));
       dirty_now |= ImGui::InputInt("Emitter Category",
                                    &g_state.settings_ui.emitter_category);
       ImGui::EndTabItem();
     }
 
     if (ImGui::BeginTabItem("Device")) {
-      dirty_now |= ImGui::InputText("Device Name", g_state.settings_ui.device_name,
-                                    sizeof(g_state.settings_ui.device_name));
-      dirty_now |= ImGui::InputText("Device Long Name",
-                                    g_state.settings_ui.device_long_name,
-                                    sizeof(g_state.settings_ui.device_long_name));
+      dirty_now |=
+          ImGui::InputText("Device Name", g_state.settings_ui.device_name,
+                           sizeof(g_state.settings_ui.device_name));
+      dirty_now |= ImGui::InputText(
+          "Device Long Name", g_state.settings_ui.device_long_name,
+          sizeof(g_state.settings_ui.device_long_name));
       dirty_now |= ImGui::InputInt("Internet Policy",
                                    &g_state.settings_ui.internet_policy);
-      dirty_now |= ImGui::Checkbox("AHRS magnetic heading",
-                                   &g_state.settings_ui.ahrs_use_magnetic_heading);
+      dirty_now |=
+          ImGui::Checkbox("AHRS magnetic heading",
+                          &g_state.settings_ui.ahrs_use_magnetic_heading);
       ImGui::TextUnformatted("0=Unrestricted 1=Expensive 2=Disallowed");
       ImGui::EndTabItem();
     }
@@ -1350,8 +1364,10 @@ void DrawSettingsWindowUI() {
     }
 
     if (ImGui::BeginTabItem("Debug")) {
-      dirty_now |= ImGui::Checkbox("Debug logging", &g_state.settings_ui.debug_logging);
-      dirty_now |= ImGui::Checkbox("Log raw messages", &g_state.settings_ui.log_messages);
+      dirty_now |=
+          ImGui::Checkbox("Debug logging", &g_state.settings_ui.debug_logging);
+      dirty_now |= ImGui::Checkbox("Log raw messages",
+                                   &g_state.settings_ui.log_messages);
       ImGui::EndTabItem();
     }
 
@@ -1423,7 +1439,7 @@ void DrawSettingsWindowUI() {
   }
 }
 
-void SettingsDrawCallback(XPLMWindowID in_window_id, void* in_refcon) {
+void SettingsDrawCallback(XPLMWindowID in_window_id, void *in_refcon) {
   (void)in_refcon;
 
   EnsureImGuiInitialized();
@@ -1445,7 +1461,7 @@ void SettingsDrawCallback(XPLMWindowID in_window_id, void* in_refcon) {
   const float width = static_cast<float>(right - left);
   const float height = static_cast<float>(top - bottom);
 
-  ImGuiIO& io = ImGui::GetIO();
+  ImGuiIO &io = ImGui::GetIO();
   io.DisplaySize = ImVec2(screen_width, screen_height);
 
   const double now = static_cast<double>(XPLMGetElapsedTime());
@@ -1472,8 +1488,10 @@ void SettingsDrawCallback(XPLMWindowID in_window_id, void* in_refcon) {
     }
   }
 
-  if (g_state.imgui_mouse_wheel != 0.0f || g_state.imgui_mouse_wheel_h != 0.0f) {
-    io.AddMouseWheelEvent(g_state.imgui_mouse_wheel_h, g_state.imgui_mouse_wheel);
+  if (g_state.imgui_mouse_wheel != 0.0f ||
+      g_state.imgui_mouse_wheel_h != 0.0f) {
+    io.AddMouseWheelEvent(g_state.imgui_mouse_wheel_h,
+                          g_state.imgui_mouse_wheel);
     g_state.imgui_mouse_wheel = 0.0f;
     g_state.imgui_mouse_wheel_h = 0.0f;
   }
@@ -1497,11 +1515,8 @@ void SettingsDrawCallback(XPLMWindowID in_window_id, void* in_refcon) {
   ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
 }
 
-int SettingsMouseClickCallback(XPLMWindowID in_window_id,
-                               int x,
-                               int y,
-                               XPLMMouseStatus in_mouse,
-                               void* in_refcon) {
+int SettingsMouseClickCallback(XPLMWindowID in_window_id, int x, int y,
+                               XPLMMouseStatus in_mouse, void *in_refcon) {
   (void)in_refcon;
 
   int left = 0;
@@ -1510,8 +1525,7 @@ int SettingsMouseClickCallback(XPLMWindowID in_window_id,
   int bottom = 0;
   XPLMGetWindowGeometry(in_window_id, &left, &top, &right, &bottom);
 
-  const bool inside =
-      (x >= left && x <= right && y >= bottom && y <= top);
+  const bool inside = (x >= left && x <= right && y >= bottom && y <= top);
   if (!inside) {
     return 0;
   }
@@ -1528,11 +1542,8 @@ int SettingsMouseClickCallback(XPLMWindowID in_window_id,
   return 1;
 }
 
-int SettingsRightClickCallback(XPLMWindowID in_window_id,
-                               int x,
-                               int y,
-                               XPLMMouseStatus in_mouse,
-                               void* in_refcon) {
+int SettingsRightClickCallback(XPLMWindowID in_window_id, int x, int y,
+                               XPLMMouseStatus in_mouse, void *in_refcon) {
   (void)in_refcon;
 
   int left = 0;
@@ -1541,8 +1552,7 @@ int SettingsRightClickCallback(XPLMWindowID in_window_id,
   int bottom = 0;
   XPLMGetWindowGeometry(in_window_id, &left, &top, &right, &bottom);
 
-  const bool inside =
-      (x >= left && x <= right && y >= bottom && y <= top);
+  const bool inside = (x >= left && x <= right && y >= bottom && y <= top);
   if (!inside) {
     return 0;
   }
@@ -1559,12 +1569,9 @@ int SettingsRightClickCallback(XPLMWindowID in_window_id,
   return 1;
 }
 
-void SettingsKeyCallback(XPLMWindowID in_window_id,
-                         char in_key,
-                         XPLMKeyFlags in_flags,
-                         char in_virtual_key,
-                         void* in_refcon,
-                         int losing_focus) {
+void SettingsKeyCallback(XPLMWindowID in_window_id, char in_key,
+                         XPLMKeyFlags in_flags, char in_virtual_key,
+                         void *in_refcon, int losing_focus) {
   (void)in_window_id;
   (void)in_refcon;
 
@@ -1572,7 +1579,7 @@ void SettingsKeyCallback(XPLMWindowID in_window_id,
     return;
   }
 
-  ImGuiIO& io = ImGui::GetIO();
+  ImGuiIO &io = ImGui::GetIO();
   if (losing_focus) {
     io.AddFocusEvent(false);
     return;
@@ -1605,10 +1612,8 @@ void SettingsKeyCallback(XPLMWindowID in_window_id,
   }
 }
 
-XPLMCursorStatus SettingsCursorCallback(XPLMWindowID in_window_id,
-                                       int x,
-                                       int y,
-                                       void* in_refcon) {
+XPLMCursorStatus SettingsCursorCallback(XPLMWindowID in_window_id, int x, int y,
+                                        void *in_refcon) {
   (void)in_window_id;
   (void)x;
   (void)y;
@@ -1616,12 +1621,8 @@ XPLMCursorStatus SettingsCursorCallback(XPLMWindowID in_window_id,
   return xplm_CursorArrow;
 }
 
-int SettingsMouseWheelCallback(XPLMWindowID in_window_id,
-                               int x,
-                               int y,
-                               int wheel,
-                               int clicks,
-                               void* in_refcon) {
+int SettingsMouseWheelCallback(XPLMWindowID in_window_id, int x, int y,
+                               int wheel, int clicks, void *in_refcon) {
   (void)in_window_id;
   (void)x;
   (void)in_refcon;
@@ -1632,8 +1633,7 @@ int SettingsMouseWheelCallback(XPLMWindowID in_window_id,
   int bottom = 0;
   XPLMGetWindowGeometry(in_window_id, &left, &top, &right, &bottom);
 
-  const bool inside =
-      (x >= left && x <= right && y >= bottom && y <= top);
+  const bool inside = (x >= left && x <= right && y >= bottom && y <= top);
   if (!inside) {
     return 0;
   }
@@ -1720,9 +1720,9 @@ void ShowSettingsWindow(bool show) {
   }
 }
 
-}  // namespace
+} // namespace
 
-PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
+PLUGIN_API int XPluginStart(char *outName, char *outSig, char *outDesc) {
   std::strcpy(outName, "XP2GDL90");
   std::strcpy(outSig, "com.xp2gdl90.plugin");
   std::strcpy(outDesc, "GDL90 ADS-B data broadcaster for EFB applications");
@@ -1751,7 +1751,7 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
 
   char prefs_path[512] = {};
   XPLMGetPrefsPath(prefs_path);
-  XPLMExtractFileAndPath(prefs_path);  // leaves directory in prefs_path
+  XPLMExtractFileAndPath(prefs_path); // leaves directory in prefs_path
   g_state.settings_path =
       std::string(prefs_path) + XPLMGetDirectorySeparator() + "xp2gdl90.json";
 
@@ -1766,7 +1766,7 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
     LogMessage("No settings file found; using GUI defaults");
   }
 
-  const Settings& cfg = g_state.settings;
+  const Settings &cfg = g_state.settings;
 
   g_state.broadcaster =
       std::make_unique<udp::UDPBroadcaster>(cfg.target_ip, cfg.target_port);
@@ -1793,33 +1793,34 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
   g_state.true_airspeed_ref =
       XPLMFindDataRef("sim/flightmodel/position/true_airspeed");
   g_state.vs_ref = XPLMFindDataRef("sim/flightmodel/position/vh_ind_fpm");
-  g_state.airborne_ref = XPLMFindDataRef("sim/flightmodel/failures/onground_any");
+  g_state.airborne_ref =
+      XPLMFindDataRef("sim/flightmodel/failures/onground_any");
   g_state.sim_time_ref = XPLMFindDataRef("sim/time/total_flight_time_sec");
   g_state.tailnum_ref = XPLMFindDataRef("sim/aircraft/view/acf_tailnum");
 
   bool datarefs_ok = true;
-  datarefs_ok &= VerifyDataRef(g_state.lat_ref,
-                               "sim/flightmodel/position/latitude");
-  datarefs_ok &= VerifyDataRef(g_state.lon_ref,
-                               "sim/flightmodel/position/longitude");
-  datarefs_ok &= VerifyDataRef(g_state.alt_ref,
-                               "sim/flightmodel/position/elevation");
-  datarefs_ok &= VerifyDataRef(g_state.speed_ref,
-                               "sim/flightmodel/position/groundspeed");
-  datarefs_ok &= VerifyDataRef(g_state.track_ref,
-                               "sim/flightmodel/position/true_psi");
-  datarefs_ok &= VerifyDataRef(g_state.pitch_ref,
-                               "sim/flightmodel/position/theta");
-  datarefs_ok &= VerifyDataRef(g_state.roll_ref,
-                               "sim/flightmodel/position/phi");
-  datarefs_ok &= VerifyDataRef(g_state.heading_ref,
-                               "sim/flightmodel/position/psi");
-  datarefs_ok &= VerifyDataRef(g_state.vs_ref,
-                               "sim/flightmodel/position/vh_ind_fpm");
+  datarefs_ok &=
+      VerifyDataRef(g_state.lat_ref, "sim/flightmodel/position/latitude");
+  datarefs_ok &=
+      VerifyDataRef(g_state.lon_ref, "sim/flightmodel/position/longitude");
+  datarefs_ok &=
+      VerifyDataRef(g_state.alt_ref, "sim/flightmodel/position/elevation");
+  datarefs_ok &=
+      VerifyDataRef(g_state.speed_ref, "sim/flightmodel/position/groundspeed");
+  datarefs_ok &=
+      VerifyDataRef(g_state.track_ref, "sim/flightmodel/position/true_psi");
+  datarefs_ok &=
+      VerifyDataRef(g_state.pitch_ref, "sim/flightmodel/position/theta");
+  datarefs_ok &=
+      VerifyDataRef(g_state.roll_ref, "sim/flightmodel/position/phi");
+  datarefs_ok &=
+      VerifyDataRef(g_state.heading_ref, "sim/flightmodel/position/psi");
+  datarefs_ok &=
+      VerifyDataRef(g_state.vs_ref, "sim/flightmodel/position/vh_ind_fpm");
   datarefs_ok &= VerifyDataRef(g_state.airborne_ref,
                                "sim/flightmodel/failures/onground_any");
-  datarefs_ok &= VerifyDataRef(g_state.sim_time_ref,
-                               "sim/time/total_flight_time_sec");
+  datarefs_ok &=
+      VerifyDataRef(g_state.sim_time_ref, "sim/time/total_flight_time_sec");
 
   if (!datarefs_ok) {
     LogMessage("ERROR: Failed to find required datarefs");
@@ -1829,7 +1830,8 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
   if (g_state.pressure_alt_ref) {
     LogMessage("Using pressure altitude dataref for Ownship Report altitude");
   } else {
-    LogMessage("Pressure altitude dataref unavailable; Ownship Report altitude will be sent invalid");
+    LogMessage("Pressure altitude dataref unavailable; Ownship Report altitude "
+               "will be sent invalid");
   }
 
   LogMessage(std::string("AHRS heading mode: ") +
@@ -1846,17 +1848,15 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc) {
 
   const int menu_container =
       XPLMAppendMenuItem(XPLMFindPluginsMenu(), "XP2GDL90", nullptr, 0);
-  g_state.menu_id = XPLMCreateMenu("XP2GDL90", XPLMFindPluginsMenu(),
-                                  menu_container, MenuHandlerCallback,
-                                  nullptr);
-  g_state.menu_item_enable =
-      XPLMAppendMenuItem(g_state.menu_id, "Enable Broadcasting",
-                         reinterpret_cast<void*>(1), 0);
-  g_state.menu_item_settings =
-      XPLMAppendMenuItem(g_state.menu_id, "Settings...",
-                         reinterpret_cast<void*>(2), 0);
+  g_state.menu_id =
+      XPLMCreateMenu("XP2GDL90", XPLMFindPluginsMenu(), menu_container,
+                     MenuHandlerCallback, nullptr);
+  g_state.menu_item_enable = XPLMAppendMenuItem(
+      g_state.menu_id, "Enable Broadcasting", reinterpret_cast<void *>(1), 0);
+  g_state.menu_item_settings = XPLMAppendMenuItem(
+      g_state.menu_id, "Settings...", reinterpret_cast<void *>(2), 0);
   XPLMAppendMenuItem(g_state.menu_id, "Reload Settings",
-                     reinterpret_cast<void*>(3), 0);
+                     reinterpret_cast<void *>(3), 0);
 
   g_state.initialized = true;
   LogMessage("Plugin initialized successfully");
@@ -1910,7 +1910,7 @@ PLUGIN_API void XPluginDisable(void) {
 }
 
 PLUGIN_API void XPluginReceiveMessage(XPLMPluginID inFrom, int inMsg,
-                                      void* inParam) {
+                                      void *inParam) {
   (void)inFrom;
   (void)inMsg;
   (void)inParam;
@@ -1920,8 +1920,7 @@ namespace {
 
 float FlightLoopCallback(float in_elapsed_since_last_call,
                          float in_elapsed_time_since_last_flight_loop,
-                         int in_counter,
-                         void* in_refcon) {
+                         int in_counter, void *in_refcon) {
   (void)in_elapsed_since_last_call;
   (void)in_elapsed_time_since_last_flight_loop;
   (void)in_counter;
@@ -1932,7 +1931,7 @@ float FlightLoopCallback(float in_elapsed_since_last_call,
   }
 
   const float sim_time = XPLMGetDataf(g_state.sim_time_ref);
-  const Settings& cfg = g_state.settings;
+  const Settings &cfg = g_state.settings;
 
   PollForeFlightDiscovery(sim_time, cfg);
   RefreshBroadcastTarget(sim_time, cfg);
@@ -1986,9 +1985,10 @@ float FlightLoopCallback(float in_elapsed_since_last_call,
     g_state.last_geo_altitude = sim_time;
   }
 
-  if (sim_time - g_state.last_device_info >= (1.0f / kForeFlightDeviceInfoRate)) {
-    const auto device_info = g_state.foreflight_encoder->createIdMessage(
-        GetForeFlightDeviceInfo());
+  if (sim_time - g_state.last_device_info >=
+      (1.0f / kForeFlightDeviceInfoRate)) {
+    const auto device_info =
+        g_state.foreflight_encoder->createIdMessage(GetForeFlightDeviceInfo());
     const int sent = g_state.broadcaster->send(device_info);
     g_state.last_device_info_send_bytes = sent;
     if (sent >= 0) {
@@ -2002,8 +2002,8 @@ float FlightLoopCallback(float in_elapsed_since_last_call,
   }
 
   if (sim_time - g_state.last_ahrs >= (1.0f / kForeFlightAhrsRate)) {
-    const auto ahrs_msg = g_state.foreflight_encoder->createAhrsMessage(
-        GetOwnshipAhrsData());
+    const auto ahrs_msg =
+        g_state.foreflight_encoder->createAhrsMessage(GetOwnshipAhrsData());
     const int sent = g_state.broadcaster->send(ahrs_msg);
     g_state.last_ahrs_send_bytes = sent;
     if (sent >= 0) {
@@ -2021,14 +2021,15 @@ float FlightLoopCallback(float in_elapsed_since_last_call,
   return -1.0f;
 }
 
-void MenuHandlerCallback(void* in_menu_ref, void* in_item_ref) {
+void MenuHandlerCallback(void *in_menu_ref, void *in_item_ref) {
   (void)in_menu_ref;
 
   const intptr_t item = reinterpret_cast<intptr_t>(in_item_ref);
   if (item != 1) {
     if (item == 2) {
-      const int visible =
-          g_state.settings_window ? XPLMGetWindowIsVisible(g_state.settings_window) : 0;
+      const int visible = g_state.settings_window
+                              ? XPLMGetWindowIsVisible(g_state.settings_window)
+                              : 0;
       ShowSettingsWindow(visible == 0);
     } else if (item == 3) {
       ReloadSettingsFromDisk();
@@ -2043,4 +2044,4 @@ void MenuHandlerCallback(void* in_menu_ref, void* in_item_ref) {
   }
 }
 
-}  // namespace
+} // namespace

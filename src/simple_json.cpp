@@ -1,8 +1,8 @@
 #include "xp2gdl90/simple_json.h"
 
 #include <cctype>
-#include <cstdint>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <limits>
 
@@ -10,11 +10,11 @@ namespace xp2gdl90::json {
 namespace {
 
 struct Cursor {
-  const char* p = nullptr;
-  const char* end = nullptr;
+  const char *p = nullptr;
+  const char *end = nullptr;
 };
 
-void SkipWhitespace(Cursor* cursor) {
+void SkipWhitespace(Cursor *cursor) {
   while (cursor->p < cursor->end) {
     const unsigned char ch = static_cast<unsigned char>(*cursor->p);
     if (ch != ' ' && ch != '\t' && ch != '\r' && ch != '\n') {
@@ -24,7 +24,7 @@ void SkipWhitespace(Cursor* cursor) {
   }
 }
 
-bool Consume(Cursor* cursor, char expected) {
+bool Consume(Cursor *cursor, char expected) {
   SkipWhitespace(cursor);
   if (cursor->p >= cursor->end || *cursor->p != expected) {
     return false;
@@ -33,7 +33,7 @@ bool Consume(Cursor* cursor, char expected) {
   return true;
 }
 
-bool ParseHexNibble(char ch, uint8_t* out_value) {
+bool ParseHexNibble(char ch, uint8_t *out_value) {
   if (!out_value) {
     return false;
   }
@@ -52,7 +52,7 @@ bool ParseHexNibble(char ch, uint8_t* out_value) {
   return false;
 }
 
-void AppendUtf8(std::string* out, uint32_t codepoint) {
+void AppendUtf8(std::string *out, uint32_t codepoint) {
   if (!out) {
     return;
   }
@@ -73,7 +73,7 @@ void AppendUtf8(std::string* out, uint32_t codepoint) {
   }
 }
 
-bool ParseUnicodeEscape(Cursor* cursor, uint32_t* out_codepoint,
+bool ParseUnicodeEscape(Cursor *cursor, uint32_t *out_codepoint,
                         bool allow_low_surrogate = false) {
   if (!out_codepoint || cursor->end - cursor->p < 4) {
     return false;
@@ -87,11 +87,10 @@ bool ParseUnicodeEscape(Cursor* cursor, uint32_t* out_codepoint,
   }
   cursor->p += 4;
 
-  uint32_t codepoint =
-      (static_cast<uint32_t>(nibbles[0]) << 12) |
-      (static_cast<uint32_t>(nibbles[1]) << 8) |
-      (static_cast<uint32_t>(nibbles[2]) << 4) |
-      static_cast<uint32_t>(nibbles[3]);
+  uint32_t codepoint = (static_cast<uint32_t>(nibbles[0]) << 12) |
+                       (static_cast<uint32_t>(nibbles[1]) << 8) |
+                       (static_cast<uint32_t>(nibbles[2]) << 4) |
+                       static_cast<uint32_t>(nibbles[3]);
 
   if (codepoint < 0xD800 || codepoint > 0xDFFF) {
     *out_codepoint = codepoint;
@@ -123,8 +122,8 @@ bool ParseUnicodeEscape(Cursor* cursor, uint32_t* out_codepoint,
   return true;
 }
 
-bool ParseString(Cursor* cursor, std::string* out_string,
-                 std::string* out_error) {
+bool ParseString(Cursor *cursor, std::string *out_string,
+                 std::string *out_error) {
   if (!Consume(cursor, '"')) {
     if (out_error) {
       *out_error = "Expected '\"' to start JSON string";
@@ -159,42 +158,42 @@ bool ParseString(Cursor* cursor, std::string* out_string,
 
     const char escape = *cursor->p++;
     switch (escape) {
-      case '"':
-      case '\\':
-      case '/':
-        result.push_back(escape);
-        break;
-      case 'b':
-        result.push_back('\b');
-        break;
-      case 'f':
-        result.push_back('\f');
-        break;
-      case 'n':
-        result.push_back('\n');
-        break;
-      case 'r':
-        result.push_back('\r');
-        break;
-      case 't':
-        result.push_back('\t');
-        break;
-      case 'u': {
-        uint32_t codepoint = 0;
-        if (!ParseUnicodeEscape(cursor, &codepoint)) {
-          if (out_error) {
-            *out_error = "Invalid JSON unicode escape";
-          }
-          return false;
-        }
-        AppendUtf8(&result, codepoint);
-        break;
-      }
-      default:
+    case '"':
+    case '\\':
+    case '/':
+      result.push_back(escape);
+      break;
+    case 'b':
+      result.push_back('\b');
+      break;
+    case 'f':
+      result.push_back('\f');
+      break;
+    case 'n':
+      result.push_back('\n');
+      break;
+    case 'r':
+      result.push_back('\r');
+      break;
+    case 't':
+      result.push_back('\t');
+      break;
+    case 'u': {
+      uint32_t codepoint = 0;
+      if (!ParseUnicodeEscape(cursor, &codepoint)) {
         if (out_error) {
-          *out_error = "Invalid JSON string escape";
+          *out_error = "Invalid JSON unicode escape";
         }
         return false;
+      }
+      AppendUtf8(&result, codepoint);
+      break;
+    }
+    default:
+      if (out_error) {
+        *out_error = "Invalid JSON string escape";
+      }
+      return false;
     }
   }
 
@@ -204,7 +203,7 @@ bool ParseString(Cursor* cursor, std::string* out_string,
   return false;
 }
 
-bool ParseNumber(Cursor* cursor, double* out_number, std::string* out_error) {
+bool ParseNumber(Cursor *cursor, double *out_number, std::string *out_error) {
   SkipWhitespace(cursor);
   if (cursor->p >= cursor->end) {
     if (out_error) {
@@ -213,16 +212,15 @@ bool ParseNumber(Cursor* cursor, double* out_number, std::string* out_error) {
     return false;
   }
 
-  const char* start = cursor->p;
-  const char* p = start;
+  const char *start = cursor->p;
+  const char *p = start;
 
   if (*p == '-' || *p == '+') {
     ++p;
   }
 
   bool saw_digit = false;
-  while (p < cursor->end &&
-         std::isdigit(static_cast<unsigned char>(*p)) != 0) {
+  while (p < cursor->end && std::isdigit(static_cast<unsigned char>(*p)) != 0) {
     saw_digit = true;
     ++p;
   }
@@ -263,7 +261,7 @@ bool ParseNumber(Cursor* cursor, double* out_number, std::string* out_error) {
   }
 
   std::string text(start, p);
-  char* parse_end = nullptr;
+  char *parse_end = nullptr;
   const double value = std::strtod(text.c_str(), &parse_end);
   if (!parse_end || *parse_end != '\0' || !std::isfinite(value)) {
     if (out_error) {
@@ -277,9 +275,9 @@ bool ParseNumber(Cursor* cursor, double* out_number, std::string* out_error) {
   return true;
 }
 
-bool ParseValue(Cursor* cursor, Value* out_value, std::string* out_error);
+bool ParseValue(Cursor *cursor, Value *out_value, std::string *out_error);
 
-bool ParseArray(Cursor* cursor, Value* out_value, std::string* out_error) {
+bool ParseArray(Cursor *cursor, Value *out_value, std::string *out_error) {
   if (!Consume(cursor, '[')) {
     if (out_error) {
       *out_error = "Expected '[' to start JSON array";
@@ -327,7 +325,7 @@ bool ParseArray(Cursor* cursor, Value* out_value, std::string* out_error) {
   }
 }
 
-bool ParseObject(Cursor* cursor, Value* out_value, std::string* out_error) {
+bool ParseObject(Cursor *cursor, Value *out_value, std::string *out_error) {
   if (!Consume(cursor, '{')) {
     if (out_error) {
       *out_error = "Expected '{' to start JSON object";
@@ -386,8 +384,8 @@ bool ParseObject(Cursor* cursor, Value* out_value, std::string* out_error) {
   }
 }
 
-bool ParseLiteral(Cursor* cursor, const char* literal) {
-  const char* p = literal;
+bool ParseLiteral(Cursor *cursor, const char *literal) {
+  const char *p = literal;
   while (*p != '\0') {
     if (cursor->p >= cursor->end || *cursor->p != *p) {
       return false;
@@ -398,7 +396,7 @@ bool ParseLiteral(Cursor* cursor, const char* literal) {
   return true;
 }
 
-bool ParseValue(Cursor* cursor, Value* out_value, std::string* out_error) {
+bool ParseValue(Cursor *cursor, Value *out_value, std::string *out_error) {
   SkipWhitespace(cursor);
   if (cursor->p >= cursor->end) {
     if (out_error) {
@@ -408,47 +406,47 @@ bool ParseValue(Cursor* cursor, Value* out_value, std::string* out_error) {
   }
 
   switch (*cursor->p) {
-    case '{':
-      return ParseObject(cursor, out_value, out_error);
-    case '[':
-      return ParseArray(cursor, out_value, out_error);
-    case '"': {
-      std::string value;
-      if (!ParseString(cursor, &value, out_error)) {
-        return false;
-      }
-      out_value->type = Type::String;
-      out_value->string_value = std::move(value);
-      out_value->object_values.clear();
-      out_value->array_values.clear();
-      return true;
+  case '{':
+    return ParseObject(cursor, out_value, out_error);
+  case '[':
+    return ParseArray(cursor, out_value, out_error);
+  case '"': {
+    std::string value;
+    if (!ParseString(cursor, &value, out_error)) {
+      return false;
     }
-    case 't':
-      if (!ParseLiteral(cursor, "true")) {
-        break;
-      }
-      out_value->type = Type::Bool;
-      out_value->bool_value = true;
-      out_value->object_values.clear();
-      out_value->array_values.clear();
-      return true;
-    case 'f':
-      if (!ParseLiteral(cursor, "false")) {
-        break;
-      }
-      out_value->type = Type::Bool;
-      out_value->bool_value = false;
-      out_value->object_values.clear();
-      out_value->array_values.clear();
-      return true;
-    case 'n':
-      if (!ParseLiteral(cursor, "null")) {
-        break;
-      }
-      *out_value = Value{};
-      return true;
-    default:
+    out_value->type = Type::String;
+    out_value->string_value = std::move(value);
+    out_value->object_values.clear();
+    out_value->array_values.clear();
+    return true;
+  }
+  case 't':
+    if (!ParseLiteral(cursor, "true")) {
       break;
+    }
+    out_value->type = Type::Bool;
+    out_value->bool_value = true;
+    out_value->object_values.clear();
+    out_value->array_values.clear();
+    return true;
+  case 'f':
+    if (!ParseLiteral(cursor, "false")) {
+      break;
+    }
+    out_value->type = Type::Bool;
+    out_value->bool_value = false;
+    out_value->object_values.clear();
+    out_value->array_values.clear();
+    return true;
+  case 'n':
+    if (!ParseLiteral(cursor, "null")) {
+      break;
+    }
+    *out_value = Value{};
+    return true;
+  default:
+    break;
   }
 
   double number_value = 0.0;
@@ -463,13 +461,13 @@ bool ParseValue(Cursor* cursor, Value* out_value, std::string* out_error) {
   return true;
 }
 
-}  // namespace
+} // namespace
 
-const Value* Value::Find(std::string_view key) const {
+const Value *Value::Find(std::string_view key) const {
   if (type != Type::Object) {
     return nullptr;
   }
-  for (const auto& entry : object_values) {
+  for (const auto &entry : object_values) {
     if (entry.first == key) {
       return &entry.second;
     }
@@ -477,7 +475,7 @@ const Value* Value::Find(std::string_view key) const {
   return nullptr;
 }
 
-bool Parse(std::string_view text, Value* out_value, std::string* out_error) {
+bool Parse(std::string_view text, Value *out_value, std::string *out_error) {
   if (!out_value) {
     if (out_error) {
       *out_error = "Output JSON value is required";
@@ -513,40 +511,40 @@ std::string EscapeString(std::string_view input) {
   static const char kHex[] = "0123456789ABCDEF";
   for (const unsigned char ch : input) {
     switch (ch) {
-      case '\\':
-        output += "\\\\";
-        break;
-      case '"':
-        output += "\\\"";
-        break;
-      case '\b':
-        output += "\\b";
-        break;
-      case '\f':
-        output += "\\f";
-        break;
-      case '\n':
-        output += "\\n";
-        break;
-      case '\r':
-        output += "\\r";
-        break;
-      case '\t':
-        output += "\\t";
-        break;
-      default:
-        if (ch < 0x20) {
-          output += "\\u00";
-          output.push_back(kHex[(ch >> 4) & 0x0F]);
-          output.push_back(kHex[ch & 0x0F]);
-        } else {
-          output.push_back(static_cast<char>(ch));
-        }
-        break;
+    case '\\':
+      output += "\\\\";
+      break;
+    case '"':
+      output += "\\\"";
+      break;
+    case '\b':
+      output += "\\b";
+      break;
+    case '\f':
+      output += "\\f";
+      break;
+    case '\n':
+      output += "\\n";
+      break;
+    case '\r':
+      output += "\\r";
+      break;
+    case '\t':
+      output += "\\t";
+      break;
+    default:
+      if (ch < 0x20) {
+        output += "\\u00";
+        output.push_back(kHex[(ch >> 4) & 0x0F]);
+        output.push_back(kHex[ch & 0x0F]);
+      } else {
+        output.push_back(static_cast<char>(ch));
+      }
+      break;
     }
   }
 
   return output;
 }
 
-}  // namespace xp2gdl90::json
+} // namespace xp2gdl90::json

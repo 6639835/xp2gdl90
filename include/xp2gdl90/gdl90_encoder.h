@@ -16,7 +16,7 @@
 namespace gdl90 {
 
 using UtcTimeProvider = std::function<uint32_t()>;
-using CheckedUtcTimeProvider = std::function<bool(uint32_t*)>;
+using CheckedUtcTimeProvider = std::function<bool(uint32_t *)>;
 
 constexpr uint8_t MSG_ID_HEARTBEAT = 0x00;
 constexpr uint8_t MSG_ID_OWNSHIP_REPORT = 0x0A;
@@ -88,7 +88,7 @@ struct GeoAltitudeData {
 };
 
 class GDL90Encoder {
- public:
+public:
   GDL90Encoder();
   explicit GDL90Encoder(UtcTimeProvider utc_time_provider);
   explicit GDL90Encoder(CheckedUtcTimeProvider utc_time_provider);
@@ -96,12 +96,12 @@ class GDL90Encoder {
 
   std::vector<uint8_t> createHeartbeat(bool gps_valid = true,
                                        bool utc_ok = true) const;
-  std::vector<uint8_t> createOwnshipReport(const PositionData& data) const;
-  std::vector<uint8_t> createOwnshipGeometricAltitude(
-      const GeoAltitudeData& data) const;
-  std::vector<uint8_t> createTrafficReport(const PositionData& data) const;
+  std::vector<uint8_t> createOwnshipReport(const PositionData &data) const;
+  std::vector<uint8_t>
+  createOwnshipGeometricAltitude(const GeoAltitudeData &data) const;
+  std::vector<uint8_t> createTrafficReport(const PositionData &data) const;
 
- private:
+private:
   CheckedUtcTimeProvider utc_time_provider_;
 
   uint32_t encodeLatitude(double latitude) const;
@@ -113,10 +113,10 @@ class GDL90Encoder {
   uint16_t encodeGeoVerticalMetrics(bool vertical_warning,
                                     uint16_t vfom_meters) const;
   std::vector<uint8_t> createPositionReport(uint8_t msg_id,
-                                            const PositionData& data) const;
-  bool getUTCTime(uint32_t* out_time) const;
+                                            const PositionData &data) const;
+  bool getUTCTime(uint32_t *out_time) const;
 };
 
-}  // namespace gdl90
+} // namespace gdl90
 
-#endif  // GDL90_ENCODER_H
+#endif // GDL90_ENCODER_H

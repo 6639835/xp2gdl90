@@ -15,7 +15,7 @@ std::string MakeControlString(char ch) {
   return text;
 }
 
-}  // namespace
+} // namespace
 
 TEST_CASE("Simple JSON parses composite values and supports object lookup") {
   xp2gdl90::json::Value value;
@@ -34,7 +34,8 @@ TEST_CASE("Simple JSON parses composite values and supports object lookup") {
   ASSERT_TRUE(!value.Find("lie")->bool_value);
   ASSERT_TRUE(value.Find("nothing")->IsNull());
   ASSERT_TRUE(value.Find("array")->IsArray());
-  ASSERT_EQ(3.0, value.Find("array")->array_values[2].Find("nested")->number_value);
+  ASSERT_EQ(3.0,
+            value.Find("array")->array_values[2].Find("nested")->number_value);
   ASSERT_EQ(4.0, value.Find("object")->Find("child")->number_value);
 
   const xp2gdl90::json::Value scalar;
@@ -90,9 +91,8 @@ TEST_CASE("Simple JSON parses signed numeric formats") {
 }
 
 TEST_CASE("Simple JSON escape helper covers control characters") {
-  const std::string input =
-      std::string("\\\"\b\f\n\r\t") + std::string(1, static_cast<char>(0x01)) +
-      "A";
+  const std::string input = std::string("\\\"\b\f\n\r\t") +
+                            std::string(1, static_cast<char>(0x01)) + "A";
   ASSERT_EQ(std::string("\\\\\\\"\\b\\f\\n\\r\\t\\u0001A"),
             xp2gdl90::json::EscapeString(input));
 }
@@ -104,28 +104,26 @@ TEST_CASE("Simple JSON reports required output and trailing text") {
 
   xp2gdl90::json::Value value;
   ASSERT_TRUE(!xp2gdl90::json::Parse("null x", &value, &error));
-  ASSERT_TRUE(
-      error.find("Unexpected trailing characters after JSON value") !=
-      std::string::npos);
+  ASSERT_TRUE(error.find("Unexpected trailing characters after JSON value") !=
+              std::string::npos);
 }
 
 TEST_CASE("Simple JSON reports string parsing failures") {
   xp2gdl90::json::Value value;
   std::string error;
 
-  ASSERT_TRUE(!xp2gdl90::json::Parse(MakeControlString('\x01'), &value, &error));
   ASSERT_TRUE(
-      error.find("JSON strings cannot contain control characters") !=
-      std::string::npos);
+      !xp2gdl90::json::Parse(MakeControlString('\x01'), &value, &error));
+  ASSERT_TRUE(error.find("JSON strings cannot contain control characters") !=
+              std::string::npos);
 
   ASSERT_TRUE(!xp2gdl90::json::Parse("\"unterminated", &value, &error));
   ASSERT_TRUE(error.find("Unexpected end of input in JSON string") !=
               std::string::npos);
 
   ASSERT_TRUE(!xp2gdl90::json::Parse("\"\\", &value, &error));
-  ASSERT_TRUE(
-      error.find("Unexpected end of input in JSON string escape") !=
-      std::string::npos);
+  ASSERT_TRUE(error.find("Unexpected end of input in JSON string escape") !=
+              std::string::npos);
 
   ASSERT_TRUE(!xp2gdl90::json::Parse("\"\\x\"", &value, &error));
   ASSERT_TRUE(error.find("Invalid JSON string escape") != std::string::npos);
@@ -148,9 +146,8 @@ TEST_CASE("Simple JSON reports number parsing failures") {
   std::string error;
 
   ASSERT_TRUE(!xp2gdl90::json::Parse("", &value, &error));
-  ASSERT_TRUE(
-      error.find("Unexpected end of input while parsing JSON value") !=
-      std::string::npos);
+  ASSERT_TRUE(error.find("Unexpected end of input while parsing JSON value") !=
+              std::string::npos);
 
   ASSERT_TRUE(!xp2gdl90::json::Parse("+", &value, &error));
   ASSERT_TRUE(error.find("Invalid JSON number") != std::string::npos);
@@ -162,9 +159,8 @@ TEST_CASE("Simple JSON reports number parsing failures") {
   ASSERT_TRUE(error.find("Invalid JSON number") != std::string::npos);
 
   ASSERT_TRUE(!xp2gdl90::json::Parse("tru", &value, &error));
-  ASSERT_TRUE(
-      error.find("Unexpected end of input while parsing JSON number") !=
-      std::string::npos);
+  ASSERT_TRUE(error.find("Unexpected end of input while parsing JSON number") !=
+              std::string::npos);
 
   ASSERT_TRUE(!xp2gdl90::json::Parse("tx", &value, &error));
   ASSERT_TRUE(error.find("Invalid JSON number") != std::string::npos);
@@ -181,9 +177,8 @@ TEST_CASE("Simple JSON reports array parsing failures") {
   std::string error;
 
   ASSERT_TRUE(!xp2gdl90::json::Parse("[ ", &value, &error));
-  ASSERT_TRUE(
-      error.find("Unexpected end of input while parsing JSON value") !=
-      std::string::npos);
+  ASSERT_TRUE(error.find("Unexpected end of input while parsing JSON value") !=
+              std::string::npos);
 
   ASSERT_TRUE(!xp2gdl90::json::Parse("[1", &value, &error));
   ASSERT_TRUE(error.find("Unexpected end of input in JSON array") !=

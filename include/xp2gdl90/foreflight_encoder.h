@@ -34,15 +34,15 @@ struct AhrsData {
 };
 
 class ForeFlightEncoder {
- public:
-  std::vector<uint8_t> createIdMessage(const DeviceInfo& data) const;
-  std::vector<uint8_t> createAhrsMessage(const AhrsData& data) const;
+public:
+  std::vector<uint8_t> createIdMessage(const DeviceInfo &data) const;
+  std::vector<uint8_t> createAhrsMessage(const AhrsData &data) const;
 
- private:
+private:
   int16_t encodeAhrsAttitude(double degrees) const;
   uint16_t encodeAhrsHeading(double degrees, bool magnetic_heading) const;
 };
 
-}  // namespace gdl90::foreflight
+} // namespace gdl90::foreflight
 
-#endif  // FOREFLIGHT_ENCODER_H
+#endif // FOREFLIGHT_ENCODER_H

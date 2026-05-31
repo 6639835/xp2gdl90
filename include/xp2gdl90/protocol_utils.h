@@ -17,6 +17,6 @@ bool IsValidEmitterCategory(uint8_t value);
 
 bool HasValidOwnshipPosition(double latitude, double longitude);
 
-}  // namespace xp2gdl90::protocol
+} // namespace xp2gdl90::protocol
 
-#endif  // XP2GDL90_PROTOCOL_UTILS_H
+#endif // XP2GDL90_PROTOCOL_UTILS_H

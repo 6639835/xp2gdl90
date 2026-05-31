@@ -59,7 +59,7 @@ uint8_t EncodeTrack(uint16_t track) {
   return static_cast<uint8_t>((track % 360) * 256 / 360);
 }
 
-}  // namespace
+} // namespace
 
 TEST_CASE("Heartbeat encoding sets flags and CRC") {
   gdl90::GDL90Encoder encoder;
@@ -99,7 +99,7 @@ TEST_CASE("Heartbeat encoding sets timestamp high-bit flag") {
 }
 
 TEST_CASE("Heartbeat clears UTC OK when time provider reports failure") {
-  gdl90::GDL90Encoder encoder([](uint32_t* out_time) {
+  gdl90::GDL90Encoder encoder([](uint32_t *out_time) {
     if (out_time) {
       *out_time = 0;
     }
@@ -112,13 +112,16 @@ TEST_CASE("Heartbeat clears UTC OK when time provider reports failure") {
   ASSERT_EQ(static_cast<uint8_t>(0x00), payload[2] & 0x01);
 }
 
-TEST_CASE("Heartbeat handles missing UTC provider and null checked callback output") {
+TEST_CASE(
+    "Heartbeat handles missing UTC provider and null checked callback output") {
   gdl90::GDL90Encoder missing_provider(gdl90::UtcTimeProvider{});
-  const auto missing_provider_msg = missing_provider.createHeartbeat(true, true);
-  const auto missing_payload = xp2gdl90::test::ExtractPayload(missing_provider_msg);
+  const auto missing_provider_msg =
+      missing_provider.createHeartbeat(true, true);
+  const auto missing_payload =
+      xp2gdl90::test::ExtractPayload(missing_provider_msg);
   ASSERT_EQ(static_cast<uint8_t>(0x00), missing_payload[2] & 0x01);
 
-  gdl90::CheckedUtcTimeProvider checked_provider = [](uint32_t* out_time) {
+  gdl90::CheckedUtcTimeProvider checked_provider = [](uint32_t *out_time) {
     return out_time != nullptr;
   };
   ASSERT_TRUE(!checked_provider(nullptr));
@@ -242,9 +245,12 @@ TEST_CASE("Ownship geometric altitude encodes altitude and vertical metrics") {
   const auto payload = xp2gdl90::test::ExtractPayload(message);
 
   ASSERT_EQ(static_cast<size_t>(5), payload.size());
-  ASSERT_EQ(static_cast<uint8_t>(gdl90::MSG_ID_OWNSHIP_GEO_ALTITUDE), payload[0]);
-  ASSERT_EQ(static_cast<uint16_t>(0x00C8), xp2gdl90::test::Decode16BE(payload, 1));
-  ASSERT_EQ(static_cast<uint16_t>(0x8032), xp2gdl90::test::Decode16BE(payload, 3));
+  ASSERT_EQ(static_cast<uint8_t>(gdl90::MSG_ID_OWNSHIP_GEO_ALTITUDE),
+            payload[0]);
+  ASSERT_EQ(static_cast<uint16_t>(0x00C8),
+            xp2gdl90::test::Decode16BE(payload, 1));
+  ASSERT_EQ(static_cast<uint16_t>(0x8032),
+            xp2gdl90::test::Decode16BE(payload, 3));
 }
 
 TEST_CASE("Ownship geometric altitude clamps VFOM and altitude bounds") {
@@ -257,12 +263,14 @@ TEST_CASE("Ownship geometric altitude clamps VFOM and altitude bounds") {
   const auto message = encoder.createOwnshipGeometricAltitude(data);
   const auto payload = xp2gdl90::test::ExtractPayload(message);
 
-  ASSERT_EQ(static_cast<uint16_t>(0x7FFF), xp2gdl90::test::Decode16BE(payload, 1));
+  ASSERT_EQ(static_cast<uint16_t>(0x7FFF),
+            xp2gdl90::test::Decode16BE(payload, 1));
   ASSERT_EQ(static_cast<uint16_t>(gdl90::GEO_ALTITUDE_VFOM_EXCESSIVE),
             xp2gdl90::test::Decode16BE(payload, 3));
 }
 
-TEST_CASE("Ownship geometric altitude clamps low altitude and preserves invalid VFOM") {
+TEST_CASE("Ownship geometric altitude clamps low altitude and preserves "
+          "invalid VFOM") {
   gdl90::GDL90Encoder encoder;
   gdl90::GeoAltitudeData data{};
   data.altitude_feet = std::numeric_limits<int32_t>::min();
@@ -272,7 +280,8 @@ TEST_CASE("Ownship geometric altitude clamps low altitude and preserves invalid 
   const auto message = encoder.createOwnshipGeometricAltitude(data);
   const auto payload = xp2gdl90::test::ExtractPayload(message);
 
-  ASSERT_EQ(static_cast<uint16_t>(0x8000), xp2gdl90::test::Decode16BE(payload, 1));
+  ASSERT_EQ(static_cast<uint16_t>(0x8000),
+            xp2gdl90::test::Decode16BE(payload, 1));
   ASSERT_EQ(static_cast<uint16_t>(gdl90::GEO_ALTITUDE_VFOM_INVALID),
             xp2gdl90::test::Decode16BE(payload, 3));
 }

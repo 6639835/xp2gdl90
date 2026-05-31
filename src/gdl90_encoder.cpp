@@ -17,7 +17,7 @@ GDL90Encoder::GDL90Encoder() = default;
 
 GDL90Encoder::GDL90Encoder(UtcTimeProvider utc_time_provider)
     : utc_time_provider_(
-          [provider = std::move(utc_time_provider)](uint32_t* out_time) {
+          [provider = std::move(utc_time_provider)](uint32_t *out_time) {
             if (!out_time || !provider) {
               return false;
             }
@@ -31,8 +31,7 @@ GDL90Encoder::GDL90Encoder(CheckedUtcTimeProvider utc_time_provider)
 uint32_t GDL90Encoder::encodeLatitude(double latitude) const {
   latitude = std::max(-90.0, std::min(90.0, latitude));
 
-  int32_t value =
-      static_cast<int32_t>(latitude * (0x800000 / 180.0));
+  int32_t value = static_cast<int32_t>(latitude * (0x800000 / 180.0));
   if (value < 0) {
     value = (0x1000000 + value) & 0xFFFFFF;
   }
@@ -43,8 +42,7 @@ uint32_t GDL90Encoder::encodeLatitude(double latitude) const {
 uint32_t GDL90Encoder::encodeLongitude(double longitude) const {
   longitude = std::max(-180.0, std::min(180.0, longitude));
 
-  int32_t value =
-      static_cast<int32_t>(longitude * (0x800000 / 180.0));
+  int32_t value = static_cast<int32_t>(longitude * (0x800000 / 180.0));
   if (value < 0) {
     value = (0x1000000 + value) & 0xFFFFFF;
   }
@@ -120,7 +118,7 @@ uint16_t GDL90Encoder::encodeGeoVerticalMetrics(bool vertical_warning,
   return encoded_vfom;
 }
 
-bool GDL90Encoder::getUTCTime(uint32_t* out_time) const {
+bool GDL90Encoder::getUTCTime(uint32_t *out_time) const {
   if (!out_time) {
     return false;
   }
@@ -141,8 +139,8 @@ bool GDL90Encoder::getUTCTime(uint32_t* out_time) const {
 #else
   gmtime_r(&now, &utc);
 #endif
-  *out_time = static_cast<uint32_t>(utc.tm_hour * 3600 + utc.tm_min * 60 +
-                                    utc.tm_sec);
+  *out_time =
+      static_cast<uint32_t>(utc.tm_hour * 3600 + utc.tm_min * 60 + utc.tm_sec);
   return true;
 }
 
@@ -179,8 +177,9 @@ std::vector<uint8_t> GDL90Encoder::createHeartbeat(bool gps_valid,
   return internal::PrepareMessage(payload);
 }
 
-std::vector<uint8_t> GDL90Encoder::createPositionReport(
-    uint8_t msg_id, const PositionData& data) const {
+std::vector<uint8_t>
+GDL90Encoder::createPositionReport(uint8_t msg_id,
+                                   const PositionData &data) const {
   std::vector<uint8_t> payload;
   payload.reserve(28);
 
@@ -196,10 +195,9 @@ std::vector<uint8_t> GDL90Encoder::createPositionReport(
   internal::Pack24Bit(payload, encodeLongitude(data.longitude));
 
   const uint16_t altitude = encodeAltitude(data.altitude);
-  const uint8_t misc =
-      static_cast<uint8_t>((static_cast<uint8_t>(data.airborne) << 3) |
-                           (0 << 2) |
-                           (static_cast<uint8_t>(data.track_type) & 0x03));
+  const uint8_t misc = static_cast<uint8_t>(
+      (static_cast<uint8_t>(data.airborne) << 3) | (0 << 2) |
+      (static_cast<uint8_t>(data.track_type) & 0x03));
 
   payload.push_back(static_cast<uint8_t>((altitude >> 4) & 0xFF));
   payload.push_back(static_cast<uint8_t>(((altitude & 0x0F) << 4) | misc));
@@ -214,8 +212,8 @@ std::vector<uint8_t> GDL90Encoder::createPositionReport(
   const uint16_t v_vel = encodeVerticalVelocity(data.v_velocity);
 
   payload.push_back(static_cast<uint8_t>((h_vel >> 4) & 0xFF));
-  payload.push_back(static_cast<uint8_t>(((h_vel & 0x0F) << 4) |
-                                         ((v_vel >> 8) & 0x0F)));
+  payload.push_back(
+      static_cast<uint8_t>(((h_vel & 0x0F) << 4) | ((v_vel >> 8) & 0x0F)));
   payload.push_back(static_cast<uint8_t>(v_vel & 0xFF));
 
   payload.push_back(encodeTrack(data.track));
@@ -232,13 +230,13 @@ std::vector<uint8_t> GDL90Encoder::createPositionReport(
   return internal::PrepareMessage(payload);
 }
 
-std::vector<uint8_t> GDL90Encoder::createOwnshipReport(
-    const PositionData& data) const {
+std::vector<uint8_t>
+GDL90Encoder::createOwnshipReport(const PositionData &data) const {
   return createPositionReport(MSG_ID_OWNSHIP_REPORT, data);
 }
 
 std::vector<uint8_t> GDL90Encoder::createOwnshipGeometricAltitude(
-    const GeoAltitudeData& data) const {
+    const GeoAltitudeData &data) const {
   std::vector<uint8_t> payload;
   payload.reserve(5);
 
@@ -246,14 +244,15 @@ std::vector<uint8_t> GDL90Encoder::createOwnshipGeometricAltitude(
   internal::AppendBigEndian16(
       payload, static_cast<uint16_t>(encodeGeoAltitude(data.altitude_feet)));
   internal::AppendBigEndian16(
-      payload, encodeGeoVerticalMetrics(data.vertical_warning, data.vfom_meters));
+      payload,
+      encodeGeoVerticalMetrics(data.vertical_warning, data.vfom_meters));
 
   return internal::PrepareMessage(payload);
 }
 
-std::vector<uint8_t> GDL90Encoder::createTrafficReport(
-    const PositionData& data) const {
+std::vector<uint8_t>
+GDL90Encoder::createTrafficReport(const PositionData &data) const {
   return createPositionReport(MSG_ID_TRAFFIC_REPORT, data);
 }
 
-}  // namespace gdl90
+} // namespace gdl90

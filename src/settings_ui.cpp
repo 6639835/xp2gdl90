@@ -9,7 +9,7 @@
 namespace xp2gdl90 {
 namespace {
 
-std::string Trim(const char* text) {
+std::string Trim(const char *text) {
   if (!text) {
     return "";
   }
@@ -19,8 +19,8 @@ std::string Trim(const char* text) {
     return std::isspace(ch) == 0;
   });
   auto last = std::find_if(value.rbegin(), value.rend(), [](unsigned char ch) {
-    return std::isspace(ch) == 0;
-  }).base();
+                return std::isspace(ch) == 0;
+              }).base();
 
   if (first >= last) {
     return "";
@@ -28,7 +28,7 @@ std::string Trim(const char* text) {
   return std::string(first, last);
 }
 
-bool ParseHex24(const char* text, uint32_t* out_value) {
+bool ParseHex24(const char *text, uint32_t *out_value) {
   if (!text || !out_value) {
     return false;
   }
@@ -39,18 +39,18 @@ bool ParseHex24(const char* text, uint32_t* out_value) {
   }
 
   try {
-    *out_value = static_cast<uint32_t>(std::stoul(trimmed, nullptr, 16)) &
-                 0xFFFFFFu;
+    *out_value =
+        static_cast<uint32_t>(std::stoul(trimmed, nullptr, 16)) & 0xFFFFFFu;
     return true;
   } catch (...) {
     return false;
   }
 }
 
-}  // namespace
+} // namespace
 
-void SyncSettingsUiFromConfig(SettingsUiState* ui_state,
-                              const Settings& settings) {
+void SyncSettingsUiFromConfig(SettingsUiState *ui_state,
+                              const Settings &settings) {
   if (!ui_state) {
     return;
   }
@@ -61,7 +61,8 @@ void SyncSettingsUiFromConfig(SettingsUiState* ui_state,
   ui_state->foreflight_auto_discovery = settings.foreflight_auto_discovery;
   ui_state->foreflight_broadcast_port =
       static_cast<int>(settings.foreflight_broadcast_port);
-  std::snprintf(ui_state->icao_address, sizeof(ui_state->icao_address), "0x%06X",
+  std::snprintf(ui_state->icao_address, sizeof(ui_state->icao_address),
+                "0x%06X",
                 static_cast<unsigned int>(settings.icao_address & 0xFFFFFFu));
   std::snprintf(ui_state->callsign, sizeof(ui_state->callsign), "%s",
                 settings.callsign.c_str());
@@ -80,14 +81,13 @@ void SyncSettingsUiFromConfig(SettingsUiState* ui_state,
   ui_state->log_messages = settings.log_messages;
 }
 
-void LoadDefaultSettingsUiState(SettingsUiState* ui_state) {
+void LoadDefaultSettingsUiState(SettingsUiState *ui_state) {
   SyncSettingsUiFromConfig(ui_state, Settings{});
 }
 
-bool BuildConfigFromSettingsUi(const SettingsUiState& ui_state,
-                               const Settings& base_settings,
-                               Settings* out_settings,
-                               std::string* out_error) {
+bool BuildConfigFromSettingsUi(const SettingsUiState &ui_state,
+                               const Settings &base_settings,
+                               Settings *out_settings, std::string *out_error) {
   if (!out_settings) {
     if (out_error) {
       *out_error = "Output settings object is required";
@@ -203,4 +203,4 @@ bool BuildConfigFromSettingsUi(const SettingsUiState& ui_state,
   return true;
 }
 
-}  // namespace xp2gdl90
+} // namespace xp2gdl90

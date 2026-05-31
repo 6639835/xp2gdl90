@@ -6,9 +6,9 @@
 
 namespace xp2gdl90::foreflight {
 
-bool ParseDiscoveryBroadcast(const std::vector<uint8_t>& packet,
-                             uint16_t* out_port);
+bool ParseDiscoveryBroadcast(const std::vector<uint8_t> &packet,
+                             uint16_t *out_port);
 
-}  // namespace xp2gdl90::foreflight
+} // namespace xp2gdl90::foreflight
 
-#endif  // XP2GDL90_FOREFLIGHT_PROTOCOL_H
+#endif // XP2GDL90_FOREFLIGHT_PROTOCOL_H

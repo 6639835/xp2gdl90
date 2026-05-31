@@ -20,9 +20,9 @@ namespace detail {
 int xp2gdl90_test_default_socket_ops_startup();
 void xp2gdl90_test_default_socket_ops_cleanup();
 uintptr_t xp2gdl90_test_default_socket_ops_create_socket(int domain, int type,
-                                                        int protocol);
-}  // namespace detail
-}  // namespace udp
+                                                         int protocol);
+} // namespace detail
+} // namespace udp
 #endif
 
 namespace {
@@ -58,17 +58,18 @@ struct FakeSocketOps final : udp::detail::SocketOps {
     return create_socket_result;
   }
 
-  int SetSockOpt(uintptr_t, int, int, const void*, size_t) override {
+  int SetSockOpt(uintptr_t, int, int, const void *, size_t) override {
     ++setsockopt_calls;
     return setsockopt_result;
   }
 
-  int InetPton(int, const char*, void*) override {
+  int InetPton(int, const char *, void *) override {
     ++inet_pton_calls;
     return inet_pton_result;
   }
 
-  intptr_t SendTo(uintptr_t, const void*, size_t, int, const void*, size_t) override {
+  intptr_t SendTo(uintptr_t, const void *, size_t, int, const void *,
+                  size_t) override {
     ++sendto_calls;
     return sendto_result;
   }
@@ -82,7 +83,7 @@ struct FakeSocketOps final : udp::detail::SocketOps {
   int LastError() override { return last_error_value; }
 };
 
-}  // namespace
+} // namespace
 
 TEST_CASE("UDPBroadcaster send fails when not initialized") {
   udp::UDPBroadcaster broadcaster("127.0.0.1", 4000);
@@ -172,7 +173,7 @@ TEST_CASE("Default socket ops create socket failure path works") {
 
 #if !defined(_WIN32)
 TEST_CASE("Default POSIX socket ops report invalid operation failures") {
-  udp::detail::SocketOps& ops = udp::detail::DefaultSocketOps();
+  udp::detail::SocketOps &ops = udp::detail::DefaultSocketOps();
   ASSERT_EQ(0, ops.Startup());
 
   int broadcast = 1;
@@ -183,9 +184,9 @@ TEST_CASE("Default POSIX socket ops report invalid operation failures") {
   ASSERT_EQ(0, ops.InetPton(AF_INET, "not-an-ip", &target_addr.sin_addr));
 
   const uint8_t payload = 0x42;
-  ASSERT_EQ(-1, ops.SendTo(udp::UDPBroadcaster::kInvalidSocket, &payload,
-                           sizeof(payload), 0, &target_addr,
-                           sizeof(target_addr)));
+  ASSERT_EQ(-1,
+            ops.SendTo(udp::UDPBroadcaster::kInvalidSocket, &payload,
+                       sizeof(payload), 0, &target_addr, sizeof(target_addr)));
 
   ASSERT_EQ(-1, ops.CloseSocket(udp::UDPBroadcaster::kInvalidSocket));
   ASSERT_NE(0, ops.LastError());

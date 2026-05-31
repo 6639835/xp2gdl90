@@ -27,13 +27,13 @@ struct SettingsUiState {
   bool log_messages = false;
 };
 
-void SyncSettingsUiFromConfig(SettingsUiState* ui_state, const Settings& settings);
-void LoadDefaultSettingsUiState(SettingsUiState* ui_state);
-bool BuildConfigFromSettingsUi(const SettingsUiState& ui_state,
-                               const Settings& base_settings,
-                               Settings* out_settings,
-                               std::string* out_error);
+void SyncSettingsUiFromConfig(SettingsUiState *ui_state,
+                              const Settings &settings);
+void LoadDefaultSettingsUiState(SettingsUiState *ui_state);
+bool BuildConfigFromSettingsUi(const SettingsUiState &ui_state,
+                               const Settings &base_settings,
+                               Settings *out_settings, std::string *out_error);
 
-}  // namespace xp2gdl90
+} // namespace xp2gdl90
 
-#endif  // XP2GDL90_SETTINGS_UI_H
+#endif // XP2GDL90_SETTINGS_UI_H

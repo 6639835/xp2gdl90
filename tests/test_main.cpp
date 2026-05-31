@@ -2,18 +2,18 @@
 
 int main() {
   int failures = 0;
-  const auto& tests = test_harness::Registry();
+  const auto &tests = test_harness::Registry();
 
   std::cout << "Running " << tests.size() << " tests\n";
-  for (const auto& test : tests) {
+  for (const auto &test : tests) {
     try {
       test.fn();
       std::cout << "[PASS] " << test.name << "\n";
-    } catch (const test_harness::AssertionFailure& failure) {
+    } catch (const test_harness::AssertionFailure &failure) {
       ++failures;
       std::cout << "[FAIL] " << test.name << "\n";
       std::cout << "  " << failure.what() << "\n";
-    } catch (const std::exception& ex) {
+    } catch (const std::exception &ex) {
       ++failures;
       std::cout << "[FAIL] " << test.name << "\n";
       std::cout << "  Unexpected exception: " << ex.what() << "\n";

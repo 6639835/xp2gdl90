@@ -36,7 +36,8 @@ TEST_CASE("Settings UI sync reflects config values") {
   ASSERT_EQ(std::string("N42"), std::string(ui_state.callsign));
   ASSERT_EQ(3, ui_state.emitter_category);
   ASSERT_EQ(std::string("XPTEST"), std::string(ui_state.device_name));
-  ASSERT_EQ(std::string("XP Test Device"), std::string(ui_state.device_long_name));
+  ASSERT_EQ(std::string("XP Test Device"),
+            std::string(ui_state.device_long_name));
   ASSERT_EQ(1, ui_state.internet_policy);
   ASSERT_TRUE(ui_state.ahrs_use_magnetic_heading);
   ASSERT_EQ(5.0f, ui_state.heartbeat_rate);
@@ -66,10 +67,12 @@ TEST_CASE("Settings UI builder validates fields and trims text") {
   ui_state.target_port = 4000;
   ui_state.foreflight_auto_discovery = true;
   ui_state.foreflight_broadcast_port = 63093;
-  std::snprintf(ui_state.icao_address, sizeof(ui_state.icao_address), "0xABCDEF");
+  std::snprintf(ui_state.icao_address, sizeof(ui_state.icao_address),
+                "0xABCDEF");
   std::snprintf(ui_state.callsign, sizeof(ui_state.callsign), " N123456789 ");
   ui_state.emitter_category = 7;
-  std::snprintf(ui_state.device_name, sizeof(ui_state.device_name), " DEVICE01 ");
+  std::snprintf(ui_state.device_name, sizeof(ui_state.device_name),
+                " DEVICE01 ");
   std::snprintf(ui_state.device_long_name, sizeof(ui_state.device_long_name),
                 " Long Device Name ");
   ui_state.internet_policy = 2;
@@ -109,7 +112,8 @@ TEST_CASE("Settings UI builder rejects invalid numeric ranges") {
   std::snprintf(ui_state.target_ip, sizeof(ui_state.target_ip), "127.0.0.1");
   ui_state.target_port = 0;
   ui_state.foreflight_broadcast_port = 63093;
-  std::snprintf(ui_state.icao_address, sizeof(ui_state.icao_address), "0xABCDEF");
+  std::snprintf(ui_state.icao_address, sizeof(ui_state.icao_address),
+                "0xABCDEF");
   ui_state.emitter_category = 1;
   ui_state.internet_policy = 0;
   ui_state.heartbeat_rate = 1.0f;
@@ -124,7 +128,8 @@ TEST_CASE("Settings UI builder rejects invalid numeric ranges") {
   ASSERT_TRUE(error.find("Target port must be 1-65535") != std::string::npos);
 }
 
-TEST_CASE("Settings UI builder rejects invalid text and remaining numeric fields") {
+TEST_CASE(
+    "Settings UI builder rejects invalid text and remaining numeric fields") {
   xp2gdl90::SettingsUiState ui_state;
   xp2gdl90::LoadDefaultSettingsUiState(&ui_state);
   xp2gdl90::Settings built;
@@ -139,58 +144,53 @@ TEST_CASE("Settings UI builder rejects invalid text and remaining numeric fields
   std::snprintf(ui_state.target_ip, sizeof(ui_state.target_ip), "example.com");
   ASSERT_TRUE(!xp2gdl90::BuildConfigFromSettingsUi(
       ui_state, xp2gdl90::Settings{}, &built, &error));
-  ASSERT_TRUE(
-      error.find("Target IP must be a valid IPv4 address") != std::string::npos);
+  ASSERT_TRUE(error.find("Target IP must be a valid IPv4 address") !=
+              std::string::npos);
 
   xp2gdl90::LoadDefaultSettingsUiState(&ui_state);
   ui_state.foreflight_broadcast_port = 70000;
   ASSERT_TRUE(!xp2gdl90::BuildConfigFromSettingsUi(
       ui_state, xp2gdl90::Settings{}, &built, &error));
-  ASSERT_TRUE(
-      error.find("ForeFlight broadcast port must be 1-65535") !=
-      std::string::npos);
+  ASSERT_TRUE(error.find("ForeFlight broadcast port must be 1-65535") !=
+              std::string::npos);
 
   xp2gdl90::LoadDefaultSettingsUiState(&ui_state);
   std::snprintf(ui_state.icao_address, sizeof(ui_state.icao_address), "   ");
   ASSERT_TRUE(!xp2gdl90::BuildConfigFromSettingsUi(
       ui_state, xp2gdl90::Settings{}, &built, &error));
-  ASSERT_TRUE(
-      error.find("ICAO address must be a hex value") != std::string::npos);
+  ASSERT_TRUE(error.find("ICAO address must be a hex value") !=
+              std::string::npos);
 
   xp2gdl90::LoadDefaultSettingsUiState(&ui_state);
   std::snprintf(ui_state.icao_address, sizeof(ui_state.icao_address), "XYZ");
   ASSERT_TRUE(!xp2gdl90::BuildConfigFromSettingsUi(
       ui_state, xp2gdl90::Settings{}, &built, &error));
-  ASSERT_TRUE(
-      error.find("ICAO address must be a hex value") != std::string::npos);
+  ASSERT_TRUE(error.find("ICAO address must be a hex value") !=
+              std::string::npos);
 
   xp2gdl90::LoadDefaultSettingsUiState(&ui_state);
   ui_state.emitter_category = 40;
   ASSERT_TRUE(!xp2gdl90::BuildConfigFromSettingsUi(
       ui_state, xp2gdl90::Settings{}, &built, &error));
-  ASSERT_TRUE(error.find("Emitter category must be 0-39") !=
-              std::string::npos);
+  ASSERT_TRUE(error.find("Emitter category must be 0-39") != std::string::npos);
 
   xp2gdl90::LoadDefaultSettingsUiState(&ui_state);
   ui_state.internet_policy = 3;
   ASSERT_TRUE(!xp2gdl90::BuildConfigFromSettingsUi(
       ui_state, xp2gdl90::Settings{}, &built, &error));
-  ASSERT_TRUE(error.find("Internet policy must be 0-2") !=
-              std::string::npos);
+  ASSERT_TRUE(error.find("Internet policy must be 0-2") != std::string::npos);
 
   xp2gdl90::LoadDefaultSettingsUiState(&ui_state);
   ui_state.heartbeat_rate = 0.0f;
   ASSERT_TRUE(!xp2gdl90::BuildConfigFromSettingsUi(
       ui_state, xp2gdl90::Settings{}, &built, &error));
-  ASSERT_TRUE(error.find("Heartbeat rate must be > 0") !=
-              std::string::npos);
+  ASSERT_TRUE(error.find("Heartbeat rate must be > 0") != std::string::npos);
 
   xp2gdl90::LoadDefaultSettingsUiState(&ui_state);
   ui_state.position_rate = 0.0f;
   ASSERT_TRUE(!xp2gdl90::BuildConfigFromSettingsUi(
       ui_state, xp2gdl90::Settings{}, &built, &error));
-  ASSERT_TRUE(error.find("Position rate must be > 0") !=
-              std::string::npos);
+  ASSERT_TRUE(error.find("Position rate must be > 0") != std::string::npos);
 
   xp2gdl90::LoadDefaultSettingsUiState(&ui_state);
   ui_state.nic = 12;

@@ -15,8 +15,7 @@ TEST_CASE("SanitizeCallsign uppercases and removes unsupported characters") {
 TEST_CASE("SanitizeCallsign trims trailing spaces and allows empty fallback") {
   ASSERT_EQ(std::string("ABC DEF"),
             xp2gdl90::protocol::SanitizeCallsign("ABC_DEF "));
-  ASSERT_EQ(std::string(""),
-            xp2gdl90::protocol::SanitizeCallsign("!!!"));
+  ASSERT_EQ(std::string(""), xp2gdl90::protocol::SanitizeCallsign("!!!"));
 }
 
 TEST_CASE("IPv4 validator accepts dotted-quad addresses only") {

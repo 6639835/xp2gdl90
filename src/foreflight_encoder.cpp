@@ -42,8 +42,8 @@ uint16_t ForeFlightEncoder::encodeAhrsHeading(double degrees,
   return encoded;
 }
 
-std::vector<uint8_t> ForeFlightEncoder::createIdMessage(
-    const DeviceInfo& data) const {
+std::vector<uint8_t>
+ForeFlightEncoder::createIdMessage(const DeviceInfo &data) const {
   std::vector<uint8_t> payload;
   payload.reserve(39);
 
@@ -58,8 +58,8 @@ std::vector<uint8_t> ForeFlightEncoder::createIdMessage(
   return internal::PrepareMessage(payload);
 }
 
-std::vector<uint8_t> ForeFlightEncoder::createAhrsMessage(
-    const AhrsData& data) const {
+std::vector<uint8_t>
+ForeFlightEncoder::createAhrsMessage(const AhrsData &data) const {
   std::vector<uint8_t> payload;
   payload.reserve(12);
 
@@ -77,4 +77,4 @@ std::vector<uint8_t> ForeFlightEncoder::createAhrsMessage(
   return internal::PrepareMessage(payload);
 }
 
-}  // namespace gdl90::foreflight
+} // namespace gdl90::foreflight

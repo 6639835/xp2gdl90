@@ -9,16 +9,16 @@
 namespace udp {
 
 class UDPReceiver {
- public:
+public:
   static constexpr uintptr_t kInvalidSocket = static_cast<uintptr_t>(-1);
 
   explicit UDPReceiver(uint16_t listen_port);
   ~UDPReceiver();
 
   bool initialize();
-  int receive(std::vector<uint8_t>* out_data,
-              std::string* out_source_ip = nullptr,
-              uint16_t* out_source_port = nullptr);
+  int receive(std::vector<uint8_t> *out_data,
+              std::string *out_source_ip = nullptr,
+              uint16_t *out_source_port = nullptr);
 
   void close();
 
@@ -26,7 +26,7 @@ class UDPReceiver {
   uint16_t getListenPort() const { return listen_port_; }
   std::string getLastError() const { return last_error_; }
 
- private:
+private:
   uint16_t listen_port_;
   bool initialized_;
   std::string last_error_;
@@ -36,6 +36,6 @@ class UDPReceiver {
 #endif
 };
 
-}  // namespace udp
+} // namespace udp
 
-#endif  // UDP_RECEIVER_H
+#endif // UDP_RECEIVER_H

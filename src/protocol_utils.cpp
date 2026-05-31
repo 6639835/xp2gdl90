@@ -61,22 +61,16 @@ bool IsValidIpv4Address(std::string_view input) {
   return saw_digit && octet_count == 3;
 }
 
-bool IsValidNic(uint8_t value) {
-  return value <= 11;
-}
+bool IsValidNic(uint8_t value) { return value <= 11; }
 
-bool IsValidNacp(uint8_t value) {
-  return value <= 11;
-}
+bool IsValidNacp(uint8_t value) { return value <= 11; }
 
-bool IsValidEmitterCategory(uint8_t value) {
-  return value <= 39;
-}
+bool IsValidEmitterCategory(uint8_t value) { return value <= 39; }
 
 bool HasValidOwnshipPosition(double latitude, double longitude) {
   return std::isfinite(latitude) && std::isfinite(longitude) &&
-         latitude >= -90.0 && latitude <= 90.0 &&
-         longitude >= -180.0 && longitude <= 180.0;
+         latitude >= -90.0 && latitude <= 90.0 && longitude >= -180.0 &&
+         longitude <= 180.0;
 }
 
-}  // namespace xp2gdl90::protocol
+} // namespace xp2gdl90::protocol

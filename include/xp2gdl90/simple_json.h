@@ -32,12 +32,12 @@ struct Value {
   bool IsObject() const { return type == Type::Object; }
   bool IsArray() const { return type == Type::Array; }
 
-  const Value* Find(std::string_view key) const;
+  const Value *Find(std::string_view key) const;
 };
 
-bool Parse(std::string_view text, Value* out_value, std::string* out_error);
+bool Parse(std::string_view text, Value *out_value, std::string *out_error);
 std::string EscapeString(std::string_view input);
 
-}  // namespace xp2gdl90::json
+} // namespace xp2gdl90::json
 
-#endif  // XP2GDL90_SIMPLE_JSON_H
+#endif // XP2GDL90_SIMPLE_JSON_H

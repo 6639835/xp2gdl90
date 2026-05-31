@@ -6,9 +6,10 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #pragma comment(lib, "ws2_32.lib")
-// ws2tcpip.h may define InetPton as a macro (e.g. mapping to inet_pton/InetPtonA),
-// which would break our SocketOps::InetPton virtual override (header is included
-// before the macro exists). Ensure we keep the identifier stable.
+// ws2tcpip.h may define InetPton as a macro (e.g. mapping to
+// inet_pton/InetPtonA), which would break our SocketOps::InetPton virtual
+// override (header is included before the macro exists). Ensure we keep the
+// identifier stable.
 #ifdef InetPton
 #undef InetPton
 #endif
@@ -25,21 +26,21 @@ namespace udp {
 namespace {
 
 #ifdef _WIN32
-std::string SocketErrorMessage(const char* prefix, int code) {
+std::string SocketErrorMessage(const char *prefix, int code) {
   return std::string(prefix) + std::to_string(code);
 }
 #else
-std::string SocketErrorMessage(const char* prefix, int code) {
+std::string SocketErrorMessage(const char *prefix, int code) {
   return std::string(prefix) + std::string(strerror(code));
 }
 #endif
 
-}  // namespace
+} // namespace
 
 namespace detail {
 
 class DefaultSocketOpsImpl final : public SocketOps {
- public:
+public:
   int Startup() override {
 #ifdef _WIN32
     WSADATA wsa_data;
@@ -72,11 +73,11 @@ class DefaultSocketOpsImpl final : public SocketOps {
   }
 
   int SetSockOpt(uintptr_t socket_handle, int level, int optname,
-                 const void* optval, size_t optlen) override {
+                 const void *optval, size_t optlen) override {
 #ifdef _WIN32
     const SOCKET socket_value = static_cast<SOCKET>(socket_handle);
     return ::setsockopt(socket_value, level, optname,
-                        reinterpret_cast<const char*>(optval),
+                        reinterpret_cast<const char *>(optval),
                         static_cast<int>(optlen));
 #else
     const int socket_value = static_cast<int>(socket_handle);
@@ -85,7 +86,7 @@ class DefaultSocketOpsImpl final : public SocketOps {
 #endif
   }
 
-  int InetPton(int af, const char* src, void* dst) override {
+  int InetPton(int af, const char *src, void *dst) override {
 #ifdef _WIN32
     return ::InetPtonA(af, src, dst);
 #else
@@ -93,26 +94,23 @@ class DefaultSocketOpsImpl final : public SocketOps {
 #endif
   }
 
-  intptr_t SendTo(uintptr_t socket_handle, const void* buf, size_t len,
-                  int flags, const void* dest_addr,
-                  size_t addrlen) override {
+  intptr_t SendTo(uintptr_t socket_handle, const void *buf, size_t len,
+                  int flags, const void *dest_addr, size_t addrlen) override {
 #ifdef _WIN32
     const SOCKET socket_value = static_cast<SOCKET>(socket_handle);
-    const int sent = ::sendto(
-        socket_value, reinterpret_cast<const char*>(buf),
-        static_cast<int>(len), flags,
-        reinterpret_cast<const sockaddr*>(dest_addr),
-        static_cast<int>(addrlen));
+    const int sent = ::sendto(socket_value, reinterpret_cast<const char *>(buf),
+                              static_cast<int>(len), flags,
+                              reinterpret_cast<const sockaddr *>(dest_addr),
+                              static_cast<int>(addrlen));
     if (sent == SOCKET_ERROR) {
       return -1;
     }
     return static_cast<intptr_t>(sent);
 #else
     const int socket_value = static_cast<int>(socket_handle);
-    const ssize_t sent =
-        ::sendto(socket_value, buf, len, flags,
-                 reinterpret_cast<const sockaddr*>(dest_addr),
-                 static_cast<socklen_t>(addrlen));
+    const ssize_t sent = ::sendto(socket_value, buf, len, flags,
+                                  reinterpret_cast<const sockaddr *>(dest_addr),
+                                  static_cast<socklen_t>(addrlen));
     return static_cast<intptr_t>(sent);
 #endif
   }
@@ -134,31 +132,28 @@ class DefaultSocketOpsImpl final : public SocketOps {
   }
 };
 
-SocketOps& DefaultSocketOps() {
+SocketOps &DefaultSocketOps() {
   static DefaultSocketOpsImpl ops;
   return ops;
 }
 
-}  // namespace detail
+} // namespace detail
 
-UDPBroadcaster::UDPBroadcaster(const std::string& target_ip,
+UDPBroadcaster::UDPBroadcaster(const std::string &target_ip,
                                uint16_t target_port,
-                               detail::SocketOps* socket_ops)
-    : target_ip_(target_ip),
-      target_port_(target_port),
-      initialized_(false),
+                               detail::SocketOps *socket_ops)
+    : target_ip_(target_ip), target_port_(target_port), initialized_(false),
       last_error_(),
       socket_ops_(socket_ops ? socket_ops : &detail::DefaultSocketOps()),
       socket_(kInvalidSocket)
 #ifdef _WIN32
-      , wsa_initialized_(false)
+      ,
+      wsa_initialized_(false)
 #endif
 {
 }
 
-UDPBroadcaster::~UDPBroadcaster() {
-  close();
-}
+UDPBroadcaster::~UDPBroadcaster() { close(); }
 
 bool UDPBroadcaster::initialize() {
   if (initialized_) {
@@ -186,8 +181,8 @@ bool UDPBroadcaster::initialize() {
 
 #ifdef _WIN32
   if (socket_ == kInvalidSocket) {
-    last_error_ =
-        SocketErrorMessage("Socket creation failed: ", socket_ops_->LastError());
+    last_error_ = SocketErrorMessage("Socket creation failed: ",
+                                     socket_ops_->LastError());
     socket_ops_->Cleanup();
     wsa_initialized_ = false;
     return false;
@@ -206,16 +201,16 @@ bool UDPBroadcaster::initialize() {
   }
 #else
   if (socket_ == kInvalidSocket) {
-    last_error_ =
-        SocketErrorMessage("Socket creation failed: ", socket_ops_->LastError());
+    last_error_ = SocketErrorMessage("Socket creation failed: ",
+                                     socket_ops_->LastError());
     return false;
   }
 
   int broadcast = 1;
   if (socket_ops_->SetSockOpt(socket_, SOL_SOCKET, SO_BROADCAST, &broadcast,
                               sizeof(broadcast)) < 0) {
-    last_error_ =
-        SocketErrorMessage("Failed to set SO_BROADCAST: ", socket_ops_->LastError());
+    last_error_ = SocketErrorMessage("Failed to set SO_BROADCAST: ",
+                                     socket_ops_->LastError());
     socket_ops_->CloseSocket(socket_);
     socket_ = kInvalidSocket;
     return false;
@@ -227,7 +222,7 @@ bool UDPBroadcaster::initialize() {
   return true;
 }
 
-int UDPBroadcaster::send(const uint8_t* data, size_t size) {
+int UDPBroadcaster::send(const uint8_t *data, size_t size) {
   if (!initialized_) {
     last_error_ = "Socket not initialized";
     return -1;
@@ -244,10 +239,11 @@ int UDPBroadcaster::send(const uint8_t* data, size_t size) {
     return -1;
   }
 
-  const intptr_t sent = socket_ops_->SendTo(socket_, data, size, 0, &target_addr,
-                                            sizeof(target_addr));
+  const intptr_t sent = socket_ops_->SendTo(socket_, data, size, 0,
+                                            &target_addr, sizeof(target_addr));
   if (sent < 0) {
-    last_error_ = SocketErrorMessage("sendto failed: ", socket_ops_->LastError());
+    last_error_ =
+        SocketErrorMessage("sendto failed: ", socket_ops_->LastError());
     return -1;
   }
 
@@ -255,11 +251,11 @@ int UDPBroadcaster::send(const uint8_t* data, size_t size) {
   return static_cast<int>(sent);
 }
 
-int UDPBroadcaster::send(const std::vector<uint8_t>& data) {
+int UDPBroadcaster::send(const std::vector<uint8_t> &data) {
   return send(data.data(), data.size());
 }
 
-void UDPBroadcaster::setTarget(const std::string& target_ip,
+void UDPBroadcaster::setTarget(const std::string &target_ip,
                                uint16_t target_port) {
   target_ip_ = target_ip;
   target_port_ = target_port;
@@ -296,12 +292,12 @@ void xp2gdl90_test_default_socket_ops_cleanup() {
 }
 
 uintptr_t xp2gdl90_test_default_socket_ops_create_socket(int domain, int type,
-                                                        int protocol) {
+                                                         int protocol) {
   DefaultSocketOpsImpl ops;
   return ops.CreateSocket(domain, type, protocol);
 }
 
-}  // namespace detail
+} // namespace detail
 #endif
 
-}  // namespace udp
+} // namespace udp

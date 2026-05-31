@@ -29,13 +29,11 @@ struct Settings {
   bool log_messages = false;
 };
 
-bool LoadSettingsFromJsonFile(const std::string& path,
-                              Settings* out_settings,
-                              std::string* out_error);
-bool SaveSettingsToJsonFile(const std::string& path,
-                            const Settings& settings,
-                            std::string* out_error);
+bool LoadSettingsFromJsonFile(const std::string &path, Settings *out_settings,
+                              std::string *out_error);
+bool SaveSettingsToJsonFile(const std::string &path, const Settings &settings,
+                            std::string *out_error);
 
-}  // namespace xp2gdl90
+} // namespace xp2gdl90
 
-#endif  // XP2GDL90_SETTINGS_H
+#endif // XP2GDL90_SETTINGS_H

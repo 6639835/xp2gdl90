@@ -24,21 +24,19 @@ namespace udp {
 namespace {
 
 #ifdef _WIN32
-std::string SocketErrorMessage(const char* prefix, int code) {
+std::string SocketErrorMessage(const char *prefix, int code) {
   return std::string(prefix) + std::to_string(code);
 }
 #else
-std::string SocketErrorMessage(const char* prefix, int code) {
+std::string SocketErrorMessage(const char *prefix, int code) {
   return std::string(prefix) + std::string(strerror(code));
 }
 #endif
 
-}  // namespace
+} // namespace
 
 UDPReceiver::UDPReceiver(uint16_t listen_port)
-    : listen_port_(listen_port),
-      initialized_(false),
-      last_error_(),
+    : listen_port_(listen_port), initialized_(false), last_error_(),
       socket_(kInvalidSocket)
 #ifdef _WIN32
       ,
@@ -47,9 +45,7 @@ UDPReceiver::UDPReceiver(uint16_t listen_port)
 {
 }
 
-UDPReceiver::~UDPReceiver() {
-  close();
-}
+UDPReceiver::~UDPReceiver() { close(); }
 
 bool UDPReceiver::initialize() {
   if (initialized_) {
@@ -66,8 +62,8 @@ bool UDPReceiver::initialize() {
   wsa_initialized_ = true;
   socket_ = static_cast<uintptr_t>(::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
   if (socket_ == static_cast<uintptr_t>(INVALID_SOCKET)) {
-    last_error_ = SocketErrorMessage("Socket creation failed: ",
-                                     WSAGetLastError());
+    last_error_ =
+        SocketErrorMessage("Socket creation failed: ", WSAGetLastError());
     WSACleanup();
     wsa_initialized_ = false;
     socket_ = kInvalidSocket;
@@ -76,8 +72,7 @@ bool UDPReceiver::initialize() {
 #else
   socket_ = static_cast<uintptr_t>(::socket(AF_INET, SOCK_DGRAM, 0));
   if (static_cast<int>(socket_) < 0) {
-    last_error_ =
-        SocketErrorMessage("Socket creation failed: ", errno);
+    last_error_ = SocketErrorMessage("Socket creation failed: ", errno);
     socket_ = kInvalidSocket;
     return false;
   }
@@ -85,21 +80,19 @@ bool UDPReceiver::initialize() {
 
   int reuse = 1;
 #ifdef _WIN32
-  const int set_reuse = ::setsockopt(static_cast<SOCKET>(socket_), SOL_SOCKET,
-                                     SO_REUSEADDR,
-                                     reinterpret_cast<const char*>(&reuse),
-                                     static_cast<int>(sizeof(reuse)));
+  const int set_reuse = ::setsockopt(
+      static_cast<SOCKET>(socket_), SOL_SOCKET, SO_REUSEADDR,
+      reinterpret_cast<const char *>(&reuse), static_cast<int>(sizeof(reuse)));
   if (set_reuse == SOCKET_ERROR) {
-    last_error_ = SocketErrorMessage("Failed to set SO_REUSEADDR: ",
-                                     WSAGetLastError());
+    last_error_ =
+        SocketErrorMessage("Failed to set SO_REUSEADDR: ", WSAGetLastError());
     close();
     return false;
   }
 #else
   if (::setsockopt(static_cast<int>(socket_), SOL_SOCKET, SO_REUSEADDR, &reuse,
                    static_cast<socklen_t>(sizeof(reuse))) < 0) {
-    last_error_ =
-        SocketErrorMessage("Failed to set SO_REUSEADDR: ", errno);
+    last_error_ = SocketErrorMessage("Failed to set SO_REUSEADDR: ", errno);
     close();
     return false;
   }
@@ -112,7 +105,7 @@ bool UDPReceiver::initialize() {
 
 #ifdef _WIN32
   if (::bind(static_cast<SOCKET>(socket_),
-             reinterpret_cast<const sockaddr*>(&bind_addr),
+             reinterpret_cast<const sockaddr *>(&bind_addr),
              static_cast<int>(sizeof(bind_addr))) == SOCKET_ERROR) {
     last_error_ = SocketErrorMessage("bind failed: ", WSAGetLastError());
     close();
@@ -120,16 +113,15 @@ bool UDPReceiver::initialize() {
   }
 
   u_long non_blocking = 1;
-  if (::ioctlsocket(static_cast<SOCKET>(socket_), FIONBIO,
-                    &non_blocking) == SOCKET_ERROR) {
-    last_error_ =
-        SocketErrorMessage("ioctlsocket failed: ", WSAGetLastError());
+  if (::ioctlsocket(static_cast<SOCKET>(socket_), FIONBIO, &non_blocking) ==
+      SOCKET_ERROR) {
+    last_error_ = SocketErrorMessage("ioctlsocket failed: ", WSAGetLastError());
     close();
     return false;
   }
 #else
   if (::bind(static_cast<int>(socket_),
-             reinterpret_cast<const sockaddr*>(&bind_addr),
+             reinterpret_cast<const sockaddr *>(&bind_addr),
              static_cast<socklen_t>(sizeof(bind_addr))) < 0) {
     last_error_ = SocketErrorMessage("bind failed: ", errno);
     close();
@@ -150,9 +142,9 @@ bool UDPReceiver::initialize() {
   return true;
 }
 
-int UDPReceiver::receive(std::vector<uint8_t>* out_data,
-                         std::string* out_source_ip,
-                         uint16_t* out_source_port) {
+int UDPReceiver::receive(std::vector<uint8_t> *out_data,
+                         std::string *out_source_ip,
+                         uint16_t *out_source_port) {
   if (!initialized_) {
     last_error_ = "Socket not initialized";
     return -1;
@@ -166,11 +158,10 @@ int UDPReceiver::receive(std::vector<uint8_t>* out_data,
   sockaddr_in source_addr{};
 #ifdef _WIN32
   int source_len = static_cast<int>(sizeof(source_addr));
-  const int received =
-      ::recvfrom(static_cast<SOCKET>(socket_),
-                 reinterpret_cast<char*>(buffer.data()),
-                 static_cast<int>(buffer.size()), 0,
-                 reinterpret_cast<sockaddr*>(&source_addr), &source_len);
+  const int received = ::recvfrom(
+      static_cast<SOCKET>(socket_), reinterpret_cast<char *>(buffer.data()),
+      static_cast<int>(buffer.size()), 0,
+      reinterpret_cast<sockaddr *>(&source_addr), &source_len);
   if (received == SOCKET_ERROR) {
     const int err = WSAGetLastError();
     if (err == WSAEWOULDBLOCK) {
@@ -184,7 +175,7 @@ int UDPReceiver::receive(std::vector<uint8_t>* out_data,
   socklen_t source_len = static_cast<socklen_t>(sizeof(source_addr));
   const ssize_t received =
       ::recvfrom(static_cast<int>(socket_), buffer.data(), buffer.size(), 0,
-                 reinterpret_cast<sockaddr*>(&source_addr), &source_len);
+                 reinterpret_cast<sockaddr *>(&source_addr), &source_len);
   if (received < 0) {
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
       last_error_.clear();
@@ -248,4 +239,4 @@ void UDPReceiver::close() {
   initialized_ = false;
 }
 
-}  // namespace udp
+} // namespace udp

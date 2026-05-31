@@ -16,8 +16,10 @@ TEST_CASE("ForeFlight ID message encodes metadata in big-endian order") {
   const auto payload = xp2gdl90::test::ExtractPayload(message);
 
   ASSERT_EQ(static_cast<size_t>(39), payload.size());
-  ASSERT_EQ(static_cast<uint8_t>(gdl90::foreflight::MSG_ID_FORE_FLIGHT), payload[0]);
-  ASSERT_EQ(static_cast<uint8_t>(gdl90::foreflight::SUB_ID_DEVICE_INFO), payload[1]);
+  ASSERT_EQ(static_cast<uint8_t>(gdl90::foreflight::MSG_ID_FORE_FLIGHT),
+            payload[0]);
+  ASSERT_EQ(static_cast<uint8_t>(gdl90::foreflight::SUB_ID_DEVICE_INFO),
+            payload[1]);
   ASSERT_EQ(static_cast<uint8_t>(0x01), payload[2]);
   ASSERT_EQ(static_cast<uint64_t>(0x0123456789ABCDEFull),
             xp2gdl90::test::Decode64BE(payload, 3));
@@ -43,12 +45,14 @@ TEST_CASE("ForeFlight AHRS message encodes attitude and heading fields") {
   const auto payload = xp2gdl90::test::ExtractPayload(message);
 
   ASSERT_EQ(static_cast<size_t>(12), payload.size());
-  ASSERT_EQ(static_cast<uint8_t>(gdl90::foreflight::MSG_ID_FORE_FLIGHT), payload[0]);
+  ASSERT_EQ(static_cast<uint8_t>(gdl90::foreflight::MSG_ID_FORE_FLIGHT),
+            payload[0]);
   ASSERT_EQ(static_cast<uint8_t>(gdl90::foreflight::SUB_ID_AHRS), payload[1]);
   ASSERT_EQ(static_cast<uint16_t>(123), xp2gdl90::test::Decode16BE(payload, 2));
   ASSERT_EQ(static_cast<uint16_t>(static_cast<int16_t>(-45)),
             xp2gdl90::test::Decode16BE(payload, 4));
-  ASSERT_EQ(static_cast<uint16_t>(2712), xp2gdl90::test::Decode16BE(payload, 6));
+  ASSERT_EQ(static_cast<uint16_t>(2712),
+            xp2gdl90::test::Decode16BE(payload, 6));
   ASSERT_EQ(static_cast<uint16_t>(gdl90::foreflight::AHRS_AIRSPEED_INVALID),
             xp2gdl90::test::Decode16BE(payload, 8));
   ASSERT_EQ(static_cast<uint16_t>(gdl90::foreflight::AHRS_AIRSPEED_INVALID),
@@ -72,9 +76,11 @@ TEST_CASE("ForeFlight AHRS message invalidates out-of-range attitude") {
             xp2gdl90::test::Decode16BE(payload, 2));
   ASSERT_EQ(static_cast<uint16_t>(gdl90::foreflight::AHRS_ATTITUDE_INVALID),
             xp2gdl90::test::Decode16BE(payload, 4));
-  ASSERT_EQ(static_cast<uint16_t>(0x8000), xp2gdl90::test::Decode16BE(payload, 6));
+  ASSERT_EQ(static_cast<uint16_t>(0x8000),
+            xp2gdl90::test::Decode16BE(payload, 6));
   ASSERT_EQ(static_cast<uint16_t>(120), xp2gdl90::test::Decode16BE(payload, 8));
-  ASSERT_EQ(static_cast<uint16_t>(135), xp2gdl90::test::Decode16BE(payload, 10));
+  ASSERT_EQ(static_cast<uint16_t>(135),
+            xp2gdl90::test::Decode16BE(payload, 10));
 }
 
 TEST_CASE("ForeFlight AHRS heading normalizes wraparound and invalid heading") {
@@ -86,7 +92,8 @@ TEST_CASE("ForeFlight AHRS heading normalizes wraparound and invalid heading") {
   wrapped.heading_deg = -90.0;
   const auto wrapped_message = encoder.createAhrsMessage(wrapped);
   const auto wrapped_payload = xp2gdl90::test::ExtractPayload(wrapped_message);
-  ASSERT_EQ(static_cast<uint16_t>(2700), xp2gdl90::test::Decode16BE(wrapped_payload, 6));
+  ASSERT_EQ(static_cast<uint16_t>(2700),
+            xp2gdl90::test::Decode16BE(wrapped_payload, 6));
 
   gdl90::foreflight::AhrsData rounded{};
   rounded.roll_deg = 0.0;
@@ -94,7 +101,8 @@ TEST_CASE("ForeFlight AHRS heading normalizes wraparound and invalid heading") {
   rounded.heading_deg = 359.95;
   const auto rounded_message = encoder.createAhrsMessage(rounded);
   const auto rounded_payload = xp2gdl90::test::ExtractPayload(rounded_message);
-  ASSERT_EQ(static_cast<uint16_t>(0), xp2gdl90::test::Decode16BE(rounded_payload, 6));
+  ASSERT_EQ(static_cast<uint16_t>(0),
+            xp2gdl90::test::Decode16BE(rounded_payload, 6));
 
   gdl90::foreflight::AhrsData invalid{};
   invalid.roll_deg = 0.0;
