@@ -725,7 +725,8 @@ void RenderUi(BridgeState *state, double now) {
   ImGui::Text("Traffic: %d", state->last_traffic_count);
 
   ImGui::SameLine(560.0f);
-  ImGui::Text("Pkts: %" PRIu64, state->packets_sent);
+  ImGui::Text("Pkts: %llu",
+              static_cast<unsigned long long>(state->packets_sent));
 
   ImGui::SameLine(680.0f);
   ImGui::Text("Up: %s", FormatUptime(now - state->start_time).c_str());
@@ -1034,7 +1035,7 @@ int main(int argc, char **argv) {
   wc.lpfnWndProc = WndProc;
   wc.hInstance = GetModuleHandleW(nullptr);
   wc.lpszClassName = L"MSFS2GDL90";
-  wc.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+  wc.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
   RegisterClassExW(&wc);
 
   g_hwnd = CreateWindowExW(
