@@ -53,9 +53,9 @@ uint16_t ClampKnotsToUint16OrInvalid(double knots) {
   if (!std::isfinite(knots) || knots < 0.0) {
     return gdl90::foreflight::AHRS_AIRSPEED_INVALID;
   }
-  const double clamped =
-      (std::min)(knots, static_cast<double>(
-                            gdl90::foreflight::AHRS_AIRSPEED_INVALID - 1u));
+  const double max_valid =
+      static_cast<double>(gdl90::foreflight::AHRS_AIRSPEED_INVALID - 1u);
+  const double clamped = (std::min)(knots, max_valid);
   return static_cast<uint16_t>(clamped);
 }
 
