@@ -7,6 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(XP2GDL90_ENABLE_COVERAGE "Enable coverage instrumentation (tests only)" OFF)
 option(XP2GDL90_ENABLE_SOCKET_OPS_TESTS "Expose socket ops helpers for tests" ON)
+option(XP2GDL90_BUILD_MSFS "Build the MSFS 2020/2024 SimConnect bridge on Windows" OFF)
 
 function(xp2gdl90_enable_coverage target_name)
     if(NOT XP2GDL90_ENABLE_COVERAGE)
@@ -63,10 +64,15 @@ set(CORE_SOURCES
     src/simple_json.cpp
     src/udp_receiver.cpp
     src/udp_broadcaster.cpp
+    src/msfs_bridge.cpp
 )
 
 set(PLUGIN_SOURCES
     src/main.cpp
+)
+
+set(MSFS_BRIDGE_SOURCES
+    src/msfs_main.cpp
 )
 
 set(IMGUI_DIR "${CMAKE_SOURCE_DIR}/third_party/imgui")
@@ -265,6 +271,82 @@ elseif(UNIX AND NOT APPLE)
     )
 endif()
 
+if(XP2GDL90_BUILD_MSFS)
+    if(NOT WIN32)
+        message(FATAL_ERROR "XP2GDL90_BUILD_MSFS is only supported on Windows because SimConnect is Windows-only.")
+    endif()
+
+    set(MSFS_SDK_PATH "$ENV{MSFS_SDK}" CACHE PATH "Microsoft Flight Simulator SDK root path")
+    if(NOT MSFS_SDK_PATH AND DEFINED ENV{MSFS2020_SDK})
+        set(MSFS_SDK_PATH "$ENV{MSFS2020_SDK}" CACHE PATH "Microsoft Flight Simulator SDK root path" FORCE)
+    endif()
+    if(NOT MSFS_SDK_PATH AND DEFINED ENV{MSFS2024_SDK})
+        set(MSFS_SDK_PATH "$ENV{MSFS2024_SDK}" CACHE PATH "Microsoft Flight Simulator SDK root path" FORCE)
+    endif()
+
+    find_path(SIMCONNECT_INCLUDE_DIR
+        NAMES SimConnect.h
+        PATHS
+            "${MSFS_SDK_PATH}/SimConnect SDK/include"
+            "${MSFS_SDK_PATH}/SimConnect SDK/Include"
+            "${MSFS_SDK_PATH}/include"
+            "${MSFS_SDK_PATH}/Include"
+        NO_DEFAULT_PATH
+    )
+    find_library(SIMCONNECT_LIBRARY
+        NAMES SimConnect
+        PATHS
+            "${MSFS_SDK_PATH}/SimConnect SDK/lib"
+            "${MSFS_SDK_PATH}/SimConnect SDK/Lib"
+            "${MSFS_SDK_PATH}/lib"
+            "${MSFS_SDK_PATH}/Lib"
+        NO_DEFAULT_PATH
+    )
+
+    if(NOT SIMCONNECT_INCLUDE_DIR OR NOT SIMCONNECT_LIBRARY)
+        message(FATAL_ERROR
+            "Could not find the MSFS SimConnect SDK. Set MSFS_SDK_PATH to the SDK root, "
+            "or set SIMCONNECT_INCLUDE_DIR and SIMCONNECT_LIBRARY explicitly."
+        )
+    endif()
+
+    set(MSFS_IMGUI_SOURCES
+        ${IMGUI_DIR}/imgui.cpp
+        ${IMGUI_DIR}/imgui_draw.cpp
+        ${IMGUI_DIR}/imgui_tables.cpp
+        ${IMGUI_DIR}/imgui_widgets.cpp
+        ${IMGUI_DIR}/backends/imgui_impl_win32.cpp
+        ${IMGUI_DIR}/backends/imgui_impl_dx11.cpp
+    )
+
+    add_executable(msfs2gdl90 WIN32 ${MSFS_BRIDGE_SOURCES} ${MSFS_IMGUI_SOURCES})
+    target_include_directories(msfs2gdl90 PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${SIMCONNECT_INCLUDE_DIR}
+        ${IMGUI_DIR}
+        ${IMGUI_DIR}/backends
+    )
+    target_link_libraries(msfs2gdl90 PRIVATE
+        xp2gdl90_core
+        ${SIMCONNECT_LIBRARY}
+        ws2_32
+        shlwapi
+        user32
+        d3d11
+        dxgi
+        d3dcompiler
+    )
+    target_compile_definitions(msfs2gdl90 PRIVATE _CRT_SECURE_NO_WARNINGS NOMINMAX)
+    if(MSVC)
+        set_msvc_runtime(msfs2gdl90)
+        target_compile_options(msfs2gdl90 PRIVATE /W4 /EHsc)
+        # Keep int main() as entry point with WIN32 (GUI) subsystem.
+        set_target_properties(msfs2gdl90 PROPERTIES
+            LINK_FLAGS "/ENTRY:mainCRTStartup"
+        )
+    endif()
+endif()
+
 # Installation
 install(TARGETS ${PLUGIN_NAME}
     LIBRARY DESTINATION "${CMAKE_SOURCE_DIR}/build/xp2gdl90"
@@ -294,6 +376,7 @@ if(XP2GDL90_BUILD_TESTS)
         tests/test_settings_ui.cpp
         tests/test_simple_json.cpp
         tests/test_udp_broadcaster.cpp
+        tests/test_msfs_bridge.cpp
     )
     target_link_libraries(xp2gdl90_tests PRIVATE xp2gdl90_core)
     xp2gdl90_enable_coverage(xp2gdl90_tests)

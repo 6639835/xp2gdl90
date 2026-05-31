@@ -3,7 +3,9 @@
 [![Build Status](https://github.com/6639835/xp2gdl90/workflows/Build%20XP2GDL90/badge.svg)](https://github.com/6639835/xp2gdl90/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-`xp2gdl90` is an X-Plane 12 plugin that broadcasts simulator data over UDP in GDL90 format for EFB apps such as ForeFlight, Garmin Pilot, WingX, and FltPlan Go.
+`xp2gdl90` broadcasts simulator data over UDP in GDL90 format for EFB apps such as ForeFlight, Garmin Pilot, WingX, and FltPlan Go.
+
+The primary runtime is an X-Plane 12 plugin. The repository also includes an experimental Windows SimConnect bridge, `msfs2gdl90`, for Microsoft Flight Simulator 2020 and Microsoft Flight Simulator 2024.
 
 The current codebase includes:
 
@@ -13,6 +15,7 @@ The current codebase includes:
 - Traffic broadcasting from TCAS targets, with legacy multiplayer fallback
 - An in-sim ImGui settings and status window
 - Cross-platform builds for macOS, Windows, and Linux
+- Experimental MSFS 2020/2024 ownship, AHRS, and best-effort traffic bridge on Windows
 - A unit test target and coverage script
 
 ## Release Installation
@@ -112,6 +115,37 @@ Helper scripts are also included:
 - Linux: `./build_linux.sh`
 - Windows: `build_win.bat`
 
+### MSFS 2020/2024 SimConnect Bridge
+
+The MSFS bridge is a separate Windows executable rather than an in-simulator plugin. Build it with the MSFS SDK installed:
+
+```bat
+cmake -S . -B build-msfs -G "Visual Studio 17 2022" ^
+  -DXP2GDL90_BUILD_MSFS=ON ^
+  -DMSFS_SDK_PATH="C:\MSFS SDK"
+cmake --build build-msfs --config Release --target msfs2gdl90
+```
+
+`MSFS_SDK_PATH` should point to the SDK root that contains `SimConnect SDK\include\SimConnect.h` and `SimConnect SDK\lib\SimConnect.lib`. Building against the MSFS 2020 SDK is recommended for one bridge binary that can run with MSFS 2020 and MSFS 2024.
+
+Run the bridge after starting MSFS and loading a flight:
+
+```bat
+build-msfs\Release\msfs2gdl90.exe
+```
+
+Optional overrides:
+
+```bat
+msfs2gdl90.exe --config C:\path\msfs2gdl90.json --target-ip 192.168.1.50 --target-port 4000
+```
+
+By default, settings are created under:
+
+```text
+%APPDATA%\xp2gdl90\msfs2gdl90.json
+```
+
 ## Testing
 
 Enable the test target with:
@@ -126,7 +160,7 @@ A coverage helper is available at `scripts/coverage.sh`. It configures a separat
 
 ## Runtime Behavior
 
-The plugin currently sends:
+The X-Plane plugin and MSFS bridge send:
 
 - `0x00` Heartbeat at the configured `heartbeat_rate`
 - `0x0A` Ownship Report at the configured `position_rate`
@@ -135,7 +169,7 @@ The plugin currently sends:
 - `0x65/0x00` ForeFlight ID at 1 Hz
 - `0x65/0x01` ForeFlight AHRS at 5 Hz
 
-Current behavior from the implementation:
+Current X-Plane behavior from the implementation:
 
 - ForeFlight auto-discovery is optional and listens on the configured broadcast port
 - Manual `target_ip` and `target_port` are used as the fallback target
@@ -145,6 +179,16 @@ Current behavior from the implementation:
 - Traffic is sourced from TCAS target datarefs when available, otherwise from legacy multiplayer datarefs
 
 Weather uplink data is not transmitted.
+
+Current MSFS bridge behavior:
+
+- Connects to MSFS 2020/2024 through SimConnect from an external Windows executable
+- Uses the same JSON settings format as the X-Plane plugin
+- Sends ownship GDL90 position, geometric altitude, ForeFlight device info, and ForeFlight AHRS
+- Uses ForeFlight discovery on UDP `63093` when enabled
+- Requests nearby SimConnect aircraft traffic once per second and sends best-effort GDL90 traffic reports
+- Generates synthetic self-assigned traffic addresses because MSFS traffic does not consistently expose real ICAO addresses
+- Has no in-sim settings window; edit the JSON file or use command-line target overrides
 
 ## Configuration
 
@@ -228,6 +272,24 @@ Key X-Plane datarefs used by the plugin include:
 - `sim/aircraft/view/acf_tailnum`
 - `sim/cockpit2/tcas/targets/*`
 - `sim/multiplayer/position/planeN_*`
+
+Key MSFS SimVars used by the bridge include:
+
+- `PLANE LATITUDE`
+- `PLANE LONGITUDE`
+- `PLANE ALTITUDE`
+- `PRESSURE ALTITUDE`
+- `GROUND VELOCITY`
+- `VERTICAL SPEED`
+- `PLANE HEADING DEGREES TRUE`
+- `PLANE HEADING DEGREES MAGNETIC`
+- `PLANE PITCH DEGREES`
+- `PLANE BANK DEGREES`
+- `AIRSPEED INDICATED`
+- `AIRSPEED TRUE`
+- `SIM ON GROUND`
+- `ATC ID`
+- `VELOCITY WORLD X/Y/Z` for traffic track and vertical speed
 
 ## Troubleshooting
 
