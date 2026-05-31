@@ -107,30 +107,45 @@ jobs:
           Get-Item $plugin | Format-List
         shell: pwsh
 
-      - name: Package
+      - name: Package X-Plane Plugin
         run: |
-          mkdir -p package/xp2gdl90/64 package/xp2gdl90/msfs
+          mkdir -p package-xplane/xp2gdl90/64
           if [ -f "build/win.xpl" ]; then
-            cp build/win.xpl package/xp2gdl90/64/
+            cp build/win.xpl package-xplane/xp2gdl90/64/
           else
-            cp "build/${{ env.BUILD_TYPE }}/win.xpl" package/xp2gdl90/64/
+            cp "build/${{ env.BUILD_TYPE }}/win.xpl" package-xplane/xp2gdl90/64/
           fi
-          if [ -f "build-msfs/msfs2gdl90.exe" ]; then
-            cp build-msfs/msfs2gdl90.exe package/xp2gdl90/msfs/
-            cp build-msfs/SimConnect.dll package/xp2gdl90/msfs/
-          else
-            cp "build-msfs/${{ env.BUILD_TYPE }}/msfs2gdl90.exe" package/xp2gdl90/msfs/
-            cp "build-msfs/${{ env.BUILD_TYPE }}/SimConnect.dll" package/xp2gdl90/msfs/
-          fi
-          cp README.md package/xp2gdl90/
-          cp LICENSE package/xp2gdl90/
+          cp README.md package-xplane/xp2gdl90/
+          cp LICENSE package-xplane/xp2gdl90/
         shell: bash
 
-      - name: Upload Artifact
+      - name: Package MSFS Bridge
+        run: |
+          mkdir -p package-msfs/msfs
+          if [ -f "build-msfs/msfs2gdl90.exe" ]; then
+            cp build-msfs/msfs2gdl90.exe package-msfs/msfs/
+            cp build-msfs/SimConnect.dll package-msfs/msfs/
+          else
+            cp "build-msfs/${{ env.BUILD_TYPE }}/msfs2gdl90.exe" package-msfs/msfs/
+            cp "build-msfs/${{ env.BUILD_TYPE }}/SimConnect.dll" package-msfs/msfs/
+          fi
+          cp README.md package-msfs/msfs/
+          cp LICENSE package-msfs/msfs/
+        shell: bash
+
+      - name: Upload X-Plane Artifact
         uses: actions/upload-artifact@v7
         with:
-          name: xp2gdl90-windows
-          path: package/
+          name: xp2gdl90-windows-xplane
+          path: package-xplane/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload MSFS Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: xp2gdl90-windows-msfs
+          path: package-msfs/
           if-no-files-found: error
           retention-days: 14
 
@@ -233,11 +248,17 @@ jobs:
       contents: write
 
     steps:
-      - name: Download Windows Artifact
+      - name: Download Windows X-Plane Artifact
         uses: actions/download-artifact@v7
         with:
-          name: xp2gdl90-windows
-          path: windows/
+          name: xp2gdl90-windows-xplane
+          path: windows-xplane/
+
+      - name: Download Windows MSFS Artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: xp2gdl90-windows-msfs
+          path: windows-msfs/
 
       - name: Download macOS Artifact
         uses: actions/download-artifact@v7
@@ -255,11 +276,11 @@ jobs:
         run: |
           mkdir -p xp2gdl90/64
           cp macos/xp2gdl90/mac.xpl xp2gdl90/
-          cp windows/xp2gdl90/64/win.xpl xp2gdl90/64/
+          cp windows-xplane/xp2gdl90/64/win.xpl xp2gdl90/64/
           cp linux/xp2gdl90/64/lin.xpl xp2gdl90/64/
-          cp -R windows/xp2gdl90/msfs xp2gdl90/
-          cp windows/xp2gdl90/README.md xp2gdl90/
-          cp windows/xp2gdl90/LICENSE xp2gdl90/
+          cp -R windows-msfs/msfs xp2gdl90/
+          cp windows-xplane/xp2gdl90/README.md xp2gdl90/
+          cp windows-xplane/xp2gdl90/LICENSE xp2gdl90/
           zip -r xp2gdl90-${{ github.ref_name }}.zip xp2gdl90/
 
       - name: Generate checksums

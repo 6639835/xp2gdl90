@@ -41,6 +41,11 @@ xp2gdl90/
 └── LICENSE
 ```
 
+CI also publishes Windows outputs as separate artifacts:
+
+- `xp2gdl90-windows-xplane`: copy the contained `xp2gdl90` folder to `X-Plane 12/Resources/plugins/`
+- `xp2gdl90-windows-msfs`: run `msfs/msfs2gdl90.exe`; `SimConnect.dll` is bundled in the same folder
+
 After launching X-Plane, open:
 
 ```text
