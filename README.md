@@ -13,6 +13,7 @@ The current codebase includes:
 - ForeFlight ID and AHRS extension messages
 - ForeFlight auto-discovery with fallback to a manual target IP/port
 - Traffic broadcasting from TCAS targets, with legacy multiplayer fallback
+- Replay-safe scheduling when X-Plane replay time rewinds
 - An in-sim ImGui settings and status window
 - Cross-platform builds for macOS, Windows, and Linux
 - Experimental MSFS 2020/2024 ownship, AHRS, and best-effort traffic bridge on Windows
@@ -193,6 +194,8 @@ Current X-Plane behavior from the implementation:
 - Ownship report altitude uses `sim/cockpit2/gauges/indicators/altitude_ft_pilot` when available
 - AHRS heading can be transmitted as true or magnetic heading
 - Traffic is sourced from TCAS target datarefs when available, otherwise from legacy multiplayer datarefs
+- Replay mode uses X-Plane elapsed time for scheduling, preventing stream stalls
+  when the replay timeline is rewound
 
 Weather uplink data is not transmitted.
 

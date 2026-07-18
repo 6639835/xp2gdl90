@@ -34,6 +34,7 @@
 #include "backends/imgui_impl_opengl2.h"
 #include "imgui.h"
 
+#include "xp2gdl90/broadcast_clock.h"
 #include "xp2gdl90/foreflight_encoder.h"
 #include "xp2gdl90/foreflight_protocol.h"
 #include "xp2gdl90/gdl90_encoder.h"
@@ -147,6 +148,7 @@ struct PluginState {
   XPLMDataRef vs_ref = nullptr;
   XPLMDataRef airborne_ref = nullptr;
   XPLMDataRef sim_time_ref = nullptr;
+  XPLMDataRef replay_ref = nullptr;
   XPLMDataRef tailnum_ref = nullptr;
   TrafficTcasRefs traffic_tcas_refs;
   std::vector<LegacyTrafficRefs> legacy_traffic_refs;
@@ -159,6 +161,9 @@ struct PluginState {
   float last_ahrs = 0.0f;
   float last_geo_altitude = 0.0f;
   float last_foreflight_discovery = -1.0f;
+  xp2gdl90::BroadcastClockState broadcast_clock_state;
+  float broadcast_clock_time = 0.0f;
+  bool broadcast_clock_replay = false;
 
   std::string discovered_target_ip;
   uint16_t discovered_target_port = 0;
@@ -696,6 +701,43 @@ bool VerifyDataRef(XPLMDataRef ref, const char *name) {
   return false;
 }
 
+bool IsReplayActive() {
+  return g_state.replay_ref && XPLMGetDatai(g_state.replay_ref) != 0;
+}
+
+void ResetBroadcastSchedule(float broadcast_time) {
+  constexpr float kImmediateOffset = 3600.0f;
+  const float ready_time = broadcast_time - kImmediateOffset;
+  g_state.last_heartbeat = ready_time;
+  g_state.last_position = ready_time;
+  g_state.last_traffic = ready_time;
+  g_state.last_device_info = ready_time;
+  g_state.last_ahrs = ready_time;
+  g_state.last_geo_altitude = ready_time;
+
+  // A discovery timestamp cannot be compared across clock domains. Fall back
+  // to the configured target until another valid broadcast is received.
+  g_state.last_foreflight_discovery = -1.0f;
+  g_state.using_discovered_target = false;
+}
+
+xp2gdl90::BroadcastClockResult UpdateCurrentBroadcastClock() {
+  const float simulator_time =
+      g_state.sim_time_ref ? XPLMGetDataf(g_state.sim_time_ref) : NAN;
+  const float elapsed_time = XPLMGetElapsedTime();
+  const auto result = xp2gdl90::UpdateBroadcastClock(
+      simulator_time, elapsed_time, IsReplayActive(),
+      &g_state.broadcast_clock_state);
+  g_state.broadcast_clock_time = result.time;
+  g_state.broadcast_clock_replay = result.replay_active;
+  if (result.schedule_reset_required) {
+    ResetBroadcastSchedule(result.time);
+    LogMessage(std::string("Broadcast schedule reset: clock=") +
+               (result.replay_active ? "wall/replay" : "simulator"));
+  }
+  return result;
+}
+
 bool ReconfigureRuntimeReceivers(const Settings &cfg, std::string *out_error) {
   if (cfg.foreflight_auto_discovery) {
     if (!g_state.foreflight_receiver ||
@@ -775,9 +817,7 @@ bool ApplyConfigToRuntime(const Settings &new_cfg, std::string *out_error) {
   }
 
   g_state.settings = new_cfg;
-  const float sim_time =
-      g_state.sim_time_ref ? XPLMGetDataf(g_state.sim_time_ref) : 0.0f;
-  RefreshBroadcastTarget(sim_time, g_state.settings);
+  RefreshBroadcastTarget(g_state.broadcast_clock_time, g_state.settings);
   return true;
 }
 
@@ -1210,27 +1250,29 @@ void DrawSettingsWindowUI() {
   ImGui::Text("Target: %s:%u", g_state.broadcaster->getTargetIp().c_str(),
               static_cast<unsigned int>(g_state.broadcaster->getTargetPort()));
 
-  const float sim_time =
-      g_state.sim_time_ref ? XPLMGetDataf(g_state.sim_time_ref) : 0.0f;
+  const float broadcast_time = g_state.broadcast_clock_time;
   const float since_heartbeat = (g_state.last_heartbeat > 0.0f)
-                                    ? (sim_time - g_state.last_heartbeat)
+                                    ? (broadcast_time - g_state.last_heartbeat)
                                     : 0.0f;
   const float since_position = (g_state.last_position > 0.0f)
-                                   ? (sim_time - g_state.last_position)
+                                   ? (broadcast_time - g_state.last_position)
                                    : 0.0f;
-  const float since_traffic =
-      (g_state.last_traffic > 0.0f) ? (sim_time - g_state.last_traffic) : 0.0f;
-  const float since_device_info = (g_state.last_device_info > 0.0f)
-                                      ? (sim_time - g_state.last_device_info)
-                                      : 0.0f;
+  const float since_traffic = (g_state.last_traffic > 0.0f)
+                                  ? (broadcast_time - g_state.last_traffic)
+                                  : 0.0f;
+  const float since_device_info =
+      (g_state.last_device_info > 0.0f)
+          ? (broadcast_time - g_state.last_device_info)
+          : 0.0f;
   const float since_ahrs =
-      (g_state.last_ahrs > 0.0f) ? (sim_time - g_state.last_ahrs) : 0.0f;
-  const float since_geo_altitude = (g_state.last_geo_altitude > 0.0f)
-                                       ? (sim_time - g_state.last_geo_altitude)
-                                       : 0.0f;
+      (g_state.last_ahrs > 0.0f) ? (broadcast_time - g_state.last_ahrs) : 0.0f;
+  const float since_geo_altitude =
+      (g_state.last_geo_altitude > 0.0f)
+          ? (broadcast_time - g_state.last_geo_altitude)
+          : 0.0f;
   const float since_discovery =
       (g_state.last_foreflight_discovery >= 0.0f)
-          ? (sim_time - g_state.last_foreflight_discovery)
+          ? (broadcast_time - g_state.last_foreflight_discovery)
           : -1.0f;
 
   const std::string tail = ReadTailNumber();
@@ -1245,6 +1287,9 @@ void DrawSettingsWindowUI() {
       ImGui::Text("Effective callsign: %s", effective_callsign.c_str());
       ImGui::Text("Heartbeat rate: %.2f Hz | Position rate: %.2f Hz",
                   cfg.heartbeat_rate, cfg.position_rate);
+      ImGui::Text("Broadcast clock: %s", g_state.broadcast_clock_replay
+                                             ? "wall time (replay)"
+                                             : "simulator time");
       ImGui::Text("Last heartbeat: %.2fs ago | Last position: %.2fs ago",
                   since_heartbeat, since_position);
       ImGui::Text(
@@ -1740,6 +1785,9 @@ PLUGIN_API int XPluginStart(char *outName, char *outSig, char *outDesc) {
   g_state.last_ahrs = 0.0f;
   g_state.last_geo_altitude = 0.0f;
   g_state.last_foreflight_discovery = -1.0f;
+  g_state.broadcast_clock_state = {};
+  g_state.broadcast_clock_time = 0.0f;
+  g_state.broadcast_clock_replay = false;
   g_state.discovered_target_ip.clear();
   g_state.discovered_target_port = 0;
   g_state.using_discovered_target = false;
@@ -1796,6 +1844,7 @@ PLUGIN_API int XPluginStart(char *outName, char *outSig, char *outDesc) {
   g_state.airborne_ref =
       XPLMFindDataRef("sim/flightmodel/failures/onground_any");
   g_state.sim_time_ref = XPLMFindDataRef("sim/time/total_flight_time_sec");
+  g_state.replay_ref = XPLMFindDataRef("sim/time/is_in_replay");
   g_state.tailnum_ref = XPLMFindDataRef("sim/aircraft/view/acf_tailnum");
 
   bool datarefs_ok = true;
@@ -1930,14 +1979,15 @@ float FlightLoopCallback(float in_elapsed_since_last_call,
     return -1.0f;
   }
 
-  const float sim_time = XPLMGetDataf(g_state.sim_time_ref);
+  const auto clock = UpdateCurrentBroadcastClock();
+  const float broadcast_time = clock.time;
   const Settings &cfg = g_state.settings;
 
-  PollForeFlightDiscovery(sim_time, cfg);
-  RefreshBroadcastTarget(sim_time, cfg);
+  PollForeFlightDiscovery(broadcast_time, cfg);
+  RefreshBroadcastTarget(broadcast_time, cfg);
 
   if (cfg.heartbeat_rate > 0.0f &&
-      sim_time - g_state.last_heartbeat >= (1.0f / cfg.heartbeat_rate)) {
+      broadcast_time - g_state.last_heartbeat >= (1.0f / cfg.heartbeat_rate)) {
     const bool gps_valid = xp2gdl90::protocol::HasValidOwnshipPosition(
         XPLMGetDatad(g_state.lat_ref), XPLMGetDatad(g_state.lon_ref));
     const auto heartbeat = g_state.encoder->createHeartbeat(gps_valid, true);
@@ -1950,11 +2000,11 @@ float FlightLoopCallback(float in_elapsed_since_last_call,
     } else {
       g_state.last_send_error = g_state.broadcaster->getLastError();
     }
-    g_state.last_heartbeat = sim_time;
+    g_state.last_heartbeat = broadcast_time;
   }
 
   if (cfg.position_rate > 0.0f &&
-      sim_time - g_state.last_position >= (1.0f / cfg.position_rate)) {
+      broadcast_time - g_state.last_position >= (1.0f / cfg.position_rate)) {
     const gdl90::PositionData ownship = GetOwnshipData(cfg);
     const auto position_msg = g_state.encoder->createOwnshipReport(ownship);
     const int sent = g_state.broadcaster->send(position_msg);
@@ -1966,10 +2016,10 @@ float FlightLoopCallback(float in_elapsed_since_last_call,
     } else {
       g_state.last_send_error = g_state.broadcaster->getLastError();
     }
-    g_state.last_position = sim_time;
+    g_state.last_position = broadcast_time;
   }
 
-  if (sim_time - g_state.last_geo_altitude >=
+  if (broadcast_time - g_state.last_geo_altitude >=
       (1.0f / kOwnshipGeoAltitudeRate)) {
     const auto geo_altitude = g_state.encoder->createOwnshipGeometricAltitude(
         GetOwnshipGeoAltitudeData());
@@ -1982,10 +2032,10 @@ float FlightLoopCallback(float in_elapsed_since_last_call,
     } else {
       g_state.last_send_error = g_state.broadcaster->getLastError();
     }
-    g_state.last_geo_altitude = sim_time;
+    g_state.last_geo_altitude = broadcast_time;
   }
 
-  if (sim_time - g_state.last_device_info >=
+  if (broadcast_time - g_state.last_device_info >=
       (1.0f / kForeFlightDeviceInfoRate)) {
     const auto device_info =
         g_state.foreflight_encoder->createIdMessage(GetForeFlightDeviceInfo());
@@ -1998,10 +2048,10 @@ float FlightLoopCallback(float in_elapsed_since_last_call,
     } else {
       g_state.last_send_error = g_state.broadcaster->getLastError();
     }
-    g_state.last_device_info = sim_time;
+    g_state.last_device_info = broadcast_time;
   }
 
-  if (sim_time - g_state.last_ahrs >= (1.0f / kForeFlightAhrsRate)) {
+  if (broadcast_time - g_state.last_ahrs >= (1.0f / kForeFlightAhrsRate)) {
     const auto ahrs_msg =
         g_state.foreflight_encoder->createAhrsMessage(GetOwnshipAhrsData());
     const int sent = g_state.broadcaster->send(ahrs_msg);
@@ -2013,10 +2063,10 @@ float FlightLoopCallback(float in_elapsed_since_last_call,
     } else {
       g_state.last_send_error = g_state.broadcaster->getLastError();
     }
-    g_state.last_ahrs = sim_time;
+    g_state.last_ahrs = broadcast_time;
   }
 
-  SendTrafficReports(sim_time, cfg);
+  SendTrafficReports(broadcast_time, cfg);
 
   return -1.0f;
 }
