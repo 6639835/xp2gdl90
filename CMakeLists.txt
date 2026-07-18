@@ -195,6 +195,9 @@ elseif(WIN32)
     add_library(${PLUGIN_NAME} MODULE ${PLUGIN_SOURCES} ${IMGUI_SOURCES})
     if(MSVC)
         set_msvc_runtime(${PLUGIN_NAME})
+    else()
+        # Keep LLVM-MinGW/MinGW builds self-contained for X-Plane deployment.
+        target_link_options(${PLUGIN_NAME} PRIVATE -static)
     endif()
     
     # Set output name
@@ -217,10 +220,13 @@ elseif(WIN32)
         opengl32
     )
     
-    # Export symbols
-    set_target_properties(${PLUGIN_NAME} PROPERTIES
-        LINK_FLAGS "/DEF:${CMAKE_CURRENT_SOURCE_DIR}/win_exports.def"
-    )
+    # MSVC consumes the module-definition file directly. MinGW exports the
+    # PLUGIN_API entry points declared by the X-Plane SDK headers.
+    if(MSVC)
+        set_target_properties(${PLUGIN_NAME} PROPERTIES
+            LINK_FLAGS "/DEF:${CMAKE_CURRENT_SOURCE_DIR}/win_exports.def"
+        )
+    endif()
     
 elseif(UNIX AND NOT APPLE)
     # ====== Linux Configuration ======
@@ -393,6 +399,12 @@ if(XP2GDL90_BUILD_TESTS)
         tests/test_msfs_bridge.cpp
     )
     target_link_libraries(xp2gdl90_tests PRIVATE xp2gdl90_core)
+    if(WIN32)
+        target_link_libraries(xp2gdl90_tests PRIVATE ws2_32)
+        if(NOT MSVC)
+            target_link_options(xp2gdl90_tests PRIVATE -static)
+        endif()
+    endif()
     xp2gdl90_enable_coverage(xp2gdl90_tests)
     if(XP2GDL90_ENABLE_SOCKET_OPS_TESTS)
         target_compile_definitions(xp2gdl90_tests PRIVATE XP2GDL90_ENABLE_SOCKET_OPS_TESTS=1)
