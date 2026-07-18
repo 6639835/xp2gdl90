@@ -18,9 +18,12 @@ struct Settings {
   std::string device_long_name = "XP2GDL90 AHRS";
   uint8_t internet_policy = 0;
   bool ahrs_use_magnetic_heading = false;
+  bool traffic_enabled = true;
 
   float heartbeat_rate = 1.0f;
   float position_rate = 2.0f;
+  float traffic_rate = 1.0f;
+  uint8_t traffic_max_targets = 63;
 
   uint8_t nic = 11;
   uint8_t nacp = 11;

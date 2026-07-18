@@ -62,7 +62,6 @@ namespace {
 constexpr double kMetersToFeet = 3.28084;
 constexpr float kMetersPerSecondToKnots = 1.94384f;
 constexpr float kMetersPerSecondToFeetPerMinute = 196.8504f;
-constexpr float kTrafficReportRate = 1.0f;
 constexpr float kForeFlightDeviceInfoRate = 1.0f;
 constexpr float kForeFlightAhrsRate = 5.0f;
 constexpr float kOwnshipGeoAltitudeRate = 1.0f;
@@ -978,16 +977,18 @@ void InitializeTrafficDataRefs() {
 
 size_t CollectTrafficData(const Settings &cfg,
                           std::vector<gdl90::PositionData> *out_reports) {
-  if (!out_reports) {
+  if (!out_reports || !cfg.traffic_enabled || cfg.traffic_max_targets == 0) {
     return 0;
   }
 
   out_reports->clear();
 
   if (g_state.traffic_tcas_refs.IsUsable()) {
-    out_reports->reserve(g_state.traffic_tcas_refs.slot_count);
-    for (size_t slot = 1; slot <= g_state.traffic_tcas_refs.slot_count;
-         ++slot) {
+    const size_t max_slots =
+        (std::min)(g_state.traffic_tcas_refs.slot_count,
+                   static_cast<size_t>(cfg.traffic_max_targets));
+    out_reports->reserve(max_slots);
+    for (size_t slot = 1; slot <= max_slots; ++slot) {
       gdl90::PositionData report{};
       if (BuildTrafficReportFromTcasSlot(cfg, slot, &report)) {
         out_reports->push_back(report);
@@ -999,8 +1000,11 @@ size_t CollectTrafficData(const Settings &cfg,
     return out_reports->size();
   }
 
-  out_reports->reserve(g_state.legacy_traffic_refs.size());
-  for (size_t slot = 1; slot <= g_state.legacy_traffic_refs.size(); ++slot) {
+  const size_t max_slots =
+      (std::min)(g_state.legacy_traffic_refs.size(),
+                 static_cast<size_t>(cfg.traffic_max_targets));
+  out_reports->reserve(max_slots);
+  for (size_t slot = 1; slot <= max_slots; ++slot) {
     gdl90::PositionData report{};
     if (BuildTrafficReportFromLegacySlot(cfg, slot, &report)) {
       out_reports->push_back(report);
@@ -1011,7 +1015,8 @@ size_t CollectTrafficData(const Settings &cfg,
 }
 
 void SendTrafficReports(float sim_time, const Settings &cfg) {
-  if (sim_time - g_state.last_traffic < (1.0f / kTrafficReportRate)) {
+  if (!cfg.traffic_enabled || cfg.traffic_rate <= 0.0f ||
+      sim_time - g_state.last_traffic < (1.0f / cfg.traffic_rate)) {
     return;
   }
 
@@ -1354,6 +1359,14 @@ void DrawSettingsWindowUI() {
       dirty_now |= ImGui::InputFloat("Position Rate (Hz)",
                                      &g_state.settings_ui.position_rate, 0.1f,
                                      1.0f, "%.2f");
+      dirty_now |= ImGui::Checkbox("Broadcast traffic",
+                                   &g_state.settings_ui.traffic_enabled);
+      dirty_now |= ImGui::InputFloat("Traffic Rate (Hz)",
+                                     &g_state.settings_ui.traffic_rate, 0.1f,
+                                     1.0f, "%.2f");
+      dirty_now |= ImGui::InputInt("Traffic Maximum",
+                                   &g_state.settings_ui.traffic_max_targets);
+      ImGui::TextUnformatted("Traffic maximum range: 0-63 targets");
       ImGui::EndTabItem();
     }
 

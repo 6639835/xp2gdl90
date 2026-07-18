@@ -19,8 +19,11 @@ struct SettingsUiState {
   char device_long_name[64] = {};
   int internet_policy = 0;
   bool ahrs_use_magnetic_heading = false;
+  bool traffic_enabled = true;
   float heartbeat_rate = 0.0f;
   float position_rate = 0.0f;
+  float traffic_rate = 0.0f;
+  int traffic_max_targets = 0;
   int nic = 0;
   int nacp = 0;
   bool debug_logging = false;

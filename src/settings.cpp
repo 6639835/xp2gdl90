@@ -146,10 +146,23 @@ bool LoadSettingsFromJsonFile(const std::string &path, Settings *out_settings,
   if (ReadPositiveRate(root.Find("position_rate"), &rate)) {
     settings.position_rate = rate;
   }
+  if (ReadPositiveRate(root.Find("traffic_rate"), &rate)) {
+    settings.traffic_rate = rate;
+  }
+
+  if (const json::Value *value = root.Find("traffic_max_targets");
+      value && value->IsNumber() && std::isfinite(value->number_value) &&
+      value->number_value >= 0.0 && value->number_value <= 63.0) {
+    settings.traffic_max_targets = static_cast<uint8_t>(value->number_value);
+  }
 
   if (const json::Value *value = root.Find("ahrs_use_magnetic_heading");
       value && value->IsBool()) {
     settings.ahrs_use_magnetic_heading = value->bool_value;
+  }
+  if (const json::Value *value = root.Find("traffic_enabled");
+      value && value->IsBool()) {
+    settings.traffic_enabled = value->bool_value;
   }
   if (const json::Value *value = root.Find("debug_logging");
       value && value->IsBool()) {
@@ -208,8 +221,13 @@ bool SaveSettingsToJsonFile(const std::string &path, const Settings &settings,
        << static_cast<unsigned int>(settings.internet_policy) << ",\n";
   file << "  \"ahrs_use_magnetic_heading\": "
        << (settings.ahrs_use_magnetic_heading ? "true" : "false") << ",\n";
+  file << "  \"traffic_enabled\": "
+       << (settings.traffic_enabled ? "true" : "false") << ",\n";
   file << "  \"heartbeat_rate\": " << settings.heartbeat_rate << ",\n";
   file << "  \"position_rate\": " << settings.position_rate << ",\n";
+  file << "  \"traffic_rate\": " << settings.traffic_rate << ",\n";
+  file << "  \"traffic_max_targets\": "
+       << static_cast<unsigned int>(settings.traffic_max_targets) << ",\n";
   file << "  \"nic\": " << static_cast<unsigned int>(settings.nic) << ",\n";
   file << "  \"nacp\": " << static_cast<unsigned int>(settings.nacp) << ",\n";
   file << "  \"debug_logging\": " << (settings.debug_logging ? "true" : "false")
