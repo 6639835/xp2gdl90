@@ -18,8 +18,11 @@ TEST_CASE("Settings UI sync reflects config values") {
   settings.device_long_name = "XP Test Device";
   settings.internet_policy = 1;
   settings.ahrs_use_magnetic_heading = true;
+  settings.traffic_enabled = false;
   settings.heartbeat_rate = 5.0f;
   settings.position_rate = 2.5f;
+  settings.traffic_rate = 1.5f;
+  settings.traffic_max_targets = 23;
   settings.nic = 10;
   settings.nacp = 9;
   settings.debug_logging = true;
@@ -40,8 +43,11 @@ TEST_CASE("Settings UI sync reflects config values") {
             std::string(ui_state.device_long_name));
   ASSERT_EQ(1, ui_state.internet_policy);
   ASSERT_TRUE(ui_state.ahrs_use_magnetic_heading);
+  ASSERT_TRUE(!ui_state.traffic_enabled);
   ASSERT_EQ(5.0f, ui_state.heartbeat_rate);
   ASSERT_EQ(2.5f, ui_state.position_rate);
+  ASSERT_EQ(1.5f, ui_state.traffic_rate);
+  ASSERT_EQ(23, ui_state.traffic_max_targets);
   ASSERT_EQ(10, ui_state.nic);
   ASSERT_EQ(9, ui_state.nacp);
   ASSERT_TRUE(ui_state.debug_logging);
@@ -59,6 +65,9 @@ TEST_CASE("Settings UI defaults mirror default config") {
   ASSERT_TRUE(ui_state.foreflight_auto_discovery);
   ASSERT_EQ(63093, ui_state.foreflight_broadcast_port);
   ASSERT_EQ(std::string("0xABCDEF"), std::string(ui_state.icao_address));
+  ASSERT_TRUE(ui_state.traffic_enabled);
+  ASSERT_EQ(1.0f, ui_state.traffic_rate);
+  ASSERT_EQ(63, ui_state.traffic_max_targets);
 }
 
 TEST_CASE("Settings UI builder validates fields and trims text") {
@@ -77,8 +86,11 @@ TEST_CASE("Settings UI builder validates fields and trims text") {
                 " Long Device Name ");
   ui_state.internet_policy = 2;
   ui_state.ahrs_use_magnetic_heading = true;
+  ui_state.traffic_enabled = true;
   ui_state.heartbeat_rate = 2.0f;
   ui_state.position_rate = 1.0f;
+  ui_state.traffic_rate = 1.5f;
+  ui_state.traffic_max_targets = 42;
   ui_state.nic = 11;
   ui_state.nacp = 10;
   ui_state.debug_logging = true;
@@ -96,6 +108,9 @@ TEST_CASE("Settings UI builder validates fields and trims text") {
   ASSERT_EQ(static_cast<uint8_t>(7), built.emitter_category);
   ASSERT_EQ(static_cast<uint8_t>(2), built.internet_policy);
   ASSERT_TRUE(built.ahrs_use_magnetic_heading);
+  ASSERT_TRUE(built.traffic_enabled);
+  ASSERT_EQ(1.5f, built.traffic_rate);
+  ASSERT_EQ(static_cast<uint8_t>(42), built.traffic_max_targets);
 }
 
 TEST_CASE("Settings UI builder requires output settings object") {
@@ -118,6 +133,8 @@ TEST_CASE("Settings UI builder rejects invalid numeric ranges") {
   ui_state.internet_policy = 0;
   ui_state.heartbeat_rate = 1.0f;
   ui_state.position_rate = 1.0f;
+  ui_state.traffic_rate = 1.0f;
+  ui_state.traffic_max_targets = 63;
   ui_state.nic = 11;
   ui_state.nacp = 11;
 
@@ -191,6 +208,18 @@ TEST_CASE(
   ASSERT_TRUE(!xp2gdl90::BuildConfigFromSettingsUi(
       ui_state, xp2gdl90::Settings{}, &built, &error));
   ASSERT_TRUE(error.find("Position rate must be > 0") != std::string::npos);
+
+  xp2gdl90::LoadDefaultSettingsUiState(&ui_state);
+  ui_state.traffic_rate = 0.0f;
+  ASSERT_TRUE(!xp2gdl90::BuildConfigFromSettingsUi(
+      ui_state, xp2gdl90::Settings{}, &built, &error));
+  ASSERT_TRUE(error.find("Traffic rate must be > 0") != std::string::npos);
+
+  xp2gdl90::LoadDefaultSettingsUiState(&ui_state);
+  ui_state.traffic_max_targets = 64;
+  ASSERT_TRUE(!xp2gdl90::BuildConfigFromSettingsUi(
+      ui_state, xp2gdl90::Settings{}, &built, &error));
+  ASSERT_TRUE(error.find("Traffic maximum must be 0-63") != std::string::npos);
 
   xp2gdl90::LoadDefaultSettingsUiState(&ui_state);
   ui_state.nic = 12;

@@ -183,7 +183,7 @@ The X-Plane plugin and MSFS bridge send:
 - `0x00` Heartbeat at the configured `heartbeat_rate`
 - `0x0A` Ownship Report at the configured `position_rate`
 - `0x0B` Ownship Geometric Altitude at 1 Hz
-- `0x14` Traffic Report at 1 Hz
+- `0x14` Traffic Report at the configured `traffic_rate`
 - `0x65/0x00` ForeFlight ID at 1 Hz
 - `0x65/0x01` ForeFlight AHRS at 5 Hz
 
@@ -233,8 +233,11 @@ The on-disk settings file is JSON:
   "device_long_name": "XP2GDL90 AHRS",
   "internet_policy": 0,
   "ahrs_use_magnetic_heading": false,
+  "traffic_enabled": true,
   "heartbeat_rate": 1.0,
   "position_rate": 2.0,
+  "traffic_rate": 1.0,
+  "traffic_max_targets": 63,
   "nic": 11,
   "nacp": 11,
   "debug_logging": false,
@@ -257,8 +260,11 @@ Field reference:
 | `device_long_name` | string | ForeFlight long name. Trimmed to 16 characters. |
 | `internet_policy` | number | `0=Unrestricted`, `1=Expensive`, `2=Disallowed`. |
 | `ahrs_use_magnetic_heading` | boolean | `false` sends true heading, `true` converts to magnetic heading. |
+| `traffic_enabled` | boolean | Enables X-Plane TCAS/legacy traffic reports. |
 | `heartbeat_rate` | number | Must be greater than `0`. |
 | `position_rate` | number | Must be greater than `0`. |
+| `traffic_rate` | number | Traffic report sweep rate in Hz; must be greater than `0`. |
+| `traffic_max_targets` | number | Maximum sparse traffic slots to inspect, `0-63`. |
 | `nic` | number | Valid range `0-11`. `11` is recommended for EFB compatibility. |
 | `nacp` | number | Valid range `0-11`. `11` is recommended for EFB compatibility. |
 | `debug_logging` | boolean | Enables plugin debug logging to `Log.txt`. |
