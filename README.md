@@ -13,6 +13,8 @@ The current codebase includes:
 - ForeFlight ID and AHRS extension messages
 - ForeFlight auto-discovery with fallback to a manual target IP/port
 - Traffic broadcasting from TCAS targets, with legacy multiplayer fallback
+- Pressure-consistent traffic altitude and deterministic IDs for AI targets
+  that do not expose Mode-S addresses
 - An in-sim ImGui settings and status window
 - Cross-platform builds for macOS, Windows, and Linux
 - Experimental MSFS 2020/2024 ownship, AHRS, and best-effort traffic bridge on Windows
@@ -190,9 +192,16 @@ Current X-Plane behavior from the implementation:
 - ForeFlight auto-discovery is optional and listens on the configured broadcast port
 - Manual `target_ip` and `target_port` are used as the fallback target
 - The effective callsign uses the aircraft tail number when available, otherwise the configured fallback callsign
-- Ownship report altitude uses `sim/cockpit2/gauges/indicators/altitude_ft_pilot` when available
+- Ownship report altitude uses X-Plane's standard-atmosphere
+  `sim/flightmodel2/position/pressure_altitude` dataref when available
 - AHRS heading can be transmitted as true or magnetic heading
 - Traffic is sourced from TCAS target datarefs when available, otherwise from legacy multiplayer datarefs
+- Sparse AI targets without Mode-S identity receive deterministic GDL90 track
+  identities, including when identified and unidentified targets coexist
+- Empty TCAS slots marked with X-Plane's `-FLT_MAX` sentinel are discarded
+  instead of being emitted as phantom traffic
+- Traffic geometric altitude is shifted by the ownship pressure-minus-geometric
+  offset so displayed relative altitude remains consistent away from 29.92 inHg
 
 Weather uplink data is not transmitted.
 
