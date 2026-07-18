@@ -40,6 +40,7 @@
 #include "xp2gdl90/protocol_utils.h"
 #include "xp2gdl90/settings.h"
 #include "xp2gdl90/settings_ui.h"
+#include "xp2gdl90/traffic_support.h"
 #include "xp2gdl90/udp_broadcaster.h"
 #include "xp2gdl90/udp_receiver.h"
 
@@ -217,6 +218,7 @@ void DestroySettingsWindow();
 bool ReloadSettingsFromDisk();
 void SyncSettingsUiFromConfig();
 void InitializeTrafficDataRefs();
+int32_t CorrectTrafficAltitudeToPressure(int32_t geometric_altitude_feet);
 size_t CollectTrafficData(const Settings &cfg,
                           std::vector<gdl90::PositionData> *out_reports);
 void SendTrafficReports(float sim_time, const Settings &cfg);
@@ -511,7 +513,7 @@ std::string ReadTrafficFlightId(size_t slot) {
   return Trim(std::string(buffer));
 }
 
-std::string ReadTrafficCallsign(size_t slot, uint32_t address) {
+std::string ReadTrafficIdentity(size_t slot) {
   std::string callsign =
       xp2gdl90::protocol::SanitizeCallsign(ReadTrafficFlightId(slot));
   if (callsign.empty() && slot >= 1 &&
@@ -522,7 +524,7 @@ std::string ReadTrafficCallsign(size_t slot, uint32_t address) {
   if (!callsign.empty()) {
     return callsign;
   }
-  return FormatTrafficFallbackCallsign(address);
+  return "";
 }
 
 uint16_t CalculateHorizontalSpeedKnots(float vx, float vz) {
@@ -550,23 +552,12 @@ bool BuildTrafficReportFromTcasSlot(const Settings &cfg, size_t slot,
   const int slot_index = ClampFloatToInt<int>(slot);
   const int raw_address =
       ReadIntArrayValue(g_state.traffic_tcas_refs.mode_s_ref, slot_index, 0);
-  const uint32_t address = NormalizeTcasAddress(raw_address);
-  if (address == 0u) {
-    return false;
-  }
-
   const float local_x =
       ReadFloatArrayValue(g_state.traffic_tcas_refs.x_ref, slot_index, NAN);
   const float local_y =
       ReadFloatArrayValue(g_state.traffic_tcas_refs.y_ref, slot_index, NAN);
   const float local_z =
       ReadFloatArrayValue(g_state.traffic_tcas_refs.z_ref, slot_index, NAN);
-
-  gdl90::PositionData report{};
-  if (!LocalPositionToWorld(local_x, local_y, local_z, &report.latitude,
-                            &report.longitude, &report.altitude)) {
-    return false;
-  }
 
   const float vx =
       ReadFloatArrayValue(g_state.traffic_tcas_refs.vx_ref, slot_index, NAN);
@@ -586,6 +577,39 @@ bool BuildTrafficReportFromTcasSlot(const Settings &cfg, size_t slot,
       g_state.traffic_tcas_refs.mode_c_code_ref, slot_index, 0);
   const int wake_category =
       ReadIntArrayValue(g_state.traffic_tcas_refs.wake_cat_ref, slot_index, -1);
+  const std::string identity = ReadTrafficIdentity(slot);
+
+  xp2gdl90::traffic::TcasPresenceSample presence;
+  presence.slot = slot;
+  presence.raw_address = raw_address;
+  presence.ssr_mode = ssr_mode;
+  presence.callsign = identity;
+  presence.local_x = local_x;
+  presence.local_y = local_y;
+  presence.local_z = local_z;
+  presence.velocity_x = vx;
+  presence.velocity_y = vy;
+  presence.velocity_z = vz;
+  if (!xp2gdl90::traffic::IsPopulatedTcasTarget(presence)) {
+    return false;
+  }
+
+  uint32_t address = NormalizeTcasAddress(raw_address);
+  const bool synthetic_address = address == 0u;
+  if (synthetic_address) {
+    address = xp2gdl90::traffic::SyntheticTrafficAddress(slot, identity,
+                                                         cfg.icao_address);
+  }
+  if (address == (cfg.icao_address & 0xFFFFFFu)) {
+    return false;
+  }
+
+  gdl90::PositionData report{};
+  if (!LocalPositionToWorld(local_x, local_y, local_z, &report.latitude,
+                            &report.longitude, &report.altitude)) {
+    return false;
+  }
+  report.altitude = CorrectTrafficAltitudeToPressure(report.altitude);
 
   const bool airborne = (weight_on_wheels >= 0)
                             ? (weight_on_wheels == 0)
@@ -604,9 +628,11 @@ bool BuildTrafficReportFromTcasSlot(const Settings &cfg, size_t slot,
   report.nic = cfg.nic;
   report.nacp = cfg.nacp;
   report.icao_address = address;
-  report.callsign = ReadTrafficCallsign(slot, report.icao_address);
+  report.callsign =
+      identity.empty() ? FormatTrafficFallbackCallsign(address) : identity;
   report.emitter_category = WakeCategoryToEmitterCategory(wake_category);
-  report.address_type = ResolveTcasAddressType(raw_address);
+  report.address_type = synthetic_address ? gdl90::AddressType::TISB_TRACK_FILE
+                                          : ResolveTcasAddressType(raw_address);
   report.alert_status = 0;
   report.emergency_code = ResolveTrafficEmergencyCodeFromSquawk(squawk);
 
@@ -633,9 +659,12 @@ bool BuildTrafficReportFromLegacySlot(const Settings &cfg, size_t slot,
   const float vz = XPLMGetDataf(refs.vz_ref);
   const float heading = XPLMGetDataf(refs.heading_ref);
 
-  const uint32_t synthetic_address = static_cast<uint32_t>(
-      0xF00000u | (static_cast<uint32_t>(slot) & 0xFFFFu));
-  const std::string callsign = ReadTrafficCallsign(slot, synthetic_address);
+  const std::string identity = ReadTrafficIdentity(slot);
+  const uint32_t synthetic_address = xp2gdl90::traffic::SyntheticTrafficAddress(
+      slot, identity, cfg.icao_address);
+  const std::string callsign =
+      identity.empty() ? FormatTrafficFallbackCallsign(synthetic_address)
+                       : identity;
 
   if (!std::isfinite(static_cast<double>(local_x)) ||
       !std::isfinite(static_cast<double>(local_y)) ||
@@ -652,6 +681,7 @@ bool BuildTrafficReportFromLegacySlot(const Settings &cfg, size_t slot,
                             &report.longitude, &report.altitude)) {
     return false;
   }
+  report.altitude = CorrectTrafficAltitudeToPressure(report.altitude);
 
   report.h_velocity = CalculateHorizontalSpeedKnots(vx, vz);
   report.v_velocity = CalculateVerticalSpeedFpm(vy);
@@ -694,6 +724,17 @@ bool VerifyDataRef(XPLMDataRef ref, const char *name) {
   }
   LogMessage(std::string("ERROR: Missing dataref ") + name);
   return false;
+}
+
+int32_t CorrectTrafficAltitudeToPressure(int32_t geometric_altitude_feet) {
+  if (!g_state.alt_ref || !g_state.pressure_alt_ref) {
+    return geometric_altitude_feet;
+  }
+  const double ownship_geometric_feet =
+      XPLMGetDatad(g_state.alt_ref) * kMetersToFeet;
+  const double ownship_pressure_feet = XPLMGetDatad(g_state.pressure_alt_ref);
+  return xp2gdl90::traffic::CorrectGeometricToPressureAltitude(
+      geometric_altitude_feet, ownship_geometric_feet, ownship_pressure_feet);
 }
 
 bool ReconfigureRuntimeReceivers(const Settings &cfg, std::string *out_error) {
@@ -793,7 +834,7 @@ gdl90::PositionData GetOwnshipData(const Settings &cfg) {
 
   if (g_state.pressure_alt_ref) {
     data.altitude =
-        ClampFloatToInt<int32_t>(XPLMGetDataf(g_state.pressure_alt_ref));
+        ClampFloatToInt<int32_t>(XPLMGetDatad(g_state.pressure_alt_ref));
   } else {
     data.altitude = std::numeric_limits<int32_t>::min();
   }
@@ -1782,7 +1823,7 @@ PLUGIN_API int XPluginStart(char *outName, char *outSig, char *outDesc) {
   g_state.lon_ref = XPLMFindDataRef("sim/flightmodel/position/longitude");
   g_state.alt_ref = XPLMFindDataRef("sim/flightmodel/position/elevation");
   g_state.pressure_alt_ref =
-      XPLMFindDataRef("sim/cockpit2/gauges/indicators/altitude_ft_pilot");
+      XPLMFindDataRef("sim/flightmodel2/position/pressure_altitude");
   g_state.speed_ref = XPLMFindDataRef("sim/flightmodel/position/groundspeed");
   g_state.track_ref = XPLMFindDataRef("sim/flightmodel/position/true_psi");
   g_state.pitch_ref = XPLMFindDataRef("sim/flightmodel/position/theta");

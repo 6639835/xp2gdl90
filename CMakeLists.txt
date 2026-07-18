@@ -62,6 +62,7 @@ set(CORE_SOURCES
     src/settings.cpp
     src/settings_ui.cpp
     src/simple_json.cpp
+    src/traffic_support.cpp
     src/udp_receiver.cpp
     src/udp_broadcaster.cpp
     src/msfs_bridge.cpp
@@ -92,6 +93,7 @@ set(HEADERS
     include/xp2gdl90/settings.h
     include/xp2gdl90/settings_ui.h
     include/xp2gdl90/simple_json.h
+    include/xp2gdl90/traffic_support.h
     include/xp2gdl90/udp_receiver.h
     include/xp2gdl90/udp_broadcaster.h
 )
@@ -389,6 +391,7 @@ if(XP2GDL90_BUILD_TESTS)
         tests/test_settings.cpp
         tests/test_settings_ui.cpp
         tests/test_simple_json.cpp
+        tests/test_traffic_support.cpp
         tests/test_udp_broadcaster.cpp
         tests/test_msfs_bridge.cpp
     )
