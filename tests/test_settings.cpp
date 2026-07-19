@@ -45,8 +45,11 @@ TEST_CASE("Settings save and load round-trip through JSON") {
   saved.device_long_name = "Bridge Device";
   saved.internet_policy = 2;
   saved.ahrs_use_magnetic_heading = true;
+  saved.traffic_enabled = false;
   saved.heartbeat_rate = 3.5f;
   saved.position_rate = 1.25f;
+  saved.traffic_rate = 2.0f;
+  saved.traffic_max_targets = 17;
   saved.nic = 10;
   saved.nacp = 9;
   saved.debug_logging = true;
@@ -72,8 +75,11 @@ TEST_CASE("Settings save and load round-trip through JSON") {
   ASSERT_EQ(saved.device_long_name, loaded.device_long_name);
   ASSERT_EQ(saved.internet_policy, loaded.internet_policy);
   ASSERT_EQ(saved.ahrs_use_magnetic_heading, loaded.ahrs_use_magnetic_heading);
+  ASSERT_EQ(saved.traffic_enabled, loaded.traffic_enabled);
   ASSERT_EQ(saved.heartbeat_rate, loaded.heartbeat_rate);
   ASSERT_EQ(saved.position_rate, loaded.position_rate);
+  ASSERT_EQ(saved.traffic_rate, loaded.traffic_rate);
+  ASSERT_EQ(saved.traffic_max_targets, loaded.traffic_max_targets);
   ASSERT_EQ(saved.nic, loaded.nic);
   ASSERT_EQ(saved.nacp, loaded.nacp);
   ASSERT_EQ(saved.debug_logging, loaded.debug_logging);
@@ -103,6 +109,9 @@ TEST_CASE("Settings loader ignores invalid values and unknown keys") {
        << "  \"target_ip\": \"999.168.0.10\",\n"
        << "  \"target_port\": 70000,\n"
        << "  \"emitter_category\": 99,\n"
+       << "  \"traffic_enabled\": \"yes\",\n"
+       << "  \"traffic_rate\": 0,\n"
+       << "  \"traffic_max_targets\": 64,\n"
        << "  \"nic\": 12,\n"
        << "  \"nacp\": 15,\n"
        << "  \"debug_logging\": true,\n"
@@ -115,6 +124,9 @@ TEST_CASE("Settings loader ignores invalid values and unknown keys") {
   loaded.target_ip = "192.168.0.20";
   loaded.target_port = 4000;
   loaded.emitter_category = 1;
+  loaded.traffic_enabled = true;
+  loaded.traffic_rate = 1.0f;
+  loaded.traffic_max_targets = 63;
   loaded.nic = 11;
   loaded.nacp = 11;
 
@@ -126,6 +138,9 @@ TEST_CASE("Settings loader ignores invalid values and unknown keys") {
   ASSERT_EQ(std::string("192.168.0.20"), loaded.target_ip);
   ASSERT_EQ(static_cast<uint16_t>(4000), loaded.target_port);
   ASSERT_EQ(static_cast<uint8_t>(1), loaded.emitter_category);
+  ASSERT_TRUE(loaded.traffic_enabled);
+  ASSERT_EQ(1.0f, loaded.traffic_rate);
+  ASSERT_EQ(static_cast<uint8_t>(63), loaded.traffic_max_targets);
   ASSERT_EQ(static_cast<uint8_t>(11), loaded.nic);
   ASSERT_EQ(static_cast<uint8_t>(11), loaded.nacp);
   ASSERT_TRUE(loaded.debug_logging);
@@ -149,6 +164,9 @@ TEST_CASE(
        << "  \"internet_policy\": 1,\n"
        << "  \"heartbeat_rate\": 4.0,\n"
        << "  \"position_rate\": 2.0,\n"
+       << "  \"traffic_enabled\": false,\n"
+       << "  \"traffic_rate\": 2.5,\n"
+       << "  \"traffic_max_targets\": 31,\n"
        << "  \"nic\": 10,\n"
        << "  \"nacp\": 9,\n"
        << "  \"ahrs_use_magnetic_heading\": true,\n"
@@ -172,6 +190,9 @@ TEST_CASE(
   ASSERT_EQ(static_cast<uint8_t>(1), loaded.internet_policy);
   ASSERT_EQ(4.0f, loaded.heartbeat_rate);
   ASSERT_EQ(2.0f, loaded.position_rate);
+  ASSERT_TRUE(!loaded.traffic_enabled);
+  ASSERT_EQ(2.5f, loaded.traffic_rate);
+  ASSERT_EQ(static_cast<uint8_t>(31), loaded.traffic_max_targets);
   ASSERT_EQ(static_cast<uint8_t>(10), loaded.nic);
   ASSERT_EQ(static_cast<uint8_t>(9), loaded.nacp);
   ASSERT_TRUE(loaded.ahrs_use_magnetic_heading);

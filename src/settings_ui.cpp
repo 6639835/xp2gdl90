@@ -73,8 +73,12 @@ void SyncSettingsUiFromConfig(SettingsUiState *ui_state,
                 "%s", settings.device_long_name.c_str());
   ui_state->internet_policy = static_cast<int>(settings.internet_policy);
   ui_state->ahrs_use_magnetic_heading = settings.ahrs_use_magnetic_heading;
+  ui_state->traffic_enabled = settings.traffic_enabled;
   ui_state->heartbeat_rate = settings.heartbeat_rate;
   ui_state->position_rate = settings.position_rate;
+  ui_state->traffic_rate = settings.traffic_rate;
+  ui_state->traffic_max_targets =
+      static_cast<int>(settings.traffic_max_targets);
   ui_state->nic = static_cast<int>(settings.nic);
   ui_state->nacp = static_cast<int>(settings.nacp);
   ui_state->debug_logging = settings.debug_logging;
@@ -160,6 +164,7 @@ bool BuildConfigFromSettingsUi(const SettingsUiState &ui_state,
   }
   settings.internet_policy = static_cast<uint8_t>(ui_state.internet_policy);
   settings.ahrs_use_magnetic_heading = ui_state.ahrs_use_magnetic_heading;
+  settings.traffic_enabled = ui_state.traffic_enabled;
 
   if (ui_state.heartbeat_rate <= 0.0f) {
     if (out_error) {
@@ -176,6 +181,23 @@ bool BuildConfigFromSettingsUi(const SettingsUiState &ui_state,
     return false;
   }
   settings.position_rate = ui_state.position_rate;
+
+  if (ui_state.traffic_rate <= 0.0f) {
+    if (out_error) {
+      *out_error = "Traffic rate must be > 0";
+    }
+    return false;
+  }
+  settings.traffic_rate = ui_state.traffic_rate;
+
+  if (ui_state.traffic_max_targets < 0 || ui_state.traffic_max_targets > 63) {
+    if (out_error) {
+      *out_error = "Traffic maximum must be 0-63";
+    }
+    return false;
+  }
+  settings.traffic_max_targets =
+      static_cast<uint8_t>(ui_state.traffic_max_targets);
 
   if (ui_state.nic < 0 || ui_state.nic > 11) {
     if (out_error) {

@@ -14,6 +14,8 @@ The current codebase includes:
 - ForeFlight auto-discovery with fallback to a manual target IP/port
 - Traffic broadcasting from TCAS targets, with legacy multiplayer fallback
 - Replay-safe scheduling when X-Plane replay time rewinds
+- Pressure-consistent traffic altitude and deterministic IDs for AI targets
+  that do not expose Mode-S addresses
 - An in-sim ImGui settings and status window
 - Cross-platform builds for macOS, Windows, and Linux
 - Experimental MSFS 2020/2024 ownship, AHRS, and best-effort traffic bridge on Windows
@@ -182,7 +184,7 @@ The X-Plane plugin and MSFS bridge send:
 - `0x00` Heartbeat at the configured `heartbeat_rate`
 - `0x0A` Ownship Report at the configured `position_rate`
 - `0x0B` Ownship Geometric Altitude at 1 Hz
-- `0x14` Traffic Report at 1 Hz
+- `0x14` Traffic Report at the configured `traffic_rate`
 - `0x65/0x00` ForeFlight ID at 1 Hz
 - `0x65/0x01` ForeFlight AHRS at 5 Hz
 
@@ -191,11 +193,18 @@ Current X-Plane behavior from the implementation:
 - ForeFlight auto-discovery is optional and listens on the configured broadcast port
 - Manual `target_ip` and `target_port` are used as the fallback target
 - The effective callsign uses the aircraft tail number when available, otherwise the configured fallback callsign
-- Ownship report altitude uses `sim/cockpit2/gauges/indicators/altitude_ft_pilot` when available
+- Ownship report altitude uses X-Plane's standard-atmosphere
+  `sim/flightmodel2/position/pressure_altitude` dataref when available
 - AHRS heading can be transmitted as true or magnetic heading
 - Traffic is sourced from TCAS target datarefs when available, otherwise from legacy multiplayer datarefs
 - Replay mode uses X-Plane elapsed time for scheduling, preventing stream stalls
   when the replay timeline is rewound
+- Sparse AI targets without Mode-S identity receive deterministic GDL90 track
+  identities, including when identified and unidentified targets coexist
+- Empty TCAS slots marked with X-Plane's `-FLT_MAX` sentinel are discarded
+  instead of being emitted as phantom traffic
+- Traffic geometric altitude is shifted by the ownship pressure-minus-geometric
+  offset so displayed relative altitude remains consistent away from 29.92 inHg
 
 Weather uplink data is not transmitted.
 
@@ -227,8 +236,11 @@ The on-disk settings file is JSON:
   "device_long_name": "XP2GDL90 AHRS",
   "internet_policy": 0,
   "ahrs_use_magnetic_heading": false,
+  "traffic_enabled": true,
   "heartbeat_rate": 1.0,
   "position_rate": 2.0,
+  "traffic_rate": 1.0,
+  "traffic_max_targets": 63,
   "nic": 11,
   "nacp": 11,
   "debug_logging": false,
@@ -251,8 +263,11 @@ Field reference:
 | `device_long_name` | string | ForeFlight long name. Trimmed to 16 characters. |
 | `internet_policy` | number | `0=Unrestricted`, `1=Expensive`, `2=Disallowed`. |
 | `ahrs_use_magnetic_heading` | boolean | `false` sends true heading, `true` converts to magnetic heading. |
+| `traffic_enabled` | boolean | Enables X-Plane TCAS/legacy traffic reports. |
 | `heartbeat_rate` | number | Must be greater than `0`. |
 | `position_rate` | number | Must be greater than `0`. |
+| `traffic_rate` | number | Traffic report sweep rate in Hz; must be greater than `0`. |
+| `traffic_max_targets` | number | Maximum sparse traffic slots to inspect, `0-63`. |
 | `nic` | number | Valid range `0-11`. `11` is recommended for EFB compatibility. |
 | `nacp` | number | Valid range `0-11`. `11` is recommended for EFB compatibility. |
 | `debug_logging` | boolean | Enables plugin debug logging to `Log.txt`. |

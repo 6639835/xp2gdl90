@@ -149,6 +149,44 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  build-windows-mingw:
+    name: Build Windows (MinGW)
+    needs: format
+    runs-on: windows-2022
+
+    steps:
+      - run: git config --global core.autocrlf input
+
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Setup MinGW
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-ninja
+
+      - name: Configure, build, and test
+        shell: msys2 {0}
+        run: |
+          cmake -S . -B build-mingw -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DXP2GDL90_BUILD_TESTS=ON
+          cmake --build build-mingw
+          ctest --test-dir build-mingw --output-on-failure
+
+      - name: Verify plugin exports
+        shell: msys2 {0}
+        run: |
+          test -f build-mingw/win.xpl
+          objdump -p build-mingw/win.xpl | grep -q XPluginStart
+          objdump -p build-mingw/win.xpl | grep -q XPluginStop
+
   build-macos:
     name: Build macOS
     needs: format
