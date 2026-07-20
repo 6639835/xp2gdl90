@@ -765,6 +765,8 @@ xp2gdl90::BroadcastClockResult UpdateCurrentBroadcastClock() {
                (result.replay_active ? "wall/replay" : "simulator"));
   }
   return result;
+}
+
 int32_t CorrectTrafficAltitudeToPressure(int32_t geometric_altitude_feet) {
   if (!g_state.alt_ref || !g_state.pressure_alt_ref) {
     return geometric_altitude_feet;
