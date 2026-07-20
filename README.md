@@ -13,6 +13,7 @@ The current codebase includes:
 - ForeFlight ID and AHRS extension messages
 - ForeFlight auto-discovery with fallback to a manual target IP/port
 - Traffic broadcasting from TCAS targets, with legacy multiplayer fallback
+- Replay-safe scheduling when X-Plane replay time rewinds
 - Pressure-consistent traffic altitude and deterministic IDs for AI targets
   that do not expose Mode-S addresses
 - An in-sim ImGui settings and status window
@@ -196,6 +197,8 @@ Current X-Plane behavior from the implementation:
   `sim/flightmodel2/position/pressure_altitude` dataref when available
 - AHRS heading can be transmitted as true or magnetic heading
 - Traffic is sourced from TCAS target datarefs when available, otherwise from legacy multiplayer datarefs
+- Replay mode uses X-Plane elapsed time for scheduling, preventing stream stalls
+  when the replay timeline is rewound
 - Sparse AI targets without Mode-S identity receive deterministic GDL90 track
   identities, including when identified and unidentified targets coexist
 - Empty TCAS slots marked with X-Plane's `-FLT_MAX` sentinel are discarded
